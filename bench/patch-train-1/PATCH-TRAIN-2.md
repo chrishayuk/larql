@@ -1,186 +1,213 @@
-# PATCH-TRAIN-2: sequential patch learning and retention
+# PATCH-TRAIN-2: retention-aware sequential patch learning (confirmatory protocol)
 
-**Status: DRAFT 2026-11-14. The CONFIRMATORY protocol is NOT FROZEN and has not been run.** Reviewer decisions of 2026-11-14 are
-recorded in §10: all seven arms are kept, the discovery dry-run (D2) is authorised, and the confirmatory phase needs at least
-eight independent entity pairs. The confirmatory protocol is frozen only after the calibration phase (§7) and review, and before
-any confirmatory run.
+**Status: DRAFT r2, 2026-11-14. NOT FROZEN. Not reviewed. No calibration, confirmation, native integration or optimiser search has been run
+or started.** r2 replaces the r1 draft (`ef508c8f`) after RETAIN-1 (registered `c209ba0b`, results `1807596c`).
 Branch `research/structured-real-1`, worktree `larql-structured-real`. CPU only. Gemma 3 270M (`google/gemma-3-270m-it` at
 `ac82b4e8`), immutable. Extends `DESIGN.md` (§7 verdicts, §8 calibration); where this document is silent, `DESIGN.md` governs.
 The frozen v2 numerics contract (`conformance/vlp-numerics/v2/`, commit `4b67591c`) is not changed by anything here.
 
-## 1. Claim under test
+## 0. Vocabulary that must not slip
 
-Cumulative learning through a patch chain, without modifying the foundation checkpoint:
+- **emulation-consistent**: produced by the exact frozen v2 emulation (`add_low_rank_columns`, profile `f64-seq-rne1/v1`) in Python,
+  self-reproducing and chain-replayable. This is the only numerical status any result here can have.
+- **native compiled and independently verified**: built by the engine (#805) and checked by the independent verifier (#806 plus the
+  new op kind). Neither exists for this chain. **No result in this document is, or may be called, "verified".**
+- **retention of trained behaviours**: the first patch's own training prompt (and its paraphrases) still gives the first answer.
+  This is *not* robust continual learning across unseen contexts, and nothing here claims it.
+
+## 1. Claim under test (and its limits)
 
     W1 = Apply(W0, P_A)          P_A = Learn(W0, D_A)
-    W2 = Apply(W1, P_B)          P_B = Learn(W1, D_B)      <- learned AGAINST W1, bound to W1
+    W2 = Apply(W1, P_B)          P_B = Learn(W1, D_B, retention obligations from P_A)      <- bound to W1
 
-and both behaviours are present in W2. Two independently successful patches are not this claim. This document separates
-four things that are easy to conflate: (i) learning each association, (ii) composing independently learned patches, (iii)
-cumulative learning (B learned on A's output), (iv) retention and interference. Each gets its own verdict (§6).
+Claim: **with a declared retention objective, a second rank-1 patch learned against the first patched model acquires its association
+(including on held-out wordings) while the first patch's behaviours are retained, without collateral or cross-entity leakage
+beyond calibrated limits, on fresh independent entity pairs.** Out of scope: more than two patches, other layers/ranks/models,
+scaling to many patches, example-free retention (§3), native verification (§9).
 
-## 2. What the discovery work already gives, and what it must not be used for
+## 2. Evidence this protocol is built on (discovery only; NOT confirmatory)
 
-PATCH-TRAIN-1 discovery (all emulated, all on `tasks_discovery.json`, commits `1d4e1eac` .. `c7d726a1`) established:
+PATCH-TRAIN-1 discovery, all emulated, all on `tasks_discovery.json`:
 
-- a layer-3 `down_proj` rank-1 patch `dW = a b^T` on a fixed 256-column footprint, with a ridge-whitened `b` built from one
-  entity's training-template activation and `a` learned through a BF16-rounded forward (straight-through), can make a
-  fictional entity's answer the full-vocabulary top-1 with real-fact top-1 and neutral NLL unchanged;
-- the result holds for a second entity and a different answer (Frozoria -> Lyon, Dresalthaia -> Leeds; address cosine 0.032;
-  a negative-control answer Bergen is learned equally well);
-- each patch moves only its own entity (cross-application: the other entity's answer stays at rank >= 1350);
-- the BF16-compiled result equals the f32 ideal to cosine >= 0.9999.
+- Layer-3 rank-1 patches with a ridge-whitened address can learn a fictional entity's answer; each patch moves only its own entity
+  (`single1`, `rep1`, `d2`).
+- Independently learned patches do not reliably coexist on address-overlapping pairs (STRESS-CAP-1, rho 0.40: coexist 0/3 and 1/3
+  pairs in the two arms; the most recently learned patch wins; no retention term).
+- **RETAIN-1** (three pairs, both orders = six pair-order cases that share three entities; NOT independent), both training-prompt
+  answers at full-vocabulary top-1:
 
-**These results informed this design and are NOT confirmatory evidence for it.** Frozoria and Dresalthaia are discovery
-entities. Limits: one layer, one seed per entity, addresses constructed from each target's own activation (not a scalable
-address discovery method), paraphrase transfer varies by entity (Frozoria 3/3 at rho 0.20, Dresalthaia 2/3: the possessive
-template is not top-1), name-neighbour leakage of up to +3.5 nats exists at rho 0.20, and nothing has been compiled by the
-engine or checked by the independent verifier.
-
-## 3. Phases
-
-| Phase | Entities | Purpose | Status |
+| Arm | both top-1 | first patch retained | second learned |
 |---|---|---|---|
-| **D2** discovery dry-run | Frozoria (A), Dresalthaia (B) | find breakage in the arms, the harness and the metrics; descriptive only; no threshold is taken from it | **authorised 2026-11-14** (emulation-only, all seven arms) |
-| **CAL** calibration | null patches, plus two further discovery entities (`trained_entities[2]`, `[3]`) as an A'/B' pair | set every threshold in §6 from the "no learning" and "isolated learning" distributions | proposed |
-| **CONF** confirmatory | **at least eight** independent entity pairs drawn by a fixed rule, without replacement, from `tasks.json` (unopened until freeze); the unit of replication is the **entity pair**, never a paraphrase | the claim | **not run; protocol frozen only after CAL and review** |
+| independent composition | 0/6 | 2/6 | 2/6 |
+| new-task only (N) | 1/6 | 1/6 | 6/6 |
+| rehearsal (R, lambda 1.0) | 6/6 | 6/6 | 6/6 |
+| distillation (D, lambda 1.0) | 6/6 | 6/6 | 6/6 |
 
-D2 results are reported as discovery. CONF is the only phase that can support a claim, and its entities, answers, controls,
-rho, steps, thresholds and endpoints are written to the frozen protocol before it runs.
+- **The observed trade-off.** R and D each preserved 13/14 of the first patch's isolated-top-1 prompts (N: 1/14, composition: 2/14),
+  with first-patch log p within about 0.01 of isolated. But the **second patch's own held-out paraphrases that were top-1 fell
+  from 8/18 (N) to 5/18 (R) and 5/18 (D)**. Retention protected the first association at some cost to how widely the second one
+  generalises. Cross-entity partner leakage was **not** removed (up to +8.0 nats in pair 3 under D, +6.3 under R). Real-fact top-1
+  stayed 1.00 and neutral NLL moved <= 0.01 in every arm.
+- Limits: the three pairs were chosen by a rule that **maximises address overlap** (an adversarial selection, not a sample), rho was
+  raised to 0.40 because 0.20 was cap-limited on those pairs, lambda was declared 1.0 and never tuned, "both top-1 on two training
+  prompts" is a weak bar, and every number is emulation-consistent.
+
+**None of these numbers may set a confirmatory threshold or choose a confirmatory parameter** (§7).
+
+## 3. Methods, described exactly
+
+| Arm | Second-patch objective on the first-patch model W1 | What it stores / needs |
+|---|---|---|
+| **N** new-task only | `L_B` | nothing |
+| **R** rehearsal | `L_B + 1.0 * L_A`, `L_A` on the first patch's **original training prompt** | the first patch's training prompt (one string + target) |
+| **D** distillation | `L_B + 1.0 * mean KL(P_W1 \|\| P_student)` over a retention set RET of full-vocabulary last-token distributions | the first patch's **training prompt** *and* the training-template prompts of a fixed set of other fictional entities; teacher = W1 |
+| **C** independent composition | `P_B` learned on W0, rebound and re-applied on W1 | nothing |
+
+**Distillation here uses a stored first-patch training prompt (it is in RET). It is therefore not example-free retention, and no
+example-free claim is made.** A variant of D without the first patch's prompt (D0) is only an *exploratory* arm, in the
+calibration phase and not in confirmation (§7, §11). Lambda is the single declared value 1.0 for R and for D; the weight is not
+tuned on confirmatory data.
+
+Both R and D give each patch a **retention obligation** (the stored prompts and targets, or the teacher), i.e. a patch carries
+not only a weight update but what later patches must preserve. This is the design implication being tested at two patches. It is
+**not** shown to scale: with many patches the retention set grows and obligations may conflict.
 
 ## 4. Fixed configuration (all phases)
 
-Declared backend (PyTorch CPU, f32 compute, eager attention, batch size 1, BF16 weights widened exactly to f32), layer 3
-`down_proj`, rank 1, the same 256 columns (`seed 20261113`), the ridge-whitened address recipe of `mech1.py`/`rep1.py`
-(training template only), conditional-12 + 0.1 full-vocabulary CE, Adam lr 3e-3, 200 steps, straight-through BF16-rounded
-forward, initialisation at half the cap, **rho = 0.20** with the cap defined from the **base W0** footprint RMS (so the same
-absolute cap in every arm and every stage), final step is the only endpoint. Reported weights are always the exact frozen v2
-emulation (`add_low_rank_columns`, profile `f64-seq-rne1/v1`); the straight-through forward is an optimisation approximation
-and says so in every record.
+PyTorch CPU, f32, eager attention, batch size 1, BF16 weights widened exactly to f32; layer-3 `down_proj` (640x2048); rank 1;
+256 fixed columns (`seed 20261113`); ridge-whitened address from the **training template only** (`mech1.py`/`rep1.py`);
+conditional-12 + 0.1 full-vocabulary CE; Adam, lr 3e-3, 200 steps; straight-through BF16-rounded forward; initialisation at half the
+cap; cap from the **base W0** footprint RMS; final step is the only endpoint; reported weights are the exact frozen v2 emulation.
+**rho = 0.40** (the value RETAIN-1 was registered at). It was chosen from discovery, which is disclosed and not reopened; CAL (§7)
+checks isolated learning at 0.40 on untouched entities and it is not re-chosen afterwards. `retain1.py` supplies R and D unchanged.
 
-**Same-layer note (a protocol check, not an assumption).** A and B both write layer 3 `down_proj`, whose input `z` is computed
-before that matrix. Applying A therefore cannot change the layer-3 input `z` of any position, so B's address is the same on W1
-as on W0. The harness asserts this bitwise at every position of every prompt used (a failed assertion is a harness defect). The
-interference that can occur is therefore (a) through layers 4..17 (payload interaction), and (b) through BF16 rounding on the
-**shared** columns: B's update is rounded on top of A's already-rounded values, so an element may survive in one order and be
-absorbed in the other. Both are measured (arms 7 and §5.3).
+**Same-layer note.** A and B both write layer 3 `down_proj`, whose input is computed before it; B's address on W1 equals its address
+on W0, asserted bitwise at every position used (a failed assertion is a harness defect). Interference is therefore through layers
+4..17 and through BF16 rounding on shared columns.
 
-## 5. Arms
+## 5. Confirmatory design
 
-`P_X^W` denotes the patch for X learned with the training forward starting from weights `W`. "Apply" is always the emulator on
-the stated source weights, with the source tensor digest recorded and checked (binding).
+### 5.1 Entity pairs
 
-| # | Arm | Construction | Question |
-|---|---|---|---|
-| 1 | A only | learn `P_A^W0`; `W1 = Apply(W0, P_A)` | A learns (reproduces rep1 rho 0.20 bit for bit as a determinism check) |
-| 2 | B only | learn `P_B^W0`; `Apply(W0, P_B)` | B learns |
-| 3 | A then independent B | `W1`, then **re-apply** `P_B^W0`'s `(a, b)` to W1: `Apply(W1, P_B^W0)` (rebound to W1; its payload is recomputed against W1's footprint, never copied as W0's output bits) | does independent composition work |
-| 4 | B then independent A | symmetric: `Apply(Apply(W0, P_B^W0), P_A^W0)` | order dependence of composition |
-| 5 | A then B learned on A | learn `P_B^W1` with the training forward starting from W1; `W2 = Apply(W1, P_B^W1)` | **cumulative learning** (the claim) |
-| 6 | B then A learned on B | symmetric: learn `P_A^(W0+P_B)`; apply | cumulative learning in the other order |
-| 7 (diagnostic) | joint single stage | `W_joint = BF16(W0 + dA + dB)`, one stage, rank-2 `[a_A a_B] [b_A; b_B]`, one rounding, versus arm 3's `W_AB = BF16(BF16(W0 + dA) + dB)` | separates "learning interference" from "sequential BF16 rounding on shared columns"; **differences in behaviour alone do not establish the cause**, so the exact per-element weight differences between `W_AB`, `W_BA` and `W_joint` are recorded and every one of those weight sets is evaluated on the same model and prompts |
+- **N_pairs >= 8 required; 12 recommended** (see blocker B1), all drawn from `tasks.json` (unopened), **entity-disjoint across
+  pairs**, disjoint from every discovery entity (D2, STRESS, RETAIN, CAL, the 22 retention-set entities) and from every
+  calibration entity.
+- **Deterministic rule**, written before `tasks.json` is read: take the eligible entities of the relation in file order, shuffle
+  with a seeded PRNG (seed fixed in the frozen protocol, committed *before* the file is opened), pair consecutively, reject and redraw
+  only for the stated reason "the two entities share the same assigned answer". **No address-cosine or any outcome-dependent
+  selection.** The address cosine of every pair is *recorded*, and used only for descriptive stratification (§5.4).
+- The unit of replication is the **entity pair**. Reverse orders, paraphrases, training prompts and patches are not replications.
+- **Primary order** per pair is fixed by the same seeded draw (which entity is A). The reverse order is run as a secondary
+  descriptive analysis and is never counted toward N_pairs.
 
-Arms 1-5 are the five requested; 6 and 7 are kept by reviewer decision (order symmetry for the cumulative arm, and the rounding
-control). No arm is learned with a different objective, learning rate, cap or step count from arm 1.
+### 5.2 Arms per pair (primary order)
 
-### 5.1 Reference performances (retention is defined on what was actually achieved)
+Isolated references (A only, B only), **C**, **N**, **R**, **D**. Stages W0, W1 = A, W2 = A + B. Retention is judged against the first
+patch's own isolated result per prompt, never against an ideal (nothing is required retrospectively to reach 3/3).
 
-Retention for A is measured against A's own arm-1 result, per prompt (training prompt and each of the three paraphrases): a
-prompt that is full-vocabulary top-1 in arm 1 must be top-1 in the stack, and the target log p may fall by at most
-`Delta_retain` (set in CAL). Likewise B against arm 2. **Nothing is ever required to reach 3/3 retrospectively**: if B's
-isolated result is 2/3 paraphrases, B's reference is those 2/3 plus its other prompts' log p, and the cumulative arms are judged
-against that.
+### 5.3 Measured at every stage, per pair
 
-### 5.2 Stages and what is measured at each
+Target answer's full-vocabulary top-1, rank and log p on the training prompt and on **each** of the 3 held-out paraphrases
+separately, for both entities; partner's answer on each entity; in-set leakage over all other entities; selectivity `S`; real-fact
+(24) top-1 and log p; neutral NLL; realised-vs-ideal numerics; tensor sha256 per stage; base digest before and after; chain replay;
+source-binding refusal.
 
-Stages: `W0`, `W1 = A`, `W2 = A+B` (and the order-swapped chain). At **every stage**, for **both entities**:
+### 5.4 Strata (descriptive, not gates)
 
-- full-vocabulary top-1, rank and log p of the target answer on the training prompt and on **each** held-out paraphrase
-  separately; in-set top-1, conditional log p, answer-set mass;
-- both entities' **non-target** answers (does B's `Leeds` appear on Frozoria and vice versa), and the continuous selectivity
-  `S = d log P(y|target entity) - mean over the other entities d log P(y|x)`, with per-entity leakage over all other entities;
-- real-fact top-1 and log p (24 prompts), neutral NLL, and which in-set answer each entity's prompt currently selects;
-- numerics: realised vs ideal update (cosine, Frobenius ratio, survival fraction), the tensor sha256 of every stage, payload
-  digest per patch, and the base-checkpoint digest before and after.
-
-### 5.3 Rounding control
-
-For each applied patch the harness records, per element of the footprint, whether B's update survives on W1 and on W0, and the
-set of elements whose survival differs. Arm 7 compared with arm 3 gives the sequential-rounding contribution.
+Pairs split by recorded address cosine (above/below the pair-cosine median of the confirmatory draw) and reported separately; no
+claim of effect is made unless pre-declared in the frozen protocol.
 
 ## 6. Separate verdicts
 
-None implies another (extends `DESIGN.md` §7). Thresholds `Delta_*` come from CAL (§7) and are frozen before CONF.
+None implies another. Every pair gets each verdict; thresholds come from CAL (§7) and are frozen before CONF.
 
-| Verdict | Question | Pass when (frozen from CAL) |
+| Verdict | Question | Pass for a pair when |
 |---|---|---|
-| **V: numerical** | is every stage exactly what its patches declare, and is each patch bound to its true predecessor? | emulation reproduces itself bit for bit; recompiling from W0 with each patch-chain prefix reproduces that stage's tensor exactly; a patch applied to a source whose digest differs is **refused**. *Native compilation by the engine and the independent verifier are NOT available (#805/#806, and the new op kind); every result here is labelled "emulated" and V is "emulation-consistent", never "verified".* |
-| **L_A, L_B: learning** | did each association learn in isolation? | arm 1 / arm 2: training prompt top-1 and the per-paraphrase counts at or above the CAL floor |
-| **R: retention** | after the second patch, is the first still there? | §5.1: per-prompt top-1 retained and log-p drop `<= Delta_retain`, in arms 3, 4, 5, 6, for each patch as "first" |
-| **C: cumulative learning** | does a patch learned against the first patched model learn, and retain? | arm 5 (and 6): B's per-prompt results at or above its arm-2 reference minus `Delta_learn_gap`, **and** R holds for A, **and** G holds |
-| **X: interference / selectivity** | does either patch spread? | the other entity's answer is not top-1 on the other entity's prompts; `S` per patch within `Delta_S` of its isolated value; in-set leakage rate within `Delta_leak`; max per-entity leak `<= Delta_leakmax` |
-| **G: regression** | what else changed? | real-fact top-1 `>= 0.96` (at most one of 24 prompts lost), neutral NLL `<= base + 0.15`, per stage |
-| **Rev: reversibility** | can any stage be recovered exactly? | replaying the chain prefix from W0 reproduces W1 bit for bit; **removing A from the stack makes B's binding stale and the harness refuses B** (B is not silently valid on W0); "rebase" = re-learn, then re-verify |
+| **L: training-prompt learning** | does each association learn in isolation and in the stack? | A and B top-1 on their training prompts in the isolated arms; both top-1 in W2 |
+| **P: held-out paraphrase acquisition** | does B generalise to wordings it was not trained on, in the stack? | B's mean held-out-paraphrase log-p gain over W1 `>= f *` its isolated gain **and** above the null floor `T_null_gain` (§7); paraphrase top-1 counts reported alongside |
+| **R: first-patch retention** | is A still there? | A's training prompt top-1; every A prompt (training + paraphrases) that was top-1 in A's isolated result still top-1; each A log-p drop `<= Delta_retain` |
+| **X: leakage / selectivity** | does either patch spread? | the other entity's answer is not top-1 on the other entity's prompts; per-entity leak `<= isolated leak + T_null_leak`; in-set leakage rate within the calibrated bound |
+| **G: collateral** | what else changed? | real-fact top-1 `>= 23/24`, neutral NLL `<= base + 0.15`, at every stage (the `DESIGN.md` §7 limits) |
+| **V: numerical reproducibility** | is every stage exactly what its patches declare? | the emulation reproduces itself bit for bit; recompiling each chain prefix from W0 reproduces that stage's tensor; base digest unchanged. Status **emulation-consistent** |
+| **S: source binding** | is each patch tied to its true predecessor? | applying B to a source whose digest differs from W1's (W0, or W1 with A removed) is refused |
 
-The sequential-vs-independent comparison is reported, not gated: arms 3/4 vs 5/6 vs 7 are descriptive of **how** the stack
-fails or succeeds.
+**Pair-level primary endpoint** ("retention-aware coexist"): L, P, R, X, G, V and S all pass for the pair. Secondary: each verdict
+alone, per arm.
+
+### 6.1 Analysis
+
+- Per arm: pairs with primary endpoint / N_pairs, **exact (Clopper-Pearson) 95% interval**, and the per-pair table (all numbers, not
+  only counts). Per verdict the same. With 8 pairs, 8/8 has a lower bound of 63%; this is stated up front, not discovered later.
+- **Comparisons are paired on pairs**: exact McNemar (one-sided) of R vs N, R vs C, D vs N, D vs C on the primary endpoint; Holm
+  correction over those four; R vs D is two-sided and descriptive. An arm is not said to "work" unless its pair-level lower bound and
+  its Holm-adjusted comparisons are as pre-declared in the frozen protocol.
+- **Intention to treat**: pairs where A or B fails to learn *in isolation* stay in the denominator (they fail L); a secondary analysis
+  conditions on both learning in isolation. No pair is excluded after the fact.
+- The trade-off (§2) is a pre-declared secondary endpoint: paired difference in B's paraphrase top-1 count and log-p gain, R and D vs N.
 
 ## 7. Calibration (CAL) and freeze
 
-Before any CONF run:
+CAL is a separate discovery phase on **entities never used by D2, STRESS-CAP-1, RETAIN-1 or any earlier run as trained entities**
+(rule: the next unused discovery `trained_entities` by index, paired consecutively with differing answers, at least two pairs; the
+earlier stress-pair results are **not** used to set any gate). The comparison entities seen in earlier runs are not patched here.
 
-1. **Null patches**: random `(a, b)` of the same footprint, rank and norm as the learned patches, many draws, to give the
-   distribution of every metric under "no learning" (per-prompt rank and log-p change, `S`, real-fact and NLL change). Set
-   `Delta_S`, `Delta_leak`, `Delta_leakmax` and the noise floor for "no change" from it.
-2. **Isolated learning on the CAL pair** (discovery entities 2 and 3): the same arms 1-6 as D2, to set `Delta_retain`,
-   `Delta_learn_gap` and the per-paraphrase floors for L from the observed spread of isolated and cumulative results.
-3. **Freeze.** Write the CONF entity pair (rule-drawn from `tasks.json`, unopened), answers, negative-control answers,
-   comparison entities, rho, steps, every threshold and every endpoint into the frozen protocol, commit it, and only then run.
-
-The run is deterministic on the declared backend, so run-to-run noise is zero; the noise that matters is sampling over
-entities. The confirmatory phase therefore uses **at least eight independent entity pairs**, and every rate is over pairs; one
-pair supports "worked once", not a rate. CAL uses discovery entities `[2]` and `[3]` only if neither has influenced any tuning
-choice. Both were comparison entities in every earlier run (their leakage was observed; entity `[2]`, Pyldredreia, was among the
-largest leakers) but neither was trained on, nor was any parameter, threshold or footprint chosen from them; if the reviewer
-regards that as influence, CAL instead takes an untouched discovery pair chosen by the predeclared rule 'the next two unused
-`trained_entities` by index'.
+1. **Null patches** (no learning): `>= 200` random `(a, b)` of the same footprint, rank and norm as the learned patches, applied on
+   W0 and on a learned W1, to get the distribution of every continuous metric under "no learning" (per-prompt log-p change, rank
+   change, `S`, leakage, real-fact and NLL change).
+2. **Floors from the null distribution only**: `T_null_*` = 99th percentile of the absolute null change on that metric.
+   `Delta_retain` = `T_null` for first-patch log-p drift. The **method's own CAL results are used only to check feasibility and to
+   report; they are never used to loosen a threshold.** If R or D cannot meet the null-derived floor, the floor stays and the pair
+   rate is whatever it is.
+3. **Isolated learning** at rho 0.40 on the CAL pairs, to check that the configuration learns on untouched entities. A failure is a
+   negative result for this configuration, reported, with no re-tuning inside this protocol.
+4. **Lambda.** Default and recommended: **lambda = 1.0 for R and D, fixed, no calibration.** If review wants the plasticity/retention
+   trade-off addressed, a *registered* grid (e.g. {0.3, 1, 3}) can be run **on CAL pairs only**, with the selection rule (retention
+   gate met, then maximal B paraphrase gain) written before running; CONF then uses the chosen value once. Not run until reviewed.
+5. **Freeze**: entity-draw seed, N_pairs, orders, rho, steps, lambda, every threshold, every endpoint and the analysis plan are
+   committed in a frozen protocol, with a hash recorded, **before `tasks.json` is opened.**
 
 ## 8. Declared failure outcomes (each reported as such)
 
-- A or B does not learn in isolation under the frozen configuration: negative result for this footprint and rank, no
-  cumulative claim.
-- Both learn, composition (arms 3/4) fails but cumulative (arms 5/6) succeeds: independent patches do not compose, sequential
-  learning does: reported with the arm-7 and §5.3 rounding evidence.
-- Composition and cumulative both fail on R: interference. Reported with which element survival or which downstream layer
-  (§4 same-layer note) explains it, if the data say.
-- Order dependence (3 differs from 4, or 5 from 6): non-commutative; reported.
-- X fails (leakage grows, e.g. onto name neighbours): reported; this is expected to worsen as patches accumulate.
-- G fails: collateral. V fails: a defect, not a result.
+- A or B does not learn in isolation on the fresh pairs: negative for this footprint, rank and rho.
+- R and D no better than N or C on the pair-level endpoint: the discovery advantage did not replicate (it came from selected,
+  overlapping pairs).
+- Training prompts retained but P fails (second patch does not generalise): over-retention; the plasticity/retention trade-off,
+  reported with the paraphrase endpoint, not rescued by changing lambda inside CONF.
+- X fails: cross-entity leakage is not controlled by these retention objectives (it was not in discovery); reported.
+- G fails: collateral. V or S fails: a defect, not a result.
+- R succeeds and D fails (or the reverse): reported; they are not merged.
 
-## 9. Emulated vs native, and the two claims
+## 9. Emulated vs native
 
-Everything runs in emulation until the engine implements `add_low_rank_columns` (E1-E3 in `DESIGN.md` §9) and the independent
-verifier contract exists (V1, separate implementer). **Discovery does not wait for them.** Until then **no result may be called
-"verified"**: the word is `emulation-consistent`. Two claims are kept apart: *two-patch behavioural retention demonstrated*
-(both behaviours survive sequential learning; achievable first) and *numerically verified cumulative patch learning* (the
-engine and the independent verifier reproduce the whole chain; a separate later milestone). If the native path is
-still unavailable at CONF, the CONF verdict V is "emulation-consistent" and the claim is limited accordingly; it is not
-upgraded afterwards without re-running V on the engine.
+Everything runs in emulation until the engine implements `add_low_rank_columns` and the independent verifier contract exists (a
+separate implementer; #805/#806 plus the new op kind are not final). CONF verdict V is **emulation-consistent** and the claim is
+limited to *retention-aware two-patch behaviour in emulation*. "Native compiled and independently verified cumulative learning" is a
+separate later milestone: a successful CONF chain would be compiled natively and checked by the verifier, and V upgraded only then.
 
-## 10. Reviewer decisions (2026-11-14)
+## 10. Reviewer decisions of record
 
-1. Arms 6 and 7 are kept; all seven arms run.
-2. Confirmation targets **at least eight** independent entity pairs, sampled by a fixed rule without replacement; the unit of
-   replication is the entity pair.
-3. Calibration uses discovery entities `[2]` and `[3]`, subject to the condition in §7 (fallback: the next two unused entities).
-4. Discovery does not wait for native compilation; the numerical verdict is explicitly `emulation-consistent`.
-5. Every threshold comes from calibration, set before confirmation; no Frozoria/Dresalthaia number is used to choose one.
+1. All D2 arms kept; confirmation needs at least eight independent entity pairs; the unit is the pair. (2026-11-14)
+2. Discovery does not wait for native compilation; V is `emulation-consistent`. (2026-11-14)
+3. Thresholds come from calibration set before confirmation; no discovery number sets one. (2026-11-14)
+4. After RETAIN-1: commit the evidence, propose this retention-aware protocol, do not start confirmation, native integration or
+   optimiser searches before review; describe D as using a stored first-patch prompt; record the 13/14 vs 8/18 vs 5/18 trade-off.
 
-Still open: the number of confirmatory pairs beyond the minimum of eight, the fixed sampling rule for them, and the form of the
-`Delta_*` thresholds (absolute vs relative); settled at the CAL review.
+## 11. Open items for review (blockers and decisions)
 
-## 11. Out of scope
+- **B1 entity supply.** 8 pairs need 16 eligible entities, 12 pairs need 24, none overlapping discovery or the retention set. I have
+  not opened `tasks.json`; if it has fewer, `build_tasks.py` must be extended with a new committed seed *before* freeze (counts only,
+  no outcomes).
+- **B2 paraphrase criterion.** The fraction `f` (proposed 0.5 of isolated gain) is a design choice, not derived from data; review
+  must accept or replace it before freeze. RETAIN-1 showed R/D paraphrase top-1 at 5/18 vs 8/18, so P may fail broadly: that is
+  informative, not a reason to relax it.
+- **B3 leakage.** Retention did not control partner leakage in discovery (several nats). X may fail for all arms; the protocol
+  reports that rather than redefining X.
+- **B4 rho.** 0.40 was chosen from discovery on adversarial pairs; CAL checks it on untouched entities only.
+- **B5 D0 and lambda grid** are optional discovery additions (§7.4, §3), unrun and awaiting review.
+- **B6 scale.** Two patches only. Longer chains, patch C, retention-set growth and obligation conflicts are untested.
+- **B7 native/verifier** milestone outstanding (§9).
 
-Patch C and longer chains, a different layer or rank, address discovery without the target's own activation, optimiser
-tuning (any blocker found in D2 is reported and decided separately), overlay patches, merging/consolidation, other models, and
-any engine or verifier change.
+## 12. Out of scope
+
+Patch C and longer chains, a different layer or rank, address discovery without the target's own activation, optimiser tuning,
+overlay patches, merging/consolidation, other models, example-free retention claims, and any engine or verifier change.
