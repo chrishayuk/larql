@@ -20,7 +20,7 @@
 
 use crate::format::vindex3::opplan::exec::decode::DecodeSession;
 use crate::format::vindex3::opplan::exec::hyper_connection::{head_reduce, Bundle, Mutation};
-use crate::format::vindex3::opplan::exec::kv::RowKvState;
+use crate::format::vindex3::opplan::exec::kv::{KvState, RowKvState};
 use crate::format::vindex3::opplan::exec::observe::HcSite;
 use crate::format::vindex3::opplan::exec::prepared::{ExecutionSlice, PreparedOperands};
 use crate::format::vindex3::opplan::exec::reference::ReferenceBackend;
@@ -333,6 +333,26 @@ fn from_tokens_the_batch_and_decode_traversals_agree_to_the_bit() {
             assert_eq!(bundles[position].stream(stream), row.as_slice());
         }
     }
+}
+
+/// Every-position logits are gated for a single-stream residual only. A
+/// hyper-connected component leaves the stack through a per-position
+/// reduction and is refused before any state moves.
+#[test]
+fn step_many_logits_refuses_a_hyper_connected_component() {
+    let sub = substrate::build(Variant::HeadBearing);
+    let ops = prepare(&sub, ExecutionSlice::Full).unwrap();
+    let backend = ReferenceBackend::new();
+    let mut kv = RowKvState::default();
+    {
+        let mut session = DecodeSession::over_prepared(&sub.plan, &ops, &backend, &mut kv).unwrap();
+        let error = session
+            .step_many_logits(&[4, 1, 6])
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("single-stream residual"), "{error}");
+    }
+    assert_eq!(kv.position(), 0);
 }
 
 /// `step_many` is the batch traversal in decode clothing: on a
