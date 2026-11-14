@@ -1,0 +1,273 @@
+{
+ "protocol": "PATCH-TRAIN-2 stress-pair selection (DISCOVERY; no training)",
+ "candidates": [
+  "Kirfroia",
+  "Brimokvolia",
+  "Yemsalia",
+  "Queldreia",
+  "Brivolia",
+  "Nexthaia",
+  "Garmokthaia",
+  "Pylthadreia",
+  "Frosalvolia",
+  "Thanexvolia",
+  "Lunfrofroia",
+  "Nexfroia",
+  "Yemdreia",
+  "Volpyllunia",
+  "Yemlunzoria",
+  "Nexlunsalia",
+  "Thapylvolia",
+  "Mokzorbriia",
+  "Mokyemsalia",
+  "Thalunmokia"
+ ],
+ "excluded": [
+  "Frozoria",
+  "Dresalthaia",
+  "Pyldredreia",
+  "Thalunvolia"
+ ],
+ "n_eligible_pairs": 182,
+ "rule": "highest address cosine among eligible pairs (different assigned answers); ties by lower index",
+ "cosine_distribution": {
+  "min": -0.2064091850482006,
+  "median": -0.04930112367204266,
+  "p90": 0.039215368839736434,
+  "max": 0.33920114844097937
+ },
+ "reference_pair_cosine_Frozoria_Dresalthaia": 0.032426537011576884,
+ "selected": {
+  "i": 1,
+  "j": 16,
+  "entities": [
+   "Brimokvolia",
+   "Thapylvolia"
+  ],
+  "answers": [
+   " Dallas",
+   " Boston"
+  ],
+  "address_cosine": 0.33920114844097937,
+  "b_i_dot_z_i": 0.6422639291071633,
+  "b_j_dot_z_j": 0.7390162672325769,
+  "b_i_dot_z_j": 0.4368035650944355,
+  "b_j_dot_z_i": 0.38954810995035427,
+  "cross_over_target": [
+   0.6800997927777971,
+   0.5271170977184445
+  ]
+ },
+ "top10": [
+  {
+   "i": 1,
+   "j": 16,
+   "entities": [
+    "Brimokvolia",
+    "Thapylvolia"
+   ],
+   "answers": [
+    " Dallas",
+    " Boston"
+   ],
+   "address_cosine": 0.33920114844097937,
+   "b_i_dot_z_i": 0.6422639291071633,
+   "b_j_dot_z_j": 0.7390162672325769,
+   "b_i_dot_z_j": 0.4368035650944355,
+   "b_j_dot_z_i": 0.38954810995035427,
+   "cross_over_target": [
+    0.6800997927777971,
+    0.5271170977184445
+   ]
+  },
+  {
+   "i": 8,
+   "j": 16,
+   "entities": [
+    "Frosalvolia",
+    "Thapylvolia"
+   ],
+   "answers": [
+    " Lyon",
+    " Boston"
+   ],
+   "address_cosine": 0.2778802767620541,
+   "b_i_dot_z_i": 0.6749047733868834,
+   "b_j_dot_z_j": 0.7390162672325769,
+   "b_i_dot_z_j": 0.36948749010548987,
+   "b_j_dot_z_i": 0.40883898989205747,
+   "cross_over_target": [
+    0.5474661088130789,
+    0.5532205555136869
+   ]
+  },
+  {
+   "i": 1,
+   "j": 8,
+   "entities": [
+    "Brimokvolia",
+    "Frosalvolia"
+   ],
+   "answers": [
+    " Dallas",
+    " Lyon"
+   ],
+   "address_cosine": 0.24415298269498392,
+   "b_i_dot_z_i": 0.6422639291071633,
+   "b_j_dot_z_j": 0.6749047733868834,
+   "b_i_dot_z_j": 0.39348332451338996,
+   "b_j_dot_z_i": 0.3129540820104396,
+   "cross_over_target": [
+    0.6126505112320207,
+    0.46370109436319157
+   ]
+  },
+  {
+   "i": 10,
+   "j": 11,
+   "entities": [
+    "Lunfrofroia",
+    "Nexfroia"
+   ],
+   "answers": [
+    " Bergen",
+    " Porto"
+   ],
+   "address_cosine": 0.18478364291607646,
+   "b_i_dot_z_i": 1.0847522745259794,
+   "b_j_dot_z_j": 0.863861672273821,
+   "b_i_dot_z_j": 0.54674928087281,
+   "b_j_dot_z_i": 0.6591006406713701,
+   "cross_over_target": [
+    0.5040314675640863,
+    0.7629701164267568
+   ]
+  },
+  {
+   "i": 5,
+   "j": 6,
+   "entities": [
+    "Nexthaia",
+    "Garmokthaia"
+   ],
+   "answers": [
+    " Seattle",
+    " Nagoya"
+   ],
+   "address_cosine": 0.17227797388606564,
+   "b_i_dot_z_i": 0.919402882161801,
+   "b_j_dot_z_j": 1.0095817711141517,
+   "b_i_dot_z_j": 0.4270238380091489,
+   "b_j_dot_z_i": 0.3641547074544302,
+   "cross_over_target": [
+    0.46445779787538144,
+    0.36069857625554913
+   ]
+  },
+  {
+   "i": 0,
+   "j": 11,
+   "entities": [
+    "Kirfroia",
+    "Nexfroia"
+   ],
+   "answers": [
+    " Turin",
+    " Porto"
+   ],
+   "address_cosine": 0.1500746529211045,
+   "b_i_dot_z_i": 0.7831131121123012,
+   "b_j_dot_z_j": 0.863861672273821,
+   "b_i_dot_z_j": 0.3943859515879454,
+   "b_j_dot_z_i": 0.4523804572992005,
+   "cross_over_target": [
+    0.5036130100339695,
+    0.5236723329887566
+   ]
+  },
+  {
+   "i": 9,
+   "j": 10,
+   "entities": [
+    "Thanexvolia",
+    "Lunfrofroia"
+   ],
+   "answers": [
+    " Leeds",
+    " Bergen"
+   ],
+   "address_cosine": 0.11829316407136918,
+   "b_i_dot_z_i": 0.7576756775716526,
+   "b_j_dot_z_j": 1.0847522745259794,
+   "b_i_dot_z_j": 0.02419483406862471,
+   "b_j_dot_z_i": 0.08158431187133508,
+   "cross_over_target": [
+    0.03193296919094599,
+    0.07521008601432637
+   ]
+  },
+  {
+   "i": 2,
+   "j": 7,
+   "entities": [
+    "Yemsalia",
+    "Pylthadreia"
+   ],
+   "answers": [
+    " Denver",
+    " Osaka"
+   ],
+   "address_cosine": 0.1025257193648468,
+   "b_i_dot_z_i": 1.1381784544984492,
+   "b_j_dot_z_j": 0.9189008403866322,
+   "b_i_dot_z_j": 0.11074784603055596,
+   "b_j_dot_z_i": 0.10676976510566447,
+   "cross_over_target": [
+    0.09730270819382028,
+    0.11619291267678082
+   ]
+  },
+  {
+   "i": 2,
+   "j": 18,
+   "entities": [
+    "Yemsalia",
+    "Mokyemsalia"
+   ],
+   "answers": [
+    " Denver",
+    " Nagoya"
+   ],
+   "address_cosine": 0.10022407225734786,
+   "b_i_dot_z_i": 1.1381784544984492,
+   "b_j_dot_z_j": 1.090543596020855,
+   "b_i_dot_z_j": 0.4844626871397395,
+   "b_j_dot_z_i": 0.5462402817576971,
+   "cross_over_target": [
+    0.4256473887947767,
+    0.5008880743060649
+   ]
+  },
+  {
+   "i": 11,
+   "j": 16,
+   "entities": [
+    "Nexfroia",
+    "Thapylvolia"
+   ],
+   "answers": [
+    " Porto",
+    " Boston"
+   ],
+   "address_cosine": 0.09116390135727072,
+   "b_i_dot_z_i": 0.863861672273821,
+   "b_j_dot_z_j": 0.7390162672325769,
+   "b_i_dot_z_j": -0.03991847382390744,
+   "b_j_dot_z_i": -0.07809910767140998,
+   "cross_over_target": [
+    -0.046209335481727856,
+    -0.10567982212877501
+   ]
+  }
+ ]
+}

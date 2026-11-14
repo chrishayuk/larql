@@ -1,0 +1,638 @@
+{
+ "protocol": "RETAIN-1 classification (DISCOVERY ONLY)",
+ "cases": [
+  {
+   "pair": 1,
+   "order": "Brimokvolia_then_Thapylvolia",
+   "first": "Brimokvolia",
+   "second": "Thapylvolia",
+   "methods": {
+    "composition": {
+     "first_retained": false,
+     "second_learned": true,
+     "coexist": false,
+     "over_retention": false,
+     "first_train_rank": 15,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 0,
+     "first_train_logp_change_vs_isolated": -5.749903042567894,
+     "second_paraphrase_top1": 0,
+     "partner_dlogp": [
+      0.6056594848632812,
+      6.37578821182251
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.0005027065757943205,
+     "limits_violated": false
+    },
+    "N": {
+     "first_retained": false,
+     "second_learned": true,
+     "coexist": false,
+     "over_retention": false,
+     "first_train_rank": 7,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 0,
+     "first_train_logp_change_vs_isolated": -2.9227464988362044,
+     "second_paraphrase_top1": 3,
+     "partner_dlogp": [
+      -4.297889709472656,
+      8.403634071350098
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.0037079177984669087,
+     "limits_violated": false
+    },
+    "R": {
+     "first_retained": true,
+     "second_learned": true,
+     "coexist": true,
+     "over_retention": false,
+     "first_train_rank": 1,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 2,
+     "first_train_logp_change_vs_isolated": -0.0005785778630524874,
+     "second_paraphrase_top1": 2,
+     "partner_dlogp": [
+      -1.3838253021240234,
+      -1.7173957824707031
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.0037574126940818076,
+     "limits_violated": false
+    },
+    "D": {
+     "first_retained": true,
+     "second_learned": true,
+     "coexist": true,
+     "over_retention": false,
+     "first_train_rank": 1,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 2,
+     "first_train_logp_change_vs_isolated": -0.0011787808034569025,
+     "second_paraphrase_top1": 1,
+     "partner_dlogp": [
+      0.3873462677001953,
+      -0.12408733367919922
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.004342632133419677,
+     "limits_violated": false
+    }
+   },
+   "advantage_over_N": {
+    "R": true,
+    "D": true
+   },
+   "advantage_over_composition": {
+    "N": false,
+    "R": true,
+    "D": true
+   }
+  },
+  {
+   "pair": 1,
+   "order": "Thapylvolia_then_Brimokvolia",
+   "first": "Thapylvolia",
+   "second": "Brimokvolia",
+   "methods": {
+    "composition": {
+     "first_retained": true,
+     "second_learned": false,
+     "coexist": false,
+     "over_retention": true,
+     "first_train_rank": 1,
+     "second_train_rank": 15,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 1,
+     "first_train_logp_change_vs_isolated": -0.8571306060766801,
+     "second_paraphrase_top1": 0,
+     "partner_dlogp": [
+      6.375742435455322,
+      0.6217517852783203
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.0004917753844702055,
+     "limits_violated": false
+    },
+    "N": {
+     "first_retained": false,
+     "second_learned": true,
+     "coexist": false,
+     "over_retention": false,
+     "first_train_rank": 4,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 0,
+     "first_train_logp_change_vs_isolated": -4.255505223176442,
+     "second_paraphrase_top1": 1,
+     "partner_dlogp": [
+      -1.391179084777832,
+      4.680968284606934
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": 0.004405173934808104,
+     "limits_violated": false
+    },
+    "R": {
+     "first_retained": true,
+     "second_learned": true,
+     "coexist": true,
+     "over_retention": false,
+     "first_train_rank": 1,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 2,
+     "first_train_logp_change_vs_isolated": -0.0008331282297149301,
+     "second_paraphrase_top1": 0,
+     "partner_dlogp": [
+      0.40218544006347656,
+      -0.7370471954345703
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": 0.006397728158646032,
+     "limits_violated": false
+    },
+    "D": {
+     "first_retained": true,
+     "second_learned": true,
+     "coexist": true,
+     "over_retention": false,
+     "first_train_rank": 1,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 2,
+     "first_train_logp_change_vs_isolated": -0.005160752567462623,
+     "second_paraphrase_top1": 1,
+     "partner_dlogp": [
+      0.36018943786621094,
+      -0.2761878967285156
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": 0.003675573012408062,
+     "limits_violated": false
+    }
+   },
+   "advantage_over_N": {
+    "R": true,
+    "D": true
+   },
+   "advantage_over_composition": {
+    "N": false,
+    "R": true,
+    "D": true
+   }
+  },
+  {
+   "pair": 2,
+   "order": "Frosalvolia_then_Thapylvolia",
+   "first": "Frosalvolia",
+   "second": "Thapylvolia",
+   "methods": {
+    "composition": {
+     "first_retained": false,
+     "second_learned": false,
+     "coexist": false,
+     "over_retention": false,
+     "first_train_rank": 13,
+     "second_train_rank": 5,
+     "first_prompts_top1_in_isolation": 3,
+     "of_which_still_top1": 0,
+     "first_train_logp_change_vs_isolated": -4.503815638134256,
+     "second_paraphrase_top1": 0,
+     "partner_dlogp": [
+      1.8223028182983398,
+      9.15361213684082
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.004344331116235445,
+     "limits_violated": false
+    },
+    "N": {
+     "first_retained": false,
+     "second_learned": true,
+     "coexist": false,
+     "over_retention": false,
+     "first_train_rank": 14,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 3,
+     "of_which_still_top1": 0,
+     "first_train_logp_change_vs_isolated": -4.422941671917215,
+     "second_paraphrase_top1": 2,
+     "partner_dlogp": [
+      -14.5126371383667,
+      9.551548480987549
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.008124503768792923,
+     "limits_violated": false
+    },
+    "R": {
+     "first_retained": true,
+     "second_learned": true,
+     "coexist": true,
+     "over_retention": false,
+     "first_train_rank": 1,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 3,
+     "of_which_still_top1": 3,
+     "first_train_logp_change_vs_isolated": -0.0003740058746188879,
+     "second_paraphrase_top1": 1,
+     "partner_dlogp": [
+      -8.101523399353027,
+      2.922112464904785
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.003413416758304866,
+     "limits_violated": false
+    },
+    "D": {
+     "first_retained": true,
+     "second_learned": true,
+     "coexist": true,
+     "over_retention": false,
+     "first_train_rank": 1,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 3,
+     "of_which_still_top1": 2,
+     "first_train_logp_change_vs_isolated": -0.0002862622495740652,
+     "second_paraphrase_top1": 0,
+     "partner_dlogp": [
+      -9.503157615661621,
+      3.941258430480957
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.008563963305048716,
+     "limits_violated": false
+    }
+   },
+   "advantage_over_N": {
+    "R": true,
+    "D": true
+   },
+   "advantage_over_composition": {
+    "N": false,
+    "R": true,
+    "D": true
+   }
+  },
+  {
+   "pair": 2,
+   "order": "Thapylvolia_then_Frosalvolia",
+   "first": "Thapylvolia",
+   "second": "Frosalvolia",
+   "methods": {
+    "composition": {
+     "first_retained": false,
+     "second_learned": false,
+     "coexist": false,
+     "over_retention": false,
+     "first_train_rank": 5,
+     "second_train_rank": 13,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 0,
+     "first_train_logp_change_vs_isolated": -3.1225973557448015,
+     "second_paraphrase_top1": 0,
+     "partner_dlogp": [
+      9.148758888244629,
+      1.8269433975219727
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.0042831997911467745,
+     "limits_violated": false
+    },
+    "N": {
+     "first_retained": true,
+     "second_learned": true,
+     "coexist": true,
+     "over_retention": false,
+     "first_train_rank": 1,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 1,
+     "first_train_logp_change_vs_isolated": -0.5517739843344316,
+     "second_paraphrase_top1": 0,
+     "partner_dlogp": [
+      -5.0032854080200195,
+      2.7233238220214844
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": 0.0007458855124080621,
+     "limits_violated": false
+    },
+    "R": {
+     "first_retained": true,
+     "second_learned": true,
+     "coexist": true,
+     "over_retention": false,
+     "first_train_rank": 1,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 2,
+     "first_train_logp_change_vs_isolated": 0.0001713501987978816,
+     "second_paraphrase_top1": 0,
+     "partner_dlogp": [
+      -2.2435731887817383,
+      -10.462632179260254
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.0006046134884618581,
+     "limits_violated": false
+    },
+    "D": {
+     "first_retained": true,
+     "second_learned": true,
+     "coexist": true,
+     "over_retention": false,
+     "first_train_rank": 1,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 2,
+     "first_train_logp_change_vs_isolated": 8.079269900918007e-05,
+     "second_paraphrase_top1": 0,
+     "partner_dlogp": [
+      -0.4395284652709961,
+      -10.321711540222168
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": 0.001005926052061401,
+     "limits_violated": false
+    }
+   },
+   "advantage_over_N": {
+    "R": false,
+    "D": false
+   },
+   "advantage_over_composition": {
+    "N": true,
+    "R": true,
+    "D": true
+   }
+  },
+  {
+   "pair": 3,
+   "order": "Brimokvolia_then_Frosalvolia",
+   "first": "Brimokvolia",
+   "second": "Frosalvolia",
+   "methods": {
+    "composition": {
+     "first_retained": true,
+     "second_learned": false,
+     "coexist": false,
+     "over_retention": true,
+     "first_train_rank": 1,
+     "second_train_rank": 4,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 1,
+     "first_train_logp_change_vs_isolated": -0.579528947127983,
+     "second_paraphrase_top1": 0,
+     "partner_dlogp": [
+      7.670193672180176,
+      8.154854774475098
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.004360968325318293,
+     "limits_violated": false
+    },
+    "N": {
+     "first_retained": false,
+     "second_learned": true,
+     "coexist": false,
+     "over_retention": false,
+     "first_train_rank": 4,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 0,
+     "first_train_logp_change_vs_isolated": -3.201220352901146,
+     "second_paraphrase_top1": 1,
+     "partner_dlogp": [
+      -5.509432792663574,
+      15.370124697685242
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": 0.0008532099363183221,
+     "limits_violated": false
+    },
+    "R": {
+     "first_retained": true,
+     "second_learned": true,
+     "coexist": true,
+     "over_retention": false,
+     "first_train_rank": 1,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 2,
+     "first_train_logp_change_vs_isolated": 0.001471475581638515,
+     "second_paraphrase_top1": 1,
+     "partner_dlogp": [
+      -2.0697078704833984,
+      6.319601058959961
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": 0.0019790264738706043,
+     "limits_violated": false
+    },
+    "D": {
+     "first_retained": true,
+     "second_learned": true,
+     "coexist": true,
+     "over_retention": false,
+     "first_train_rank": 1,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 2,
+     "of_which_still_top1": 2,
+     "first_train_logp_change_vs_isolated": 0.00045204651542007923,
+     "second_paraphrase_top1": 1,
+     "partner_dlogp": [
+      0.4720592498779297,
+      7.956635475158691
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": 0.0031760400082885276,
+     "limits_violated": false
+    }
+   },
+   "advantage_over_N": {
+    "R": true,
+    "D": true
+   },
+   "advantage_over_composition": {
+    "N": false,
+    "R": true,
+    "D": true
+   }
+  },
+  {
+   "pair": 3,
+   "order": "Frosalvolia_then_Brimokvolia",
+   "first": "Frosalvolia",
+   "second": "Brimokvolia",
+   "methods": {
+    "composition": {
+     "first_retained": false,
+     "second_learned": true,
+     "coexist": false,
+     "over_retention": false,
+     "first_train_rank": 4,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 3,
+     "of_which_still_top1": 0,
+     "first_train_logp_change_vs_isolated": -2.7234587541315705,
+     "second_paraphrase_top1": 0,
+     "partner_dlogp": [
+      8.163230895996094,
+      7.6674723625183105
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.00453227708319659,
+     "limits_violated": false
+    },
+    "N": {
+     "first_retained": false,
+     "second_learned": true,
+     "coexist": false,
+     "over_retention": false,
+     "first_train_rank": 3,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 3,
+     "of_which_still_top1": 0,
+     "first_train_logp_change_vs_isolated": -1.9648779502604157,
+     "second_paraphrase_top1": 1,
+     "partner_dlogp": [
+      -3.4830245971679688,
+      12.164397358894348
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.008920268852169677,
+     "limits_violated": false
+    },
+    "R": {
+     "first_retained": true,
+     "second_learned": true,
+     "coexist": true,
+     "over_retention": false,
+     "first_train_rank": 1,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 3,
+     "of_which_still_top1": 2,
+     "first_train_logp_change_vs_isolated": 5.942996358498931e-05,
+     "second_paraphrase_top1": 1,
+     "partner_dlogp": [
+      2.7452754974365234,
+      3.786496162414551
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.009539179441307777,
+     "limits_violated": false
+    },
+    "D": {
+     "first_retained": true,
+     "second_learned": true,
+     "coexist": true,
+     "over_retention": false,
+     "first_train_rank": 1,
+     "second_train_rank": 1,
+     "first_prompts_top1_in_isolation": 3,
+     "of_which_still_top1": 3,
+     "first_train_logp_change_vs_isolated": -0.005454275989905,
+     "second_paraphrase_top1": 2,
+     "partner_dlogp": [
+      3.8003721237182617,
+      7.51164436340332
+     ],
+     "real_top1": 1.0,
+     "neutral_delta": -0.009372807350479295,
+     "limits_violated": false
+    }
+   },
+   "advantage_over_N": {
+    "R": true,
+    "D": true
+   },
+   "advantage_over_composition": {
+    "N": false,
+    "R": true,
+    "D": true
+   }
+  }
+ ],
+ "determinism": [
+  {
+   "pair": 1,
+   "order": "Brimokvolia_then_Thapylvolia",
+   "N_equals_stress_cap1": true,
+   "composition_equals_stress_cap1": true
+  },
+  {
+   "pair": 1,
+   "order": "Thapylvolia_then_Brimokvolia",
+   "N_equals_stress_cap1": true,
+   "composition_equals_stress_cap1": true
+  },
+  {
+   "pair": 2,
+   "order": "Frosalvolia_then_Thapylvolia",
+   "N_equals_stress_cap1": true,
+   "composition_equals_stress_cap1": true
+  },
+  {
+   "pair": 2,
+   "order": "Thapylvolia_then_Frosalvolia",
+   "N_equals_stress_cap1": true,
+   "composition_equals_stress_cap1": true
+  },
+  {
+   "pair": 3,
+   "order": "Brimokvolia_then_Frosalvolia",
+   "N_equals_stress_cap1": true,
+   "composition_equals_stress_cap1": true
+  },
+  {
+   "pair": 3,
+   "order": "Frosalvolia_then_Brimokvolia",
+   "N_equals_stress_cap1": true,
+   "composition_equals_stress_cap1": true
+  }
+ ],
+ "counts_out_of_6_cases_NOT_independent": {
+  "composition": {
+   "first_retained": 2,
+   "second_learned": 2,
+   "coexist": 0,
+   "over_retention": 2,
+   "limits_violated": 0
+  },
+  "N": {
+   "first_retained": 1,
+   "second_learned": 6,
+   "coexist": 1,
+   "over_retention": 0,
+   "limits_violated": 0
+  },
+  "R": {
+   "first_retained": 6,
+   "second_learned": 6,
+   "coexist": 6,
+   "over_retention": 0,
+   "limits_violated": 0
+  },
+  "D": {
+   "first_retained": 6,
+   "second_learned": 6,
+   "coexist": 6,
+   "over_retention": 0,
+   "limits_violated": 0
+  }
+ },
+ "advantage_counts": {
+  "R_over_N": 5,
+  "D_over_N": 5,
+  "R_over_composition": 6,
+  "D_over_composition": 6,
+  "N_over_composition": 1
+ }
+}

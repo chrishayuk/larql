@@ -1,0 +1,71 @@
+{
+ "protocol": "PATCH-TRAIN-1 L1 evaluation-path validation",
+ "backend": {
+  "name": "pytorch-cpu-f32-eager-bs1",
+  "torch": "2.14.0",
+  "transformers": "5.5.0",
+  "python": "3.12.2",
+  "threads": 12,
+  "device": "cpu",
+  "model": {
+   "repo": "google/gemma-3-270m-it",
+   "revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3"
+  },
+  "weights": "container BF16 widened exactly to f32 (identity with the checkpoint proved in baseline.json)"
+ },
+ "checks": {
+  "unpatched_reproduces_committed_baseline": {
+   "compared_fields_per_prompt": [
+    "logp_target",
+    "top1_full_vocab",
+    "top1_in_answer_set",
+    "margin_in_set",
+    "rank_in_set"
+   ],
+   "mismatches": 0,
+   "pass": true
+  },
+  "checkpoint_tensor_equals_container_tensor": {
+   "tensor": "9.mlp.down_proj.weight",
+   "pass": true
+  },
+  "emulated_patch_applied_exactly": {
+   "tensor": "9.mlp.down_proj.weight",
+   "footprint_columns": 256,
+   "rank": 1,
+   "profile": "f64-seq-rne1/v1",
+   "elements_changed": 137365,
+   "elements_in_footprint": 163840,
+   "patched_weight_equals_emulator_bits": true,
+   "all_other_parameters_unchanged_while_patched": true,
+   "no_change_outside_footprint_columns": true,
+   "outputs_differ_from_unpatched": true,
+   "pass": true
+  },
+  "base_restored_after_patch": {
+   "model_digest_equal": true,
+   "pass": true
+  },
+  "zero_update_is_identity_end_to_end": {
+   "weight_bits_equal_base": true,
+   "nothing_written": true,
+   "all_metrics_bitwise_equal": true,
+   "pass": true
+  },
+  "engine_compiled_container_loads_through_the_same_path": {
+   "container": "bench/structured-real-2/work/out1.vindex3 (REAL-2, compiled by the engine from a structured op)",
+   "elements_changed_vs_registry": 8,
+   "all_in_row": true,
+   "values_equal_minus_2^-30_times_old": true,
+   "loaded_exactly": true,
+   "pass": true
+  },
+  "immutable_base_never_written": {
+   "checkpoint_unchanged": true,
+   "registry_container_unchanged": true,
+   "in_memory_model_restored": true,
+   "pass": true
+  }
+ },
+ "all_pass": true
+}

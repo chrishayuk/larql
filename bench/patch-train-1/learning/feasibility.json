@@ -1,0 +1,3233 @@
+{
+ "protocol": "PATCH-TRAIN-1 L1 feasibility / sensitivity study (NOT training; NOT confirmatory)",
+ "backend": {
+  "name": "pytorch-cpu-f32-eager-bs1",
+  "torch": "2.14.0",
+  "transformers": "5.5.0",
+  "python": "3.12.2",
+  "threads": 12,
+  "device": "cpu",
+  "model": {
+   "repo": "google/gemma-3-270m-it",
+   "revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3"
+  },
+  "weights": "container BF16 widened exactly to f32 (identity with the checkpoint proved in baseline.json)"
+ },
+ "task_set": "tasks_discovery.json (seed 20261114)",
+ "footprint": {
+  "tensor": "9.mlp.down_proj.weight",
+  "shape": [
+   640,
+   2048
+  ],
+  "columns": 256,
+  "seed": 20261113,
+  "rank": 1,
+  "profile": "f64-seq-rne1/v1",
+  "rms_of_footprint_weights": 0.018414738771026118
+ },
+ "base": {
+  "neutral_nll": 3.4745682467933463,
+  "real_top1": 1.0,
+  "real_mean_logp": -0.042639533118441854,
+  "A.trained_entities_train_template": {
+   "mean_logp_target": -13.768387615680695,
+   "top1_full_vocab": 0.0,
+   "median_rank_full_vocab": 4114,
+   "top1_in_answer_set": 0.125,
+   "mean_margin_in_set": -3.288170576095581,
+   "mean_logp_answer_set_mass": -9.704113781452179
+  },
+  "A.trained_entities_paraphrase": {
+   "mean_logp_target": -12.62541796763738,
+   "top1_full_vocab": 0.0,
+   "median_rank_full_vocab": 2475,
+   "top1_in_answer_set": 0.125,
+   "mean_margin_in_set": -2.3668462137381234,
+   "mean_logp_answer_set_mass": -9.17646419008573
+  },
+  "A.heldout_entities_paraphrase": {
+   "mean_logp_target": -12.765263557434082,
+   "top1_full_vocab": 0.0,
+   "median_rank_full_vocab": 4101,
+   "top1_in_answer_set": 0.0,
+   "mean_margin_in_set": -2.7522428035736084,
+   "mean_logp_answer_set_mass": -9.05069879690806
+  },
+  "B.trained_entities_train_template": {
+   "mean_logp_target": -18.62987381219864,
+   "top1_full_vocab": 0.0,
+   "median_rank_full_vocab": 23371,
+   "top1_in_answer_set": 0.0625,
+   "mean_margin_in_set": -3.1092531085014343,
+   "mean_logp_answer_set_mass": -14.654862344264984
+  },
+  "B.trained_entities_paraphrase": {
+   "mean_logp_target": -16.806420902411144,
+   "top1_full_vocab": 0.0,
+   "median_rank_full_vocab": 19605,
+   "top1_in_answer_set": 0.125,
+   "mean_margin_in_set": -2.0934859116872153,
+   "mean_logp_answer_set_mass": -13.603270014127096
+  },
+  "B.heldout_entities_paraphrase": {
+   "mean_logp_target": -17.617393851280212,
+   "top1_full_vocab": 0.0,
+   "median_rank_full_vocab": 29303,
+   "top1_in_answer_set": 0.08333333333333333,
+   "mean_margin_in_set": -3.051648736000061,
+   "mean_logp_answer_set_mass": -13.461711128552755
+  }
+ },
+ "directions": {
+  "gradient_A": {
+   "info": {
+    "base_train_loss": 13.768387794494629,
+    "top_singular_value": 82.92169189453125,
+    "gradient_frobenius_norm_on_footprint": 84.71186065673828,
+    "fraction_of_gradient_norm_in_top_direction": 0.9788675546927131
+   },
+   "sweep": [
+    {
+     "rho": 0.0001,
+     "update_frobenius": 0.000745376218028191,
+     "elements_changed": 1280,
+     "survival_fraction": 0.0078125,
+     "predicted_survival_half_ulp": 0.007794189453125,
+     "realised_over_ideal_inner_product": 0.9065222811543481,
+     "realised_frobenius_over_ideal": 0.977692006743999,
+     "first_order_loss_change_ideal": -0.061807857096844596,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.4736765693215763,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.041702693508947654,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.706706762313843,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4037,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.2756625413894653,
+       "mean_logp_answer_set_mass": -9.652479350566864
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.590277016162872,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2450,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.3635102113087973,
+       "mean_logp_answer_set_mass": -9.14412228266398
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.727858146031698,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4029,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7473908265431723,
+       "mean_logp_answer_set_mass": -9.016779780387878
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.621334671974182,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23372,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.1050169467926025,
+       "mean_logp_answer_set_mass": -14.649226546287537
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.797178109486897,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19574,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.092628220717112,
+       "mean_logp_answer_set_mass": -13.594515681266785
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.60908079147339,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29137,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.052423357963562,
+       "mean_logp_answer_set_mass": -13.45254953702291
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.473704009496865,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04178145725745708,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.712436974048615,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4042,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.276619255542755,
+       "mean_logp_answer_set_mass": -9.657436311244965
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.593074758847555,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2452,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.3638006448745728,
+       "mean_logp_answer_set_mass": -9.14669265349706
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.730899492899576,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4036,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7479759057362876,
+       "mean_logp_answer_set_mass": -9.019436637560526
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.62229233980179,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23376,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.105325996875763,
+       "mean_logp_answer_set_mass": -14.649976015090942
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.797746698061626,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19569,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.092741906642914,
+       "mean_logp_answer_set_mass": -13.595003306865692
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.60957646369934,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29156,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0523943106333413,
+       "mean_logp_answer_set_mass": -13.453099886576334
+      }
+     }
+    },
+    {
+     "rho": 0.0003,
+     "update_frobenius": 0.0022361286540845725,
+     "elements_changed": 3049,
+     "survival_fraction": 0.018609619140625,
+     "predicted_survival_half_ulp": 0.01854248046875,
+     "realised_over_ideal_inner_product": 0.9300783959334004,
+     "realised_frobenius_over_ideal": 0.9690519343115029,
+     "first_order_loss_change_ideal": -0.18542357129053377,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.4719251103761817,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.039942540928071445,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.584126651287079,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3894,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.250378906726837,
+       "mean_logp_answer_set_mass": -9.550097495317459
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.520272076129913,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2383,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.357076565424601,
+       "mean_logp_answer_set_mass": -9.079710493485132
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.653369665145874,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3913,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7375917037328086,
+       "mean_logp_answer_set_mass": -8.94924940665563
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.604315400123596,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23366,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.096522629261017,
+       "mean_logp_answer_set_mass": -14.637994408607483
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.7787699898084,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19500,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -2.091047525405884,
+       "mean_logp_answer_set_mass": -13.5770472685496
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.592491030693054,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 28849,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0543609062830606,
+       "mean_logp_answer_set_mass": -13.43425460656484
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.4719589297510995,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04014183366598445,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.596851825714111,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3912,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.253107786178589,
+       "mean_logp_answer_set_mass": -9.560702860355377
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.526045163472494,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2390,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.3577904303868613,
+       "mean_logp_answer_set_mass": -9.084898442029953
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.659454266230265,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3926,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.738706330458323,
+       "mean_logp_answer_set_mass": -8.954587936401367
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.60561865568161,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23366,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.096860945224762,
+       "mean_logp_answer_set_mass": -14.63905954360962
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.77946525812149,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19501,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -2.0911765694618225,
+       "mean_logp_answer_set_mass": -13.57766737540563
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.593042850494385,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 28858,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.054223895072937,
+       "mean_logp_answer_set_mass": -13.43491017818451
+      }
+     }
+    },
+    {
+     "rho": 0.001,
+     "update_frobenius": 0.007453762180281909,
+     "elements_changed": 8559,
+     "survival_fraction": 0.052239990234375,
+     "predicted_survival_half_ulp": 0.05211181640625,
+     "realised_over_ideal_inner_product": 0.9585606510349967,
+     "realised_frobenius_over_ideal": 0.984866043324643,
+     "first_order_loss_change_ideal": -0.618078570968446,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.466161070751543,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.03479462244528501,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.164137840270996,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3400,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.159258633852005,
+       "mean_logp_answer_set_mass": -9.201716303825378
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.278407951196035,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2157,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.3349200785160065,
+       "mean_logp_answer_set_mass": -8.857294579346975
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.396225849787394,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3530,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7046669324239097,
+       "mean_logp_answer_set_mass": -8.716230273246765
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.545644640922546,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23351,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.066697061061859,
+       "mean_logp_answer_set_mass": -14.599294364452362
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.715249756971996,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19051,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -2.086966892083486,
+       "mean_logp_answer_set_mass": -13.516411582628885
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.535011331240337,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 27878,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.062221884727478,
+       "mean_logp_answer_set_mass": -13.370702981948853
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.466395305986164,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.03511064539998188,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.188138246536255,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3426,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.1647607386112213,
+       "mean_logp_answer_set_mass": -9.221501976251602
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.289247314135233,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2170,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.3362381756305695,
+       "mean_logp_answer_set_mass": -8.867085367441177
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.407734036445618,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3550,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7063709696133933,
+       "mean_logp_answer_set_mass": -8.726410547892252
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.54794281721115,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23354,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.0675655603408813,
+       "mean_logp_answer_set_mass": -14.600923359394073
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.71681608756383,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19063,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -2.0873272816340127,
+       "mean_logp_answer_set_mass": -13.517751415570578
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.536338210105896,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 27888,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.062309900919596,
+       "mean_logp_answer_set_mass": -13.37195360660553
+      }
+     }
+    },
+    {
+     "rho": 0.003,
+     "update_frobenius": 0.022361286540845727,
+     "elements_changed": 20989,
+     "survival_fraction": 0.128106689453125,
+     "predicted_survival_half_ulp": 0.1278076171875,
+     "realised_over_ideal_inner_product": 0.9849712687118884,
+     "realised_frobenius_over_ideal": 0.9980767058014235,
+     "first_order_loss_change_ideal": -1.854235712905338,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.4526843223251213,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.02583508096843919,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -12.061335742473602,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2346,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.8847378492355347,
+       "mean_logp_answer_set_mass": -8.304156363010406
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -11.617271721363068,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1617,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.271358162164688,
+       "mean_logp_answer_set_mass": -8.249914775292078
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -11.69621197382609,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2497,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.633625944455465,
+       "mean_logp_answer_set_mass": -8.082701921463013
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.385442197322845,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23365,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.9806584119796753,
+       "mean_logp_answer_set_mass": -14.493759751319885
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.541305859883625,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 18758,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.0752015511194863,
+       "mean_logp_answer_set_mass": -13.347394148508707
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.37560200691223,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 26714,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0847235918045044,
+       "mean_logp_answer_set_mass": -13.19319482644399
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.452845308960987,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.02598570664486033,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -12.083330273628235,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2372,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.8912283182144165,
+       "mean_logp_answer_set_mass": -8.321684896945953
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -11.62820796171824,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1626,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.2730414668718972,
+       "mean_logp_answer_set_mass": -8.259567946195602
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -11.707603812217712,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2505,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.635188400745392,
+       "mean_logp_answer_set_mass": -8.09274955590566
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.388180673122406,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23367,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.980883240699768,
+       "mean_logp_answer_set_mass": -14.496122539043427
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.542541722456615,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 18764,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.0751585563023887,
+       "mean_logp_answer_set_mass": -13.348670303821564
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.37666340668996,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 26721,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0845837195714316,
+       "mean_logp_answer_set_mass": -13.194371581077576
+      }
+     }
+    },
+    {
+     "rho": 0.01,
+     "update_frobenius": 0.07453762180281909,
+     "elements_changed": 47787,
+     "survival_fraction": 0.291668701171875,
+     "predicted_survival_half_ulp": 0.29110107421875,
+     "realised_over_ideal_inner_product": 0.9970784000659023,
+     "realised_frobenius_over_ideal": 1.0009879616955255,
+     "first_order_loss_change_ideal": -6.180785709684459,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.438851749195772,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.01923093899070712,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -9.511050134897232,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 614,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.1722514927387238,
+       "mean_logp_answer_set_mass": -6.300617039203644
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -9.736057658990225,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 613,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.0826267699400582,
+       "mean_logp_answer_set_mass": -6.512814313173294
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -9.746457397937775,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 619,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -2.4768609007199607,
+       "mean_logp_answer_set_mass": -6.324212948481242
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -17.90333116054535,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 21883,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.671691596508026,
+       "mean_logp_answer_set_mass": -14.176734626293182
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.015231370925903,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 17579,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -2.069185475508372,
+       "mean_logp_answer_set_mass": -12.807487626870474
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -16.87611798445384,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 25088,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -3.1542718410491943,
+       "mean_logp_answer_set_mass": -12.62516681353251
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.4389995286444655,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.019231421252698055,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -9.517420947551727,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 614,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.1740351021289825,
+       "mean_logp_answer_set_mass": -6.30580860376358
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -9.740919520457586,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 616,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.0833290914694467,
+       "mean_logp_answer_set_mass": -6.5171714425086975
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -9.751577893892923,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 619,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -2.477723181247711,
+       "mean_logp_answer_set_mass": -6.328465859095256
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -17.90602433681488,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 21897,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.672613024711609,
+       "mean_logp_answer_set_mass": -14.178784668445587
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.016188939412434,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 17598,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -2.069239536921183,
+       "mean_logp_answer_set_mass": -12.808373411496481
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -16.87713936964671,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 25092,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -3.154363751411438,
+       "mean_logp_answer_set_mass": -12.626129150390625
+      }
+     }
+    },
+    {
+     "rho": 0.03,
+     "update_frobenius": 0.22361286540845726,
+     "elements_changed": 81696,
+     "survival_fraction": 0.4986328125,
+     "predicted_survival_half_ulp": 0.498077392578125,
+     "realised_over_ideal_inner_product": 0.9996670702455598,
+     "realised_frobenius_over_ideal": 1.0004988287462657,
+     "first_order_loss_change_ideal": -18.54235712905338,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.6682378304104843,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.05049873000825755,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -7.692703694105148,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 166,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -1.778824269771576,
+       "mean_logp_answer_set_mass": -4.800455749034882
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -7.682682186365128,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 198,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.254109193881353,
+       "mean_logp_answer_set_mass": -4.40329476694266
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -7.65435924132665,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 245,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -2.3807601928710938,
+       "mean_logp_answer_set_mass": -4.399794747432073
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -17.025575399398804,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19601,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.0121681690216064,
+       "mean_logp_answer_set_mass": -13.594261467456818
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -15.145125806331635,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 16339,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.229155202706655,
+       "mean_logp_answer_set_mass": -11.84776708483696
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -16.017443696657818,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 26949,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -3.3495970169703164,
+       "mean_logp_answer_set_mass": -11.628625392913818
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.668413947610294,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.05051950001507066,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -7.692736357450485,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 166,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -1.7785075306892395,
+       "mean_logp_answer_set_mass": -4.8005393743515015
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -7.682478586832683,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 198,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.253648226459821,
+       "mean_logp_answer_set_mass": -4.403311684727669
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -7.654684762159984,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 245,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -2.3811852037906647,
+       "mean_logp_answer_set_mass": -4.399757732947667
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -17.024802446365356,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19590,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.0119789838790894,
+       "mean_logp_answer_set_mass": -13.593651413917542
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -15.143857419490814,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 16328,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.228936513264974,
+       "mean_logp_answer_set_mass": -11.846660494804382
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -16.016153216362,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 26944,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -3.3493455251057944,
+       "mean_logp_answer_set_mass": -11.627501606941223
+      }
+     }
+    },
+    {
+     "rho": 0.1,
+     "update_frobenius": 0.7453762180281909,
+     "elements_changed": 116400,
+     "survival_fraction": 0.71044921875,
+     "predicted_survival_half_ulp": 0.7099365234375,
+     "realised_over_ideal_inner_product": 1.0000954601577197,
+     "realised_frobenius_over_ideal": 1.0002010277669042,
+     "first_order_loss_change_ideal": -61.80785709684459,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 5.884774344308036,
+      "real_top1": 0.2916666666666667,
+      "real_mean_logp": -2.3459224148343005,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -8.346476435661316,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 186,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.123661458492279,
+       "mean_logp_answer_set_mass": -4.333598956465721
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -8.572259138027826,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 162,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.9300655176242194,
+       "mean_logp_answer_set_mass": -3.8888664891322455
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -8.430864453315735,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 140,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -3.4740731716156006,
+       "mean_logp_answer_set_mass": -4.286360373099645
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -16.820510625839233,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 47778,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.042737901210785,
+       "mean_logp_answer_set_mass": -12.888487577438354
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.699084043502808,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 43972,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.6733402411142984,
+       "mean_logp_answer_set_mass": -13.100279112656912
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.52315926551819,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 66220,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -3.5545327266057334,
+       "mean_logp_answer_set_mass": -13.108306288719177
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 5.886021461807379,
+      "real_top1": 0.2916666666666667,
+      "real_mean_logp": -2.3510605450719595,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -8.349612385034561,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 186,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.126553773880005,
+       "mean_logp_answer_set_mass": -4.334501922130585
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -8.575326830148697,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 162,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.932972624897957,
+       "mean_logp_answer_set_mass": -3.8894556015729904
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -8.43276991446813,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 140,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -3.475635747114817,
+       "mean_logp_answer_set_mass": -4.2870931923389435
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -16.821186542510986,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 47818,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.0438104271888733,
+       "mean_logp_answer_set_mass": -12.887907683849335
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.69933537642161,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 44021,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.6742681860923767,
+       "mean_logp_answer_set_mass": -13.100042223930359
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.522985537846882,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 66097,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -3.554670492808024,
+       "mean_logp_answer_set_mass": -13.108216762542725
+      }
+     }
+    },
+    {
+     "rho": 0.3,
+     "update_frobenius": 2.2361286540845726,
+     "elements_changed": 138350,
+     "survival_fraction": 0.84442138671875,
+     "predicted_survival_half_ulp": 0.84420166015625,
+     "realised_over_ideal_inner_product": 1.000229579028674,
+     "realised_frobenius_over_ideal": 1.00024416535447,
+     "first_order_loss_change_ideal": -185.42357129053377,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 8.22851075244551,
+      "real_top1": 0.0,
+      "real_mean_logp": -8.152545740207037,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -9.939362049102783,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 261,
+       "top1_in_answer_set": 0.1875,
+       "mean_margin_in_set": -4.334475547075272,
+       "mean_logp_answer_set_mass": -4.7556201964616776
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -10.20511225859324,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 250,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -5.040122444430987,
+       "mean_logp_answer_set_mass": -4.389726489782333
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -10.060953458150228,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 137,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -4.484613806009293,
+       "mean_logp_answer_set_mass": -4.962357501188914
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -20.0659921169281,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 122927,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -4.750717341899872,
+       "mean_logp_answer_set_mass": -14.781426668167114
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -20.77763440211614,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 104605,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -3.682856500148773,
+       "mean_logp_answer_set_mass": -16.43855806191762
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -21.27520775794983,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 98669,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -4.094292799631755,
+       "mean_logp_answer_set_mass": -16.573193311691284
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 8.227923160841485,
+      "real_top1": 0.0,
+      "real_mean_logp": -8.152387311061224,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -9.94133546948433,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 264,
+       "top1_in_answer_set": 0.1875,
+       "mean_margin_in_set": -4.336188957095146,
+       "mean_logp_answer_set_mass": -4.75621372461319
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -10.207992722590765,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 252,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -5.042250658075015,
+       "mean_logp_answer_set_mass": -4.390668531258901
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -10.066725432872772,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 137,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -4.4889532923698425,
+       "mean_logp_answer_set_mass": -4.964724351962407
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -20.07371687889099,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 123036,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -4.748210668563843,
+       "mean_logp_answer_set_mass": -14.790955781936646
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -20.78423249721527,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 104587,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -3.680741826693217,
+       "mean_logp_answer_set_mass": -16.446145276228588
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -21.282140334447224,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 98604,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -4.093699494997661,
+       "mean_logp_answer_set_mass": -16.58065891265869
+      }
+     }
+    },
+    {
+     "rho": 1.0,
+     "update_frobenius": 7.453762180281909,
+     "elements_changed": 152573,
+     "survival_fraction": 0.931231689453125,
+     "predicted_survival_half_ulp": 0.931024169921875,
+     "realised_over_ideal_inner_product": 0.9998049149356797,
+     "realised_frobenius_over_ideal": 0.9998074950638828,
+     "first_order_loss_change_ideal": -618.0785709684459,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 9.10455399200696,
+      "real_top1": 0.0,
+      "real_mean_logp": -8.815804789463678,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -10.28763061761856,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 296,
+       "top1_in_answer_set": 0.1875,
+       "mean_margin_in_set": -4.580313518643379,
+       "mean_logp_answer_set_mass": -4.86608313024044
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -10.623597264289856,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 298,
+       "top1_in_answer_set": 0.16666666666666666,
+       "mean_margin_in_set": -5.301591694355011,
+       "mean_logp_answer_set_mass": -4.535571580131848
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -10.56949414809545,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 129,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -4.761428435643514,
+       "mean_logp_answer_set_mass": -5.197747419277827
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -21.684410214424133,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 132580,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -5.121038615703583,
+       "mean_logp_answer_set_mass": -16.078096330165863
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -22.146676182746887,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 107700,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -4.014935453732808,
+       "mean_logp_answer_set_mass": -17.520394206047058
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -22.56276575724284,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 103010,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -4.3465925852457685,
+       "mean_logp_answer_set_mass": -17.688432812690735
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 9.107339810924369,
+      "real_top1": 0.0,
+      "real_mean_logp": -8.814527779817581,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -10.288152188062668,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 296,
+       "top1_in_answer_set": 0.1875,
+       "mean_margin_in_set": -4.5796463787555695,
+       "mean_logp_answer_set_mass": -4.8674802631139755
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -10.62416305144628,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 298,
+       "top1_in_answer_set": 0.16666666666666666,
+       "mean_margin_in_set": -5.300738528370857,
+       "mean_logp_answer_set_mass": -4.537020484606425
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -10.571774661540985,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 129,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -4.762291590372722,
+       "mean_logp_answer_set_mass": -5.19944304227829
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -21.687958121299744,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 132559,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -5.119125008583069,
+       "mean_logp_answer_set_mass": -16.082950234413147
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -22.150594472885132,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 107715,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -4.0134501457214355,
+       "mean_logp_answer_set_mass": -17.52552604675293
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -22.565536896387737,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 103131,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -4.3440942366917925,
+       "mean_logp_answer_set_mass": -17.693481922149658
+      }
+     }
+    }
+   ]
+  },
+  "gradient_B": {
+   "info": {
+    "base_train_loss": 18.629873275756836,
+    "top_singular_value": 54.28874969482422,
+    "gradient_frobenius_norm_on_footprint": 56.18463134765625,
+    "fraction_of_gradient_norm_in_top_direction": 0.9662562233237627
+   },
+   "sweep": [
+    {
+     "rho": 0.0001,
+     "update_frobenius": 0.000745376218028191,
+     "elements_changed": 1318,
+     "survival_fraction": 0.00804443359375,
+     "predicted_survival_half_ulp": 0.008001708984375,
+     "realised_over_ideal_inner_product": 0.8409951918208076,
+     "realised_frobenius_over_ideal": 0.9437133358248806,
+     "first_order_loss_change_ideal": -0.040465542929007184,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.4732381355862656,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04246076754134265,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.755402028560638,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4095,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.286629617214203,
+       "mean_logp_answer_set_mass": -9.692650139331818
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.613369286060333,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2466,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.365831434726715,
+       "mean_logp_answer_set_mass": -9.165265629688898
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.753299713134766,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4063,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7512922286987305,
+       "mean_logp_answer_set_mass": -9.039978742599487
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.58945530653,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23119,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.104863941669464,
+       "mean_logp_answer_set_mass": -14.618881702423096
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.78448760509491,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19390,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.0905935764312744,
+       "mean_logp_answer_set_mass": -13.583482166131338
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.595425009727478,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29146,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0488876899083457,
+       "mean_logp_answer_set_mass": -13.441439151763916
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.473391973671793,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.042457970539544476,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.756414830684662,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4100,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.286694586277008,
+       "mean_logp_answer_set_mass": -9.693509578704834
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.614134947458902,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2466,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.365922490755717,
+       "mean_logp_answer_set_mass": -9.165960282087326
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.754019618034363,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4063,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.751360754172007,
+       "mean_logp_answer_set_mass": -9.040612280368805
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.595819354057312,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23164,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.105632960796356,
+       "mean_logp_answer_set_mass": -14.624295771121979
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.786292910575867,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19391,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.0909921129544577,
+       "mean_logp_answer_set_mass": -13.585004270076752
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.597200830777485,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29154,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.049220601717631,
+       "mean_logp_answer_set_mass": -13.443005681037903
+      }
+     }
+    },
+    {
+     "rho": 0.0003,
+     "update_frobenius": 0.0022361286540845725,
+     "elements_changed": 3225,
+     "survival_fraction": 0.019683837890625,
+     "predicted_survival_half_ulp": 0.01962890625,
+     "realised_over_ideal_inner_product": 0.8979212647688377,
+     "realised_frobenius_over_ideal": 0.9605184185652167,
+     "first_order_loss_change_ideal": -0.12139662878702152,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.470608751313025,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04211287334934847,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.729538917541504,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4060,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.2835118770599365,
+       "mean_logp_answer_set_mass": -9.669840931892395
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.589380820592245,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2459,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.3638915717601776,
+       "mean_logp_answer_set_mass": -9.142969379822413
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.729501763979593,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4020,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.749402165412903,
+       "mean_logp_answer_set_mass": -9.01865025361379
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.508863151073456,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 22613,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.0961580872535706,
+       "mean_logp_answer_set_mass": -14.547137200832367
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.74080429474513,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19036,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.085019032160441,
+       "mean_logp_answer_set_mass": -13.544050792853037
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.551650166511536,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 28898,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.04373832543691,
+       "mean_logp_answer_set_mass": -13.401020407676697
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.4707372969939927,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.042118306391785154,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.730626404285431,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4063,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.2838467359542847,
+       "mean_logp_answer_set_mass": -9.670545041561127
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.590683996677399,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2457,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.3641128540039062,
+       "mean_logp_answer_set_mass": -9.144064913193384
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.73071277141571,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4020,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7497108777364097,
+       "mean_logp_answer_set_mass": -9.019546886285147
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.521179139614105,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 22714,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.0976868271827698,
+       "mean_logp_answer_set_mass": -14.557809114456177
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.744431972503662,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19051,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.0857410232226052,
+       "mean_logp_answer_set_mass": -13.54718174537023
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.555312196413677,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 28917,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0443915128707886,
+       "mean_logp_answer_set_mass": -13.40421438217163
+      }
+     }
+    },
+    {
+     "rho": 0.001,
+     "update_frobenius": 0.007453762180281909,
+     "elements_changed": 8897,
+     "survival_fraction": 0.054302978515625,
+     "predicted_survival_half_ulp": 0.0541748046875,
+     "realised_over_ideal_inner_product": 0.9547736442051458,
+     "realised_frobenius_over_ideal": 0.9890252422306626,
+     "first_order_loss_change_ideal": -0.4046554292900718,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.4617065942587972,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04098794424741451,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.640218257904053,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3969,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.2725306153297424,
+       "mean_logp_answer_set_mass": -9.591118395328522
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.506531854470571,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2454,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.357541630665461,
+       "mean_logp_answer_set_mass": -9.065932681163153
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.647396445274353,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3860,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7427943547566733,
+       "mean_logp_answer_set_mass": -8.945091187953949
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.229516923427582,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 20924,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.0664538741111755,
+       "mean_logp_answer_set_mass": -14.2984778881073
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.58981917301814,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 17782,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.065788467725118,
+       "mean_logp_answer_set_mass": -13.407531638940176
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.400107900301617,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 27990,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0262295405069985,
+       "mean_logp_answer_set_mass": -13.260844588279724
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.4617963197852384,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.041020359517763914,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.643258154392242,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3974,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.273759365081787,
+       "mean_logp_answer_set_mass": -9.593157261610031
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.5091050863266,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2455,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.357994019985199,
+       "mean_logp_answer_set_mass": -9.068190693855286
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.64989185333252,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3864,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.743443767229716,
+       "mean_logp_answer_set_mass": -8.94713544845581
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.247674763202667,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 21049,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.068352699279785,
+       "mean_logp_answer_set_mass": -14.314484238624573
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.594808439413708,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 17828,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.0665882428487143,
+       "mean_logp_answer_set_mass": -13.412000159422556
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.404916087786358,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 28030,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.026867628097534,
+       "mean_logp_answer_set_mass": -13.265200138092041
+      }
+     }
+    },
+    {
+     "rho": 0.003,
+     "update_frobenius": 0.022361286540845727,
+     "elements_changed": 21800,
+     "survival_fraction": 0.133056640625,
+     "predicted_survival_half_ulp": 0.132794189453125,
+     "realised_over_ideal_inner_product": 0.983860927273013,
+     "realised_frobenius_over_ideal": 0.9986711155142254,
+     "first_order_loss_change_ideal": -1.2139662878702153,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.438830656163833,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.03847003035237625,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.39534056186676,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3643,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.2439915537834167,
+       "mean_logp_answer_set_mass": -9.37603572010994
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.279755612214407,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2444,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.34181875983874,
+       "mean_logp_answer_set_mass": -8.854869792858759
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.423471768697103,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3459,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.723926385243734,
+       "mean_logp_answer_set_mass": -8.744684537251791
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -17.456184327602386,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 17420,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.9881789684295654,
+       "mean_logp_answer_set_mass": -13.609839737415314
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.174793620904286,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 15577,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -2.011996587117513,
+       "mean_logp_answer_set_mass": -13.030282835165659
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -16.98188614845276,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 25456,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -2.9831575552622476,
+       "mean_logp_answer_set_mass": -12.871679266293844
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.438936986843077,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.038467933124290234,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.396773278713226,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3644,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.2442025542259216,
+       "mean_logp_answer_set_mass": -9.377255618572235
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.281373620033264,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2444,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.3418492873509726,
+       "mean_logp_answer_set_mass": -8.856406400601069
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.42495083808899,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3463,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7240227858225503,
+       "mean_logp_answer_set_mass": -8.745979011058807
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -17.474215507507324,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 17466,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.98867267370224,
+       "mean_logp_answer_set_mass": -13.62646073102951
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.17902131875356,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 15614,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -2.0128040115038552,
+       "mean_logp_answer_set_mass": -13.03403236468633
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -16.98608708381653,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 25456,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -2.983904759089152,
+       "mean_logp_answer_set_mass": -12.87538468837738
+      }
+     }
+    },
+    {
+     "rho": 0.01,
+     "update_frobenius": 0.07453762180281909,
+     "elements_changed": 48454,
+     "survival_fraction": 0.29573974609375,
+     "predicted_survival_half_ulp": 0.295184326171875,
+     "realised_over_ideal_inner_product": 0.9966060995333498,
+     "realised_frobenius_over_ideal": 1.00069581306094,
+     "first_order_loss_change_ideal": -4.046554292900717,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.385952508750082,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.03518674009319511,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -12.662695467472076,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2684,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.1365179419517517,
+       "mean_logp_answer_set_mass": -8.740077465772629
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -11.61066903670629,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1896,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.3146793941656747,
+       "mean_logp_answer_set_mass": -8.231126725673676
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -11.769574443499247,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2381,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.6666017969449363,
+       "mean_logp_answer_set_mass": -8.163031697273254
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -15.079105913639069,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 11261,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.782836675643921,
+       "mean_logp_answer_set_mass": -11.473975002765656
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -14.906404813130697,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 11153,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -1.8796080946922302,
+       "mean_logp_answer_set_mass": -11.855693201224009
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -15.693551858266195,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 16430,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -2.934284249941508,
+       "mean_logp_answer_set_mass": -11.644754787286123
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.386140518829602,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.03517786454540328,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -12.665258765220642,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2689,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.137049049139023,
+       "mean_logp_answer_set_mass": -8.742186844348907
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -11.612942417462667,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1898,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.3146014312903085,
+       "mean_logp_answer_set_mass": -8.233345548311869
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -11.771742343902588,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2383,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.6665783127148948,
+       "mean_logp_answer_set_mass": -8.165135443210602
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -15.090607285499573,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 11291,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.783492863178253,
+       "mean_logp_answer_set_mass": -11.484650433063507
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -14.91005434592565,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 11172,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -1.879674752553304,
+       "mean_logp_answer_set_mass": -11.859296570221582
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -15.69675350189209,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 16446,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -2.9337569077809653,
+       "mean_logp_answer_set_mass": -11.64820279677709
+      }
+     }
+    },
+    {
+     "rho": 0.03,
+     "update_frobenius": 0.22361286540845726,
+     "elements_changed": 81900,
+     "survival_fraction": 0.4998779296875,
+     "predicted_survival_half_ulp": 0.4991455078125,
+     "realised_over_ideal_inner_product": 0.999622201506567,
+     "realised_frobenius_over_ideal": 1.0004664119898456,
+     "first_order_loss_change_ideal": -12.139662878702154,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.4034434727260043,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04807613859156845,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -11.514319956302643,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1350,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.9669750928878784,
+       "mean_logp_answer_set_mass": -7.751727819442749
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -10.62256051103274,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1342,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.278817812601725,
+       "mean_logp_answer_set_mass": -7.301965614159902
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -10.805627544720968,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1871,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.532537341117859,
+       "mean_logp_answer_set_mass": -7.337740242481232
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -11.167632222175598,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1911,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.4592270851135254,
+       "mean_logp_answer_set_mass": -7.825863242149353
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -12.483076274394989,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2670,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -1.7823989689350128,
+       "mean_logp_answer_set_mass": -9.495921651522318
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -13.233582854270935,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 6138,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -3.118028461933136,
+       "mean_logp_answer_set_mass": -9.146554489930471
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.4036416446461395,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.048056788354491196,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -11.515774071216583,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1350,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.967400550842285,
+       "mean_logp_answer_set_mass": -7.752787321805954
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -10.623556554317474,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1344,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.2788593669732413,
+       "mean_logp_answer_set_mass": -7.302931000789006
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -10.806682348251343,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1871,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.5327055255572,
+       "mean_logp_answer_set_mass": -7.33866947889328
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -11.170410633087158,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1917,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.4596880972385406,
+       "mean_logp_answer_set_mass": -7.828486651182175
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -12.485249727964401,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2674,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -1.7821244597434998,
+       "mean_logp_answer_set_mass": -9.498273819684982
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -13.235248366991678,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 6143,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -3.11724845568339,
+       "mean_logp_answer_set_mass": -9.148742020130157
+      }
+     }
+    },
+    {
+     "rho": 0.1,
+     "update_frobenius": 0.7453762180281909,
+     "elements_changed": 117360,
+     "survival_fraction": 0.71630859375,
+     "predicted_survival_half_ulp": 0.7157470703125,
+     "realised_over_ideal_inner_product": 0.9999977517696025,
+     "realised_frobenius_over_ideal": 1.0001076265855104,
+     "first_order_loss_change_ideal": -40.46554292900718,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 4.102961948939732,
+      "real_top1": 0.9583333333333334,
+      "real_mean_logp": -0.22021417102466026,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -10.791907668113708,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1240,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.1823829114437103,
+       "mean_logp_answer_set_mass": -6.9015339612960815
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -10.294423679510752,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1341,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.4805146952470145,
+       "mean_logp_answer_set_mass": -6.844064692656199
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -10.38730808099111,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1370,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.5023908217748008,
+       "mean_logp_answer_set_mass": -6.998620351155599
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -8.760540872812271,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 284,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.0930921733379364,
+       "mean_logp_answer_set_mass": -5.5184144377708435
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -9.649591306845346,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 522,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -2.238528440395991,
+       "mean_logp_answer_set_mass": -6.392189507683118
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -10.393925646940867,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2094,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -3.5056980649630227,
+       "mean_logp_answer_set_mass": -6.05972883105278
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 4.101726596094981,
+      "real_top1": 0.9583333333333334,
+      "real_mean_logp": -0.22063331434037536,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -10.792240738868713,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1241,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.182548940181732,
+       "mean_logp_answer_set_mass": -6.901957213878632
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -10.293920894463858,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1340,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.479879230260849,
+       "mean_logp_answer_set_mass": -6.844337165355682
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -10.387186706066132,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 1370,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.502265294392904,
+       "mean_logp_answer_set_mass": -6.998447795708974
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -8.760366976261139,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 284,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.0925203263759613,
+       "mean_logp_answer_set_mass": -5.518542379140854
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -9.649157454570135,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 524,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -2.237471322218577,
+       "mean_logp_answer_set_mass": -6.392220755418141
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -10.393525203069052,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2091,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -3.5041639606157937,
+       "mean_logp_answer_set_mass": -6.060256948073705
+      }
+     }
+    },
+    {
+     "rho": 0.3,
+     "update_frobenius": 2.2361286540845726,
+     "elements_changed": 140392,
+     "survival_fraction": 0.856884765625,
+     "predicted_survival_half_ulp": 0.856549072265625,
+     "realised_over_ideal_inner_product": 0.9999988624526055,
+     "realised_frobenius_over_ideal": 1.000014042278081,
+     "first_order_loss_change_ideal": -121.39662878702153,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 4.997729453719964,
+      "real_top1": 0.3333333333333333,
+      "real_mean_logp": -2.27558416997393,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -11.292939901351929,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3873,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.2180371284484863,
+       "mean_logp_answer_set_mass": -7.378249377012253
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -10.930325826009115,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2652,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -2.6229737997055054,
+       "mean_logp_answer_set_mass": -7.379504928986232
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -11.02621297041575,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3418,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.6798939307530723,
+       "mean_logp_answer_set_mass": -7.565327723821004
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -8.410548210144043,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 246,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.354282259941101,
+       "mean_logp_answer_set_mass": -5.02082359790802
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -8.885824580987295,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 380,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -2.6134111881256104,
+       "mean_logp_answer_set_mass": -5.383516117930412
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -9.587908109029135,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2310,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -3.635803669691086,
+       "mean_logp_answer_set_mass": -5.16352375348409
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 4.996899388417476,
+      "real_top1": 0.3333333333333333,
+      "real_mean_logp": -2.283349542568127,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -11.297263205051422,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3896,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.218971312046051,
+       "mean_logp_answer_set_mass": -7.381918549537659
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -10.932387371857962,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2664,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -2.6230167845884957,
+       "mean_logp_answer_set_mass": -7.3814675609270735
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -11.028221329053244,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 3428,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.6800806125005088,
+       "mean_logp_answer_set_mass": -7.5670714775721235
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -8.411781013011932,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 246,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.35492280125618,
+       "mean_logp_answer_set_mass": -5.021840900182724
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -8.887537697950998,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 381,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -2.6132876873016357,
+       "mean_logp_answer_set_mass": -5.385497331619263
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -9.588175674279531,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2317,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -3.6331595381100974,
+       "mean_logp_answer_set_mass": -5.165892004966736
+      }
+     }
+    },
+    {
+     "rho": 1.0,
+     "update_frobenius": 7.453762180281909,
+     "elements_changed": 154074,
+     "survival_fraction": 0.94039306640625,
+     "predicted_survival_half_ulp": 0.9402587890625,
+     "realised_over_ideal_inner_product": 0.9998695670264005,
+     "realised_frobenius_over_ideal": 0.9998721788284691,
+     "first_order_loss_change_ideal": -404.65542929007177,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 5.393450504591485,
+      "real_top1": 0.041666666666666664,
+      "real_mean_logp": -3.9774778907497725,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -11.770423531532288,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 5950,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.2454391717910767,
+       "mean_logp_answer_set_mass": -7.819370925426483
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -11.490646739800772,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4229,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.788973699013392,
+       "mean_logp_answer_set_mass": -7.832238753636678
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -11.588535328706106,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 5611,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.8068132996559143,
+       "mean_logp_answer_set_mass": -8.008930206298828
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -8.500502556562424,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 327,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.3979271948337555,
+       "mean_logp_answer_set_mass": -5.103173673152924
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -8.88871356844902,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 395,
+       "top1_in_answer_set": 0.020833333333333332,
+       "mean_margin_in_set": -2.7018391291300454,
+       "mean_logp_answer_set_mass": -5.3402838210264845
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -9.550237357616425,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2725,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -3.6962887048721313,
+       "mean_logp_answer_set_mass": -5.100205818812053
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 5.393435149633584,
+      "real_top1": 0.041666666666666664,
+      "real_mean_logp": -3.9870643516381583,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -11.776105284690857,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 5986,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.245304822921753,
+       "mean_logp_answer_set_mass": -7.825174570083618
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -11.494999547799429,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4231,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -2.7880920469760895,
+       "mean_logp_answer_set_mass": -7.8372145891189575
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -11.592778066794077,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 5634,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.806704521179199,
+       "mean_logp_answer_set_mass": -8.013209760189056
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -8.496889293193817,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 326,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.3986997604370117,
+       "mean_logp_answer_set_mass": -5.099092721939087
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -8.885116050640741,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 394,
+       "top1_in_answer_set": 0.020833333333333332,
+       "mean_margin_in_set": -2.702035049597422,
+       "mean_logp_answer_set_mass": -5.336641818284988
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -9.545539577802023,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2710,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -3.694756786028544,
+       "mean_logp_answer_set_mass": -5.096714546283086
+      }
+     }
+    }
+   ]
+  },
+  "random_control": {
+   "info": {},
+   "sweep": [
+    {
+     "rho": 0.0001,
+     "update_frobenius": 0.000745376218028191,
+     "elements_changed": 3468,
+     "survival_fraction": 0.0211669921875,
+     "predicted_survival_half_ulp": 0.02108154296875,
+     "realised_over_ideal_inner_product": 0.09685190809616538,
+     "realised_frobenius_over_ideal": 0.35934243641274827,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.4745494938698136,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.042643776096762544,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.768593192100525,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4114,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.2882806062698364,
+       "mean_logp_answer_set_mass": -9.704232513904572
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.625722726186117,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2475,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.366854985555013,
+       "mean_logp_answer_set_mass": -9.17676587899526
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.765639623006185,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4101,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7522812485694885,
+       "mean_logp_answer_set_mass": -9.051040788491568
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.630015313625336,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23370,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.1091883778572083,
+       "mean_logp_answer_set_mass": -14.655004322528839
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.80655699968338,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19604,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.093530774116516,
+       "mean_logp_answer_set_mass": -13.603379646937052
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.617517948150635,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29303,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.051697015762329,
+       "mean_logp_answer_set_mass": -13.461818615595499
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.474576036469275,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04264286499164882,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.768414080142975,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4114,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.288234055042267,
+       "mean_logp_answer_set_mass": -9.704087316989899
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.625442544619242,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2475,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.366860846678416,
+       "mean_logp_answer_set_mass": -9.176477313041687
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.765312194824219,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4101,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.752272446950277,
+       "mean_logp_answer_set_mass": -9.050734281539917
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.629980504512787,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23371,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.109272062778473,
+       "mean_logp_answer_set_mass": -14.654951691627502
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.806459844112396,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19603,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.093495726585388,
+       "mean_logp_answer_set_mass": -13.60330202182134
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.617464582125347,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29304,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0516810417175293,
+       "mean_logp_answer_set_mass": -13.461756785710653
+      }
+     }
+    },
+    {
+     "rho": 0.0003,
+     "update_frobenius": 0.0022361286540845725,
+     "elements_changed": 10261,
+     "survival_fraction": 0.062628173828125,
+     "predicted_survival_half_ulp": 0.062457275390625,
+     "realised_over_ideal_inner_product": 0.27760243421830433,
+     "realised_frobenius_over_ideal": 0.6049715357462372,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.474513045879973,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.042651829218812054,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.76900839805603,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4114,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.288500726222992,
+       "mean_logp_answer_set_mass": -9.704473912715912
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.626326938470205,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2477,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.366869330406189,
+       "mean_logp_answer_set_mass": -9.177366018295288
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.766391118367514,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4103,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7523622512817383,
+       "mean_logp_answer_set_mass": -9.051724135875702
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.630276560783386,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23371,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.1090425848960876,
+       "mean_logp_answer_set_mass": -14.655278205871582
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.80683586994807,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19595,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.093621571858724,
+       "mean_logp_answer_set_mass": -13.603606462478638
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.617762804031372,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29302,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0518011252085366,
+       "mean_logp_answer_set_mass": -13.462026556332907
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.4745478910558365,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04265572921940475,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.768490314483643,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4114,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.288225829601288,
+       "mean_logp_answer_set_mass": -9.704166233539581
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.625835617383322,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2475,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.3668290078639984,
+       "mean_logp_answer_set_mass": -9.176889578501383
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.765742262204489,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4101,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7521323561668396,
+       "mean_logp_answer_set_mass": -9.051250259081522
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.630413115024567,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23375,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.108997166156769,
+       "mean_logp_answer_set_mass": -14.655474364757538
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.806763231754303,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19598,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.093506693840027,
+       "mean_logp_answer_set_mass": -13.603603899478912
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.617841243743896,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29298,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.051864743232727,
+       "mean_logp_answer_set_mass": -13.462055087089539
+      }
+     }
+    },
+    {
+     "rho": 0.001,
+     "update_frobenius": 0.007453762180281909,
+     "elements_changed": 31354,
+     "survival_fraction": 0.19136962890625,
+     "predicted_survival_half_ulp": 0.190826416015625,
+     "realised_over_ideal_inner_product": 0.6830005019547591,
+     "realised_frobenius_over_ideal": 0.9224224344911403,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.4743846284241235,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04268120284905308,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.770456433296204,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4116,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.289286196231842,
+       "mean_logp_answer_set_mass": -9.705301225185394
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.62844349940618,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2481,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.366925209760666,
+       "mean_logp_answer_set_mass": -9.179467409849167
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.769027272860209,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4109,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.752646028995514,
+       "mean_logp_answer_set_mass": -9.05411962668101
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.631209790706635,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23375,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.1085434556007385,
+       "mean_logp_answer_set_mass": -14.65624487400055
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.807801862557728,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19582,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.0939376950263977,
+       "mean_logp_answer_set_mass": -13.604389309883118
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.61862774689992,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29298,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0521610975265503,
+       "mean_logp_answer_set_mass": -13.462762276331583
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.4743427949793197,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04265847726128413,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.768340408802032,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4114,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.2886157035827637,
+       "mean_logp_answer_set_mass": -9.703778624534607
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.627057234446207,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2480,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.366768022378286,
+       "mean_logp_answer_set_mass": -9.178239246209463
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.767633120218912,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4106,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7523013949394226,
+       "mean_logp_answer_set_mass": -9.052993218104044
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.631199061870575,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23369,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.107790470123291,
+       "mean_logp_answer_set_mass": -14.656577229499817
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.807548026243847,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19583,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.0938002268473306,
+       "mean_logp_answer_set_mass": -13.604206224282583
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.61849045753479,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29292,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.052199045817057,
+       "mean_logp_answer_set_mass": -13.462574203809103
+      }
+     }
+    },
+    {
+     "rho": 0.003,
+     "update_frobenius": 0.022361286540845727,
+     "elements_changed": 67649,
+     "survival_fraction": 0.412896728515625,
+     "predicted_survival_half_ulp": 0.412127685546875,
+     "realised_over_ideal_inner_product": 0.9518115386038604,
+     "realised_frobenius_over_ideal": 1.028166565825539,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.4740191868373325,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04276496198751071,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.774558126926422,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4121,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.2915045022964478,
+       "mean_logp_answer_set_mass": -9.707645654678345
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.634482940038046,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2485,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.367102642854055,
+       "mean_logp_answer_set_mass": -9.185467352469763
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.77655522028605,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4128,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.753452956676483,
+       "mean_logp_answer_set_mass": -9.06095681587855
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.63386160135269,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23365,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.107116460800171,
+       "mean_logp_answer_set_mass": -14.658994019031525
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.81056410074234,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19558,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.0948420763015747,
+       "mean_logp_answer_set_mass": -13.60662591457367
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.621094862620037,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29264,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0531928539276123,
+       "mean_logp_answer_set_mass": -13.464860200881958
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.473903880399816,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04279530360145145,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.775185406208038,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4121,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.2915425300598145,
+       "mean_logp_answer_set_mass": -9.708295404911041
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.634499311447144,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2487,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.3669871389865875,
+       "mean_logp_answer_set_mass": -9.185612907012304
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.776679237683615,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4130,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7533923586209617,
+       "mean_logp_answer_set_mass": -9.06112515926361
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.632671236991882,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23358,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.106678307056427,
+       "mean_logp_answer_set_mass": -14.658038258552551
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.81061367193858,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19564,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.094881614049276,
+       "mean_logp_answer_set_mass": -13.60665593544642
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.620875398317974,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29266,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0530564387639365,
+       "mean_logp_answer_set_mass": -13.464826703071594
+      }
+     }
+    },
+    {
+     "rho": 0.01,
+     "update_frobenius": 0.07453762180281909,
+     "elements_changed": 110134,
+     "survival_fraction": 0.67220458984375,
+     "predicted_survival_half_ulp": 0.67156982421875,
+     "realised_over_ideal_inner_product": 0.9977249159959369,
+     "realised_frobenius_over_ideal": 1.0087058623450667,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.4727834813735066,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.0430668081632272,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.788825571537018,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4140,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.2992457151412964,
+       "mean_logp_answer_set_mass": -9.715766787528992
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.65561548868815,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2510,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.367672880490621,
+       "mean_logp_answer_set_mass": -9.206478774547577
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.802891373634338,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4188,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.756192604700724,
+       "mean_logp_answer_set_mass": -9.084907790025076
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.643094658851624,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23342,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.1021379828453064,
+       "mean_logp_answer_set_mass": -14.668526411056519
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.82028792301814,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19473,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.098091979821523,
+       "mean_logp_answer_set_mass": -13.614477574825287
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.629735072453816,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29158,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.05679984887441,
+       "mean_logp_answer_set_mass": -13.472201307614645
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.47275725933684,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.043085477312464114,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.789409160614014,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4141,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.299984872341156,
+       "mean_logp_answer_set_mass": -9.715648412704468
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.655480722586313,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2511,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.3679370284080505,
+       "mean_logp_answer_set_mass": -9.206170151631037
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.802955269813538,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4189,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.756507476170858,
+       "mean_logp_answer_set_mass": -9.084825078646341
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.643546283245087,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23341,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.1014458537101746,
+       "mean_logp_answer_set_mass": -14.669152438640594
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.8207804163297,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19455,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.098124384880066,
+       "mean_logp_answer_set_mass": -13.614911278088888
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.630186518033344,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 29147,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0570850372314453,
+       "mean_logp_answer_set_mass": -13.472489873568216
+      }
+     }
+    },
+    {
+     "rho": 0.03,
+     "update_frobenius": 0.22361286540845726,
+     "elements_changed": 137365,
+     "survival_fraction": 0.838409423828125,
+     "predicted_survival_half_ulp": 0.837939453125,
+     "realised_over_ideal_inner_product": 0.9998141693350354,
+     "realised_frobenius_over_ideal": 1.0012468630122455,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.4696238862366235,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04400564201932866,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.82858818769455,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4225,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.3209084272384644,
+       "mean_logp_answer_set_mass": -9.738196909427643
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.715819001197815,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2593,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.3688485821088157,
+       "mean_logp_answer_set_mass": -9.26647338271141
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.877951622009277,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4374,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7632403572400412,
+       "mean_logp_answer_set_mass": -9.153436402479807
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.66902768611908,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23286,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.0880810618400574,
+       "mean_logp_answer_set_mass": -14.694979310035706
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.84844450155894,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19673,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.10838653643926,
+       "mean_logp_answer_set_mass": -13.637022773424784
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.65441620349884,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 28906,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0670960346857705,
+       "mean_logp_answer_set_mass": -13.4931192000707
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.4695356994116007,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.04403952599871749,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.829125165939331,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4226,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.321574330329895,
+       "mean_logp_answer_set_mass": -9.73810225725174
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.716080685456594,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2593,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.3689997692902884,
+       "mean_logp_answer_set_mass": -9.266639739274979
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -12.878468910853067,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4373,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.763547698656718,
+       "mean_logp_answer_set_mass": -9.153692026933035
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.668419301509857,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23286,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.0878161191940308,
+       "mean_logp_answer_set_mass": -14.694388747215271
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.84856031338374,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 19674,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.108310798803965,
+       "mean_logp_answer_set_mass": -13.637150347232819
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.654549916585285,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 28907,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.0673817793528237,
+       "mean_logp_answer_set_mass": -13.493099013964335
+      }
+     }
+    },
+    {
+     "rho": 0.1,
+     "update_frobenius": 0.7453762180281909,
+     "elements_changed": 153160,
+     "survival_fraction": 0.934814453125,
+     "predicted_survival_half_ulp": 0.934716796875,
+     "realised_over_ideal_inner_product": 0.9999818278837216,
+     "realised_frobenius_over_ideal": 1.0001186092773267,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.464148994253463,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.0482623002899345,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.956154465675354,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4477,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.3906384706497192,
+       "mean_logp_answer_set_mass": -9.808671057224274
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.923613866170248,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2925,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.3708147406578064,
+       "mean_logp_answer_set_mass": -9.475312014420828
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -13.137514392534891,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4609,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7965619564056396,
+       "mean_logp_answer_set_mass": -9.393556356430054
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.754179418087006,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23098,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.04082453250885,
+       "mean_logp_answer_set_mass": -14.77843326330185
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.950631340344746,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 20295,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.147589921951294,
+       "mean_logp_answer_set_mass": -13.716700732707977
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.740307529767353,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 28855,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.104576071103414,
+       "mean_logp_answer_set_mass": -13.565264821052551
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.4639163297765396,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.0482295976956569,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -13.954932391643524,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4476,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.390274226665497,
+       "mean_logp_answer_set_mass": -9.807532131671906
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -12.922440707683563,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 2921,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.3706803222497306,
+       "mean_logp_answer_set_mass": -9.474219888448715
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -13.136422832806906,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4608,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.7963626782099404,
+       "mean_logp_answer_set_mass": -9.392529785633087
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.753031492233276,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 23074,
+       "top1_in_answer_set": 0.0625,
+       "mean_margin_in_set": -3.040873885154724,
+       "mean_logp_answer_set_mass": -14.777480602264404
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -16.950033048788708,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 20284,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.14744367202123,
+       "mean_logp_answer_set_mass": -13.716134369373322
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.73963264624278,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 28853,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.104412794113159,
+       "mean_logp_answer_set_mass": -13.564552068710327
+      }
+     }
+    },
+    {
+     "rho": 0.3,
+     "update_frobenius": 2.2361286540845726,
+     "elements_changed": 159397,
+     "survival_fraction": 0.972882080078125,
+     "predicted_survival_half_ulp": 0.972784423828125,
+     "realised_over_ideal_inner_product": 1.0000039531821634,
+     "realised_frobenius_over_ideal": 1.0000205790749777,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.5218670308089055,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.0717824668972753,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -14.249373435974121,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 6181,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.5229879021644592,
+       "mean_logp_answer_set_mass": -9.987865507602692
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -13.477315306663513,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4074,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.37739892800649,
+       "mean_logp_answer_set_mass": -10.049167623122534
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -13.832663536071777,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 5600,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.847166379292806,
+       "mean_logp_answer_set_mass": -10.062769214312235
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.945557832717896,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 22751,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.951943516731262,
+       "mean_logp_answer_set_mass": -14.944043517112732
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -17.25428032875061,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 22529,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.2757010459899902,
+       "mean_logp_answer_set_mass": -13.937457203865051
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.969439148902893,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 32544,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -3.213124394416809,
+       "mean_logp_answer_set_mass": -13.751250823338827
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.5215035125988874,
+      "real_top1": 1.0,
+      "real_mean_logp": -0.07165933832584415,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -14.248584389686584,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 6173,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.523650109767914,
+       "mean_logp_answer_set_mass": -9.986396133899689
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -13.476487775643667,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 4073,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.377645472685496,
+       "mean_logp_answer_set_mass": -10.04811143875122
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -13.832077542940775,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 5599,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.847750941912333,
+       "mean_logp_answer_set_mass": -10.061678568522135
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -18.94554990530014,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 22739,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.951927900314331,
+       "mean_logp_answer_set_mass": -14.944351553916931
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -17.254705369472504,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 22532,
+       "top1_in_answer_set": 0.10416666666666667,
+       "mean_margin_in_set": -2.2751830220222473,
+       "mean_logp_answer_set_mass": -13.938144703706106
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -17.969729900360107,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 32532,
+       "top1_in_answer_set": 0.041666666666666664,
+       "mean_margin_in_set": -3.2126616636912027,
+       "mean_logp_answer_set_mass": -13.751749555269877
+      }
+     }
+    },
+    {
+     "rho": 1.0,
+     "update_frobenius": 7.453762180281909,
+     "elements_changed": 162168,
+     "survival_fraction": 0.989794921875,
+     "predicted_survival_half_ulp": 0.989776611328125,
+     "realised_over_ideal_inner_product": 0.9999935590608734,
+     "realised_frobenius_over_ideal": 0.9999963063195316,
+     "unrounded_f32_ideal": {
+      "neutral_nll": 3.9893375685235033,
+      "real_top1": 0.8333333333333334,
+      "real_mean_logp": -0.8415835155174136,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -15.83863890171051,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 14101,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.407305359840393,
+       "mean_logp_answer_set_mass": -11.692644119262695
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -14.920541226863861,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 7607,
+       "top1_in_answer_set": 0.14583333333333334,
+       "mean_margin_in_set": -2.3049788077672324,
+       "mean_logp_answer_set_mass": -11.657304485638937
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -15.642364382743835,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 11081,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.8645188411076865,
+       "mean_logp_answer_set_mass": -11.927574833234152
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -19.21385931968689,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 22899,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.99274879693985,
+       "mean_logp_answer_set_mass": -15.093064904212952
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -17.977436900138855,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 25488,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.771828055381775,
+       "mean_logp_answer_set_mass": -14.329106370608011
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -18.405458609263103,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 33890,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.5721803506215415,
+       "mean_logp_answer_set_mass": -13.982754270235697
+      }
+     },
+     "bf16_rounded": {
+      "neutral_nll": 3.9897948192949055,
+      "real_top1": 0.8333333333333334,
+      "real_mean_logp": -0.8447496726488074,
+      "A.trained_entities_train_template": {
+       "mean_logp_target": -15.838285505771637,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 14080,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -3.4062310457229614,
+       "mean_logp_answer_set_mass": -11.693119823932648
+      },
+      "A.trained_entities_paraphrase": {
+       "mean_logp_target": -14.919254998366037,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 7604,
+       "top1_in_answer_set": 0.14583333333333334,
+       "mean_margin_in_set": -2.304467042287191,
+       "mean_logp_answer_set_mass": -11.656357049942017
+      },
+      "A.heldout_entities_paraphrase": {
+       "mean_logp_target": -15.640716910362244,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 11082,
+       "top1_in_answer_set": 0.0,
+       "mean_margin_in_set": -2.8635497093200684,
+       "mean_logp_answer_set_mass": -11.926624337832132
+      },
+      "B.trained_entities_train_template": {
+       "mean_logp_target": -19.21434384584427,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 22883,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.9921751022338867,
+       "mean_logp_answer_set_mass": -15.09385997056961
+      },
+      "B.trained_entities_paraphrase": {
+       "mean_logp_target": -17.976518034934998,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 25477,
+       "top1_in_answer_set": 0.125,
+       "mean_margin_in_set": -2.7725724379221597,
+       "mean_logp_answer_set_mass": -14.327963332335154
+      },
+      "B.heldout_entities_paraphrase": {
+       "mean_logp_target": -18.404236952463787,
+       "top1_full_vocab": 0.0,
+       "median_rank_full_vocab": 33816,
+       "top1_in_answer_set": 0.08333333333333333,
+       "mean_margin_in_set": -3.5726585388183594,
+       "mean_logp_answer_set_mass": -13.981329401334127
+      }
+     }
+    }
+   ]
+  }
+ },
+ "model_digest_unchanged_at_end": true
+}
