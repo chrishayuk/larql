@@ -76,6 +76,9 @@ def capture_full(model, tok, text):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="d2_discovery.json")
+    ap.add_argument("--entity-a", default=None, help="entity name for patch A (default: trained_entities[0], Frozoria)")
+    ap.add_argument("--entity-b", default=None, help="entity name for patch B (default: trained_entities[1], Dresalthaia)")
+    ap.add_argument("--label", default="PATCH-TRAIN-2 D2 discovery dry-run")
     args = ap.parse_args()
     tasks = V.load_tasks("tasks_discovery.json")
     assert tasks["seed"] != V.load_tasks("tasks.json")["seed"], "discovery set must differ from the confirmatory set"
@@ -88,7 +91,9 @@ def main():
     rms_w = float(np.sqrt((E.bf16_to_f64(W0[:, columns]) ** 2).mean()))
     t = tasks["tasks"]["A"]
     ans = torch.tensor([V.first_token(tok, a) for a in t["answers"]])
-    entA, entB = t["trained_entities"][0], t["trained_entities"][1]
+    entA = args.entity_a or t["trained_entities"][0]
+    entB = args.entity_b or t["trained_entities"][1]
+    default_pair = (entA, entB) == (t["trained_entities"][0], t["trained_entities"][1])
     ansA, ansB = t["assignment"][entA], t["assignment"][entB]
     tidA, tidB = V.first_token(tok, ansA), V.first_token(tok, ansB)
     all_ents = t["trained_entities"] + t["heldout_entities"]
@@ -97,7 +102,7 @@ def main():
     bB, _ = R.build_b(model, tok, tasks, entB, others(entB), columns)
     f32 = lambda bits: torch.from_numpy(E.bf16_to_f32(bits).copy())
 
-    record = {"protocol": "PATCH-TRAIN-2 D2 discovery dry-run (DISCOVERY; emulation-consistent; thresholds not used)",
+    record = {"protocol": args.label + " (DISCOVERY; emulation-consistent; thresholds not used)",
               "backend": V.backend_record(tasks), "task_set": f"tasks_discovery.json (seed {tasks['seed']})",
               "design": {"A": [entA, ansA], "B": [entB, ansB], "layer": LAYER, "rank": 1, "columns": M.N_COLUMNS, "rho": RHO,
                          "steps": S.MAX_STEPS, "lr": S.LR, "lambda": S.LAMBDA, "cap_from": "base W0 footprint RMS",
@@ -105,6 +110,20 @@ def main():
               "optimisation_approximation": "training forward rounds via torch f32->bf16 cast, straight-through; reported weights are "
                                             "the exact frozen v2 emulation",
               "hashes": {"W0": sha(W0)}, "stages": {}, "arms": {}, "trainings": {}}
+
+    # ------------------------------------------------------------------ address overlap and cross-activation (recorded, not gated)
+    def entity_acts(e):
+        out = {}
+        for name, tpl in [("train", t["train_templates"][0])] + [(f"para{i}", p) for i, p in enumerate(t["heldout_templates"])]:
+            z, ids = M.capture(model, tok, tpl.format(e=e), columns)
+            out[name] = z[M.entity_span(tok, tpl, e, ids)[1]]
+        return out
+    zA, zB = entity_acts(entA), entity_acts(entB)
+    record["address_overlap"] = {
+        "cosine_bA_bB": float(bA @ bB),
+        "per_prompt": {nm: {"bA.zA": float(bA @ zA[nm]), "bB.zB": float(bB @ zB[nm]), "bA.zB": float(bA @ zB[nm]), "bB.zA": float(bB @ zA[nm]),
+                            "cross_over_target_A_on_B": float((bA @ zB[nm]) / (bA @ zA[nm])), "cross_over_target_B_on_A": float((bB @ zA[nm]) / (bB @ zB[nm]))}
+                       for nm in zA}}
 
     # ------------------------------------------------------------------ stage measurement
     def measure(bits, label):
@@ -192,10 +211,11 @@ def main():
 
     # determinism check against the committed replication run (rho 0.20)
     rep = json.load(open(os.path.join(HERE, "rep1_layer3_discovery.json")))
-    record["determinism_vs_rep1"] = {
+    record["determinism_vs_rep1"] = {"applicable": default_pair} if not default_pair else {
         "A_train_logp_equal": rep["arms"]["rho0.2/ent1_assigned"]["target_answer_reads_on_both_entities"][entA]["train"]["logp"] == record["stages"]["1_A_only"]["reads"][entA]["train"][ansA]["logp"],
         "B_train_logp_equal": rep["arms"]["rho0.2/ent2_assigned"]["target_answer_reads_on_both_entities"][entB]["train"]["logp"] == record["stages"]["2_B_only"]["reads"][entB]["train"][ansB]["logp"]}
     print("determinism vs rep1:", record["determinism_vs_rep1"], flush=True)
+    dump()
 
     # arms 3, 4: independent composition, patches REBOUND to the new source
     stale = None
@@ -228,14 +248,28 @@ def main():
     record["arms"]["7_joint_rank2"] = summarise("7", measure(W_joint, "7_joint_rank2"))
 
     # ------------------------------------------------------------------ numerical differences, element by element
+    def qs(v):
+        return {k: float(np.percentile(v, q)) for k, q in (("p50", 50), ("p90", 90), ("p99", 99), ("max", 100))} if len(v) else None
+
+    MAG_FLOOR = rms_w                      # declared: relative differences only where max(|x|,|y|) >= the footprint RMS of W0
+
     def diff(x, y):
+        """Exact differing-element count; absolute-difference distribution over differing elements; relative difference only above a
+        declared magnitude floor; difference in the values' OWN BF16 spacing where meaningful (both nonzero, same sign)."""
         xs, ys = E.bf16_to_f64(x[:, columns]), E.bf16_to_f64(y[:, columns])
         ne = x[:, columns] != y[:, columns]
-        w0 = E.bf16_to_f64(W0[:, columns])
-        ulp = 2.0 ** (np.floor(np.log2(np.where(w0 == 0, 1.0, np.abs(w0)))) - 7)
-        return {"elements_differing": int(ne.sum()), "of": int(ne.size), "max_abs_diff": float(np.abs(xs - ys).max()),
-                "max_diff_in_ulps_of_W0": float((np.abs(xs - ys) / ulp).max()), "outside_footprint_identical": bool(np.array_equal(
-                    np.delete(x, columns, axis=1), np.delete(y, columns, axis=1)))}
+        mag = np.maximum(np.abs(xs), np.abs(ys))
+        ad = np.abs(xs - ys)[ne]
+        above = ne & (mag >= MAG_FLOOR)
+        meaningful = ne & (xs != 0) & (ys != 0) & (np.sign(xs) == np.sign(ys)) & (mag >= 2.0 ** -126)
+        spacing = 2.0 ** (np.floor(np.log2(np.where(mag > 0, mag, 1.0))) - 7)
+        return {"elements_differing": int(ne.sum()), "elements_total": int(ne.size), "fraction_differing": float(ne.mean()),
+                "abs_difference_over_differing_elements": qs(ad),
+                "relative_difference": {"magnitude_floor": MAG_FLOOR, "elements_above_floor_and_differing": int(above.sum()),
+                                        "quantiles": qs((np.abs(xs - ys) / np.where(mag > 0, mag, 1.0))[above])},
+                "difference_in_own_bf16_spacings": {"elements_meaningful": int(meaningful.sum()), "elements_excluded_zero_or_sign_flip": int((ne & ~meaningful).sum()),
+                                                    "quantiles": qs((np.abs(xs - ys) / spacing)[meaningful])},
+                "outside_footprint_identical": bool(np.array_equal(np.delete(x, columns, axis=1), np.delete(y, columns, axis=1)))}
     record["numerics"] = {
         "W_AB_vs_W_BA": diff(W_AB, W_BA), "W_AB_vs_W_joint": diff(W_AB, W_joint), "W_BA_vs_W_joint": diff(W_BA, W_joint),
         "W2_AB_seq_vs_W_AB_indep": diff(W2_AB, W_AB), "W2_BA_seq_vs_W_BA_indep": diff(W2_BA, W_BA),
@@ -286,7 +320,11 @@ def main():
         print(f"{k:26s} A: train {A['train_rank']:>5} para {A['para_rank']} S {A['S']:+.1f} | B: train {B['train_rank']:>5} para {B['para_rank']} "
               f"S {B['S']:+.1f} | cross A@B {v['cross']['A_answer_on_B_entity']['rank']} B@A {v['cross']['B_answer_on_A_entity']['rank']} | "
               f"real {v['collateral']['real_top1']:.2f} dNLL {v['collateral']['neutral_delta']:+.3f}", flush=True)
-    print("numerics:", json.dumps(record["numerics"]["W_AB_vs_W_joint"]), "|", json.dumps(record["reversibility"]), flush=True)
+    print("address overlap:", json.dumps({k: round(v, 3) if isinstance(v, float) else v for k, v in record["address_overlap"].items() if k != "per_prompt"}),
+          "cross/target (train):", round(record["address_overlap"]["per_prompt"]["train"]["cross_over_target_A_on_B"], 3),
+          round(record["address_overlap"]["per_prompt"]["train"]["cross_over_target_B_on_A"], 3), flush=True)
+    print("numerics W_AB vs W_joint:", json.dumps({k: record["numerics"]["W_AB_vs_W_joint"][k] for k in ("elements_differing", "fraction_differing", "abs_difference_over_differing_elements")}),
+          "|", json.dumps(record["reversibility"]), flush=True)
     print("address invariance:", {k: v["bitwise_identical"] for k, v in record["same_layer_address_invariance"].items()})
     print("model restored:", record["model_digest_unchanged_at_end"])
 
