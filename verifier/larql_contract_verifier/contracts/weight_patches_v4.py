@@ -17,10 +17,9 @@ Two verdicts, kept apart (§7 step 7):
 
 A container is verified only when both are `satisfied`. The report says which half failed.
 
-**Not established, and said so in the answer:** the op `digest` (its definition is not in the v4 contract or the
-numerics specifications, so it cannot be recomputed independently), the operands' `origin`, and the content of a
-re-derived (quantised) representation: its digests are chained to the compiled canonical payload, but it is not
-re-quantised here.
+**Not established, and said so in the answer:** the operands' `origin` (the op digest of §3a covers its text, not
+where the operands came from) and the content of a re-derived (quantised) representation: its digests are chained to
+the compiled canonical payload, but it is not re-quantised here.
 """
 
 from __future__ import annotations
@@ -29,6 +28,7 @@ import hashlib
 import json
 import os
 import struct
+from decimal import Decimal
 from fractions import Fraction
 from pathlib import PurePosixPath
 
@@ -144,7 +144,17 @@ class Half:
 # ── reading ──────────────────────────────────────────────────────────────────
 
 
-def strict_json(data: bytes, what: str):
+class DecimalFloat(float):
+    """A JSON number with a fraction or exponent: the binary64 `json` would give, plus the decimal as written. The
+    binary64 is already a rounded reading, and a `delta` is judged as the binary32 its decimal denotes (§3b)."""
+
+    def __new__(cls, text: str):
+        value = super().__new__(cls, text)
+        value.decimal = Decimal(text)
+        return value
+
+
+def strict_json(data: bytes, what: str, parse_float=float):
     """JSON with no duplicate keys and no NaN/Infinity constants."""
 
     def pairs(items):
@@ -158,7 +168,7 @@ def strict_json(data: bytes, what: str):
     def const(name):
         raise ValueError(f"{what}: non-finite JSON constant {name}")
 
-    return json.loads(data.decode("utf-8"), object_pairs_hook=pairs, parse_constant=const)
+    return json.loads(data.decode("utf-8"), object_pairs_hook=pairs, parse_constant=const, parse_float=parse_float)
 
 
 def sha256_file(path: str) -> str:
@@ -346,6 +356,18 @@ def f32_value(bits: int) -> Fraction:
     return Fraction(x)
 
 
+def delta_as_binary32(delta) -> Fraction | None:
+    """The binary32 value a ledger's `delta` denotes: its decimal read exactly and rounded once to binary32, ties to
+    even, which is how a binary32 reader reads it. A writer prints a binary32 in the fewest digits that read back to
+    it (`0.1` for 0x3dcccccd), so the decimal is not the binary32's own value and is not compared as one. `None`
+    when it is beyond binary32."""
+    decimal = getattr(delta, "decimal", None)
+    try:
+        return numconv.round_nearest_even(Fraction(delta if decimal is None else decimal), numconv.BINARY32)
+    except numconv.Overflow:
+        return None
+
+
 def exact_sum_to_bf16(old_bits: int, delta_bits: int) -> int:
     """BF16 RNE of the exact sum of a BF16 and a binary32, once (no intermediate format). Zero signs follow IEEE-754
     addition: two zeros keep a negative sign only if both are negative, any other exact zero is +0, and a nonzero sum
@@ -401,7 +423,7 @@ class Judge:
         ledger_bytes = read_file(self.new_root, rel)
         self.engine["ledger_sha256"] = hashlib.sha256(ledger_bytes).hexdigest()
         try:
-            ledger = strict_json(ledger_bytes, "the ledger")
+            ledger = strict_json(ledger_bytes, "the ledger", parse_float=DecimalFloat)
         except ValueError as e:
             self.L.violate("ledger", f"the ledger is not valid JSON: {e}")
             self.N.cannot("the ledger cannot be read, so there are no ops to reconstruct")
@@ -844,9 +866,14 @@ class Judge:
                 L.cannot(f"{where}: delta rounding {self.ledger.get('rounding')!r} is not {DELTA_ROUNDING!r}")
                 recomputable = False
                 continue
-            if f32_value(e["delta_bits"]) != Fraction(e["delta"]) or \
-                    (e["delta_bits"] & V.F32_EXP_MASK) == V.F32_EXP_MASK:
-                L.violate(where, f"delta {e['delta']!r} is not the binary32 value of delta_bits {e['delta_bits']:08x}")
+            if (e["delta_bits"] & V.F32_EXP_MASK) == V.F32_EXP_MASK:
+                # Checked before anything reads the bits as a number: an infinity or a NaN has no value to compare.
+                L.violate(where, f"delta_bits {e['delta_bits']:08x} is not finite: the delta must be refused")
+                recomputable = False
+                continue
+            if delta_as_binary32(e["delta"]) != f32_value(e["delta_bits"]):
+                L.violate(where, f"delta {e['delta']!r} does not read as the binary32 of delta_bits "
+                                 f"{e['delta_bits']:08x}")
             if (int(base2d[r, c]) & V.BF16_EXP_MASK) == V.BF16_EXP_MASK:
                 L.violate(where, "the base element is not finite: the delta must be refused")
                 recomputable = False

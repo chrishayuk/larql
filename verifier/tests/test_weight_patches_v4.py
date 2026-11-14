@@ -133,6 +133,12 @@ def rehash_operands(op):
     op["digest"] = W.op_digest(op)
 
 
+#: 0.1 rounded to binary32, which an engine prints as `0.1`.
+TENTH_BINARY32_BITS = 0x3DCCCCCD
+BINARY32_INFINITY_BITS = 0x7F800000
+BINARY32_NAN_BITS = 0x7FC00000
+
+
 class Fixture(unittest.TestCase):
     def setUp(self):
         self.work = tempfile.mkdtemp()
@@ -597,6 +603,52 @@ class LedgerFaults(Fixture):
         self.assertHalves(out, SAT, VIOL)
         self.assertIn("new_bits", self.findings(out, W.LEDGER))
 
+    def retarget_delta(self, root, delta, delta_bits, new_bits=None):
+        """Rewrite the first delta edit of the `mixed` fixture's element target as `delta`/`delta_bits`, with the
+        container holding `new_bits` (default: what the exact sum of the base element and `delta_bits` rounds to)."""
+        edit = self.ledger(root)["targets"][1]["edits"][0]
+        name = self.ledger(root)["targets"][1]["tensor"]
+        if new_bits is None:
+            new_bits = W.exact_sum_to_bf16(edit["old_bits"], delta_bits)
+        write_element(root, name, edit["row"], edit["col"], new_bits)
+        reseal_compiled(root)
+        self.edit_ledger(root, lambda d: d["targets"][1]["edits"][0].update(
+            delta=delta, delta_bits=delta_bits, new_bits=new_bits))
+        reseal_compiled(root)
+
+    def test_a_delta_written_in_shortest_binary32_form_is_the_binary32_it_reads_as(self):
+        # An engine prints 0x3dcccccd as `0.1`. Read as a binary64 that decimal is another number; read as a
+        # binary32, it is exactly the delta. An honest compile must not be reported as violated for it.
+        root = self.copy("mixed")
+        self.retarget_delta(root, 0.1, TENTH_BINARY32_BITS)
+        with open(os.path.join(root, LEDGER_FILE)) as f:
+            self.assertIn('"delta": 0.1,', f.read())
+        self.assertHalves(self.judge(root), SAT, SAT)
+
+    def test_a_delta_that_reads_as_another_binary32_than_its_bits(self):
+        root = self.copy("mixed")
+        self.retarget_delta(root, 0.1, TENTH_BINARY32_BITS + 1)
+        out = self.judge(root)
+        self.assertHalves(out, SAT, VIOL)
+        self.assertIn("does not read as the binary32", self.findings(out, W.LEDGER))
+
+    def test_a_delta_beyond_binary32_is_a_violation_not_a_crash(self):
+        root = self.copy("mixed")
+        self.retarget_delta(root, 1e300, TENTH_BINARY32_BITS)
+        out = self.judge(root)
+        self.assertHalves(out, SAT, VIOL)
+        self.assertIn("does not read as the binary32", self.findings(out, W.LEDGER))
+
+    def test_non_finite_delta_bits_are_a_ledger_violation_not_a_crash(self):
+        for bits in (BINARY32_INFINITY_BITS, BINARY32_NAN_BITS):
+            with self.subTest(bits=f"{bits:08x}"):
+                root = self.copy("mixed")
+                edit = self.ledger(root)["targets"][1]["edits"][0]
+                self.retarget_delta(root, 0.0, bits, new_bits=edit["new_bits"])
+                out = self.judge(root)
+                self.assertEqual(out["ledger_integrity"], VIOL, out)
+                self.assertIn("is not finite", self.findings(out, W.LEDGER))
+
     def test_a_delta_edit_with_the_wrong_old_bits(self):
         root = self.copy("mixed")
         self.edit_ledger(root, lambda d: d["targets"][1]["edits"][1].update(old_bits=0))
@@ -774,6 +826,28 @@ class WholeFileSegments(Fixture):
         out = self.judge(self.root, self.base)
         self.assertHalves(out, CNE, CNE)
         self.assertTrue(any("duplicate tensor name" in r for r in out["reasons"]), out["reasons"])
+
+
+class ExactSumRounding(unittest.TestCase):
+    """`bf16-rne-of-exact-sum` where a binary64 sum is not the exact sum: the delta sits on a BF16 tie and the stored
+    value is too small for a binary64 to keep. The exact sum is off the tie, so the small term decides the direction;
+    a reader that adds in binary64 lands on the tie and goes to the even neighbour instead. Hand-derived expectations,
+    so an engine and this verifier are each held to them independently."""
+
+    #: (old BF16 bits, delta binary32 bits, expected BF16 bits)
+    CASES = (
+        (0x3F80, 0x5D808000, 0x5D81),  # 1.0 + 2^60·(1 + 2^-8): above the tie, up
+        (0xBF80, 0x5D808000, 0x5D80),  # −1.0 + the same delta: below the tie, down
+        (0x2500, 0x3F808000, 0x3F81),  # 2^-53 + (1 + 2^-8): the stored value is the small term
+        (0x3F80, 0x5D818000, 0x5D82),  # an odd lower neighbour, above the tie: up
+        (0xBF80, 0x5D818000, 0x5D81),  # the same tie from below: down, where ties-to-even alone would go up
+        (0x3F80, 0x3B800000, 0x3F80),  # 1.0 + 2^-8 exactly: a true tie, to even
+    )
+
+    def test_the_small_term_breaks_the_tie(self):
+        for old, delta, want in self.CASES:
+            with self.subTest(old=f"{old:04x}", delta=f"{delta:08x}"):
+                self.assertEqual(f"{W.exact_sum_to_bf16(old, delta):04x}", f"{want:04x}")
 
 
 class NoArithmeticWithoutSelection(unittest.TestCase):
