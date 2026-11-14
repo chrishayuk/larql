@@ -1112,6 +1112,13 @@ larql lql 'USE "gemma3-4b.vindex"; DESCRIBE "France";'
 larql lql 'USE "gemma3-4b.vindex"; WALK "Einstein" TOP 10;'
 ```
 
+| Flag | Description | Default |
+|---|---|---|
+| `--representation-source <stored\|auto\|transient>` | Where a VINDEX3 container bound by `USE` may take its execution representation from. `stored` executes the stored weights; `auto` lets the CPU loader quantise large matrices at load, which is faster and is not the stored arithmetic. `LARQL_LQL_REPRESENTATION_SOURCE` sets it when the flag does not, for `larql repl` too. An unrecognised word is an error | `stored` |
+
+`USE` prints the source it bound under. Sessions bound under `auto` before this default changed; see the LQL
+spec, section 3.2.
+
 ## Research commands (dev)
 
 Research builds only (see

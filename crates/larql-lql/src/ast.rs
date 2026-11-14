@@ -236,6 +236,14 @@ pub enum Statement {
         base: String,
         container: String,
     },
+    /// `VERIFY LEDGER "<container>" USING CONTRACT "<id>" FROM "<base>";`: an external verifier recomputes
+    /// what the compiled container's own weight-patch ledger declares of the base, from the ops the ledger
+    /// records, and compares it with the container. No patch file is needed. Read-only. LQL never evaluates it.
+    VerifyLedger {
+        container: String,
+        contract: String,
+        base: String,
+    },
     /// `DISCARD WEIGHT EDITS`: drop every stored-weight op staged directly in the session (`UPDATE WEIGHTS`,
     /// `REMOVE DIRECTION`, `ADD LOW RANK`), and the copies an open `BEGIN PATCH` recording holds. Ops carried by
     /// an applied patch are that patch's: `REMOVE PATCH` removes them. Nothing is written.
@@ -323,6 +331,7 @@ impl Statement {
             Statement::VerifyRepresentation { .. } => "VERIFY REPRESENTATION",
             Statement::VerifyOperator { .. } => "VERIFY OPERATOR",
             Statement::VerifyPatch { .. } => "VERIFY PATCH",
+            Statement::VerifyLedger { .. } => "VERIFY LEDGER",
             Statement::DiscardWeightEdits => "DISCARD WEIGHT EDITS",
             Statement::Stats { .. } => "STATS",
             Statement::ShowCompactStatus => "SHOW COMPACT STATUS",

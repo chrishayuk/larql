@@ -278,3 +278,4 @@ mod dense_ffn;
 mod driver_semantics_against_a_scripted_sess;
 mod explain_lql_2_the_structured_explanation;
 mod refusals;
+mod routed_expert_rows;

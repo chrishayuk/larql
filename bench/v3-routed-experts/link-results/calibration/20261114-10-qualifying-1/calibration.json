@@ -1,0 +1,1054 @@
+{
+  "schema": "larql.v3.link-calibration.v2",
+  "probe": "native-polling",
+  "calibration_authority": true,
+  "link_qos": "default",
+  "request_bytes": 11576,
+  "response_bytes": 46136,
+  "exchanges_per_measurement": 200,
+  "statistic": "median",
+  "tolerance": {
+    "relative": 0.05,
+    "absolute_ns": 50000
+  },
+  "binary_sha256": {
+    "v3_link_shaper": "7b1097f814216208141e09dd9a8a4f53c598743568140c528510e4d092e5479e",
+    "v3_link_probe": "74021325e122999684da21564391c6d148abaa83be2bf66205569c8f964bcb2f"
+  },
+  "direct_before": {
+    "probe": "native-polling",
+    "exchanges": 200,
+    "median_ns": 42959,
+    "min_ns": 30292,
+    "p90_ns": 50292,
+    "max_ns": 98917,
+    "mean_ns": 43753,
+    "available_parallelism": 16,
+    "qos": "default",
+    "affinity": "none requested"
+  },
+  "direct_after": {
+    "probe": "native-polling",
+    "exchanges": 200,
+    "median_ns": 39042,
+    "min_ns": 25208,
+    "p90_ns": 67417,
+    "max_ns": 193500,
+    "mean_ns": 46527,
+    "available_parallelism": 16,
+    "qos": "default",
+    "affinity": "none requested"
+  },
+  "points": [
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 0.2,
+        "rate_bits_per_s": "inf"
+      },
+      "expected_extra_ns": 200000.0,
+      "tolerance_ns": 50000,
+      "floor_before": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 75000,
+        "min_ns": 62417,
+        "p90_ns": 81583,
+        "max_ns": 106542,
+        "mean_ns": 75762,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 184.47727272727272,
+            "late_max_ns": 1875
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 293.1318181818182,
+            "late_max_ns": 1625
+          }
+        },
+        "host_load_average": [
+          4.1142578125,
+          6.8984375,
+          6.5283203125
+        ]
+      },
+      "shaped": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 246875,
+        "min_ns": 231125,
+        "p90_ns": 320083,
+        "max_ns": 332750,
+        "mean_ns": 269951,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 100,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 317.21363636363634,
+            "late_max_ns": 708
+          },
+          "response": {
+            "requested_delay_us": 100,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 1943.8136363636363,
+            "late_max_ns": 8833
+          }
+        },
+        "host_load_average": [
+          4.1142578125,
+          6.8984375,
+          6.5283203125
+        ]
+      },
+      "floor_after": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 89375,
+        "min_ns": 73417,
+        "p90_ns": 122041,
+        "max_ns": 152625,
+        "mean_ns": 94916,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 293.3909090909091,
+            "late_max_ns": 3000
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 454.1727272727273,
+            "late_max_ns": 2708
+          }
+        },
+        "host_load_average": [
+          4.1142578125,
+          6.8984375,
+          6.5283203125
+        ]
+      },
+      "floor_drift_ns": 14375,
+      "error_against_floor_before_ns": -28125.0,
+      "error_against_floor_after_ns": -42500.0,
+      "within_tolerance": true
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 1.0,
+        "rate_bits_per_s": "inf"
+      },
+      "expected_extra_ns": 1000000.0,
+      "tolerance_ns": 50000.0,
+      "floor_before": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 86584,
+        "min_ns": 74666,
+        "p90_ns": 99833,
+        "max_ns": 113292,
+        "mean_ns": 89210,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 240.7409090909091,
+            "late_max_ns": 3125
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 364.7181818181818,
+            "late_max_ns": 1959
+          }
+        },
+        "host_load_average": [
+          3.78466796875,
+          6.78369140625,
+          6.48974609375
+        ]
+      },
+      "shaped": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 1119125,
+        "min_ns": 1091291,
+        "p90_ns": 1124334,
+        "max_ns": 1134750,
+        "mean_ns": 1119300,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 500,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 222.33636363636364,
+            "late_max_ns": 583
+          },
+          "response": {
+            "requested_delay_us": 500,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 1804.790909090909,
+            "late_max_ns": 9125
+          }
+        },
+        "host_load_average": [
+          3.78466796875,
+          6.78369140625,
+          6.48974609375
+        ]
+      },
+      "floor_after": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 82875,
+        "min_ns": 74000,
+        "p90_ns": 102959,
+        "max_ns": 108750,
+        "mean_ns": 86056,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 303.9727272727273,
+            "late_max_ns": 2792
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 460.5348484848485,
+            "late_max_ns": 2625
+          }
+        },
+        "host_load_average": [
+          3.78466796875,
+          6.78369140625,
+          6.48974609375
+        ]
+      },
+      "floor_drift_ns": -3709,
+      "error_against_floor_before_ns": 32541.0,
+      "error_against_floor_after_ns": 36250.0,
+      "within_tolerance": true
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 5.0,
+        "rate_bits_per_s": "inf"
+      },
+      "expected_extra_ns": 5000000.0,
+      "tolerance_ns": 250000.0,
+      "floor_before": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 83584,
+        "min_ns": 73958,
+        "p90_ns": 112958,
+        "max_ns": 177166,
+        "mean_ns": 92300,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 326.5181818181818,
+            "late_max_ns": 3000
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 489.70151515151514,
+            "late_max_ns": 2834
+          }
+        },
+        "host_load_average": [
+          3.78466796875,
+          6.78369140625,
+          6.48974609375
+        ]
+      },
+      "shaped": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 5129958,
+        "min_ns": 5103500,
+        "p90_ns": 5181041,
+        "max_ns": 5317708,
+        "mean_ns": 5141804,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 2500,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 228.77272727272728,
+            "late_max_ns": 833
+          },
+          "response": {
+            "requested_delay_us": 2500,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 2119.866666666667,
+            "late_max_ns": 19208
+          }
+        },
+        "host_load_average": [
+          3.78466796875,
+          6.78369140625,
+          6.48974609375
+        ]
+      },
+      "floor_after": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 82792,
+        "min_ns": 72958,
+        "p90_ns": 115541,
+        "max_ns": 190125,
+        "mean_ns": 93172,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 353.4045454545454,
+            "late_max_ns": 3416
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 623.8454545454546,
+            "late_max_ns": 3333
+          }
+        },
+        "host_load_average": [
+          3.78466796875,
+          6.78369140625,
+          6.48974609375
+        ]
+      },
+      "floor_drift_ns": -792,
+      "error_against_floor_before_ns": 46374.0,
+      "error_against_floor_after_ns": 47166.0,
+      "within_tolerance": true
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 20.0,
+        "rate_bits_per_s": "inf"
+      },
+      "expected_extra_ns": 20000000.0,
+      "tolerance_ns": 1000000.0,
+      "floor_before": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 81708,
+        "min_ns": 67166,
+        "p90_ns": 111875,
+        "max_ns": 126833,
+        "mean_ns": 88456,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 268.3909090909091,
+            "late_max_ns": 3042
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 411.7,
+            "late_max_ns": 2542
+          }
+        },
+        "host_load_average": [
+          3.78466796875,
+          6.78369140625,
+          6.48974609375
+        ]
+      },
+      "shaped": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 20184167,
+        "min_ns": 20127167,
+        "p90_ns": 20257750,
+        "max_ns": 20338167,
+        "mean_ns": 20193454,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 10000,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 466.4409090909091,
+            "late_max_ns": 24208
+          },
+          "response": {
+            "requested_delay_us": 10000,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 4505.854545454546,
+            "late_max_ns": 68375
+          }
+        },
+        "host_load_average": [
+          3.8818359375,
+          6.75390625,
+          6.48095703125
+        ]
+      },
+      "floor_after": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 130000,
+        "min_ns": 81750,
+        "p90_ns": 152250,
+        "max_ns": 244917,
+        "mean_ns": 128431,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 284.6227272727273,
+            "late_max_ns": 4458
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 433.6378787878788,
+            "late_max_ns": 3166
+          }
+        },
+        "host_load_average": [
+          3.8818359375,
+          6.75390625,
+          6.48095703125
+        ]
+      },
+      "floor_drift_ns": 48292,
+      "error_against_floor_before_ns": 102459.0,
+      "error_against_floor_after_ns": 54167.0,
+      "within_tolerance": true
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 0.0,
+        "rate_bits_per_s": 1000000000.0
+      },
+      "expected_extra_ns": 461760.0,
+      "tolerance_ns": 50000,
+      "floor_before": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 127750,
+        "min_ns": 85709,
+        "p90_ns": 136916,
+        "max_ns": 171000,
+        "mean_ns": 124783,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 310.5863636363636,
+            "late_max_ns": 2792
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 475.32575757575756,
+            "late_max_ns": 3584
+          }
+        },
+        "host_load_average": [
+          3.8818359375,
+          6.75390625,
+          6.48095703125
+        ]
+      },
+      "shaped": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 511000,
+        "min_ns": 488042,
+        "p90_ns": 562833,
+        "max_ns": 2034167,
+        "mean_ns": 530762,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 457.7,
+            "late_max_ns": 21661
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 2490.525757575758,
+            "late_max_ns": 1440330
+          }
+        },
+        "host_load_average": [
+          3.8818359375,
+          6.75390625,
+          6.48095703125
+        ]
+      },
+      "floor_after": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 86167,
+        "min_ns": 71250,
+        "p90_ns": 100250,
+        "max_ns": 123667,
+        "mean_ns": 88864,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 322.34090909090907,
+            "late_max_ns": 3541
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 467.669696969697,
+            "late_max_ns": 3833
+          }
+        },
+        "host_load_average": [
+          3.8818359375,
+          6.75390625,
+          6.48095703125
+        ]
+      },
+      "floor_drift_ns": -41583,
+      "error_against_floor_before_ns": -78510.0,
+      "error_against_floor_after_ns": -36927.0,
+      "within_tolerance": false
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 0.0,
+        "rate_bits_per_s": 100000000.0
+      },
+      "expected_extra_ns": 4617600.0,
+      "tolerance_ns": 230880.0,
+      "floor_before": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 94208,
+        "min_ns": 57958,
+        "p90_ns": 109083,
+        "max_ns": 200000,
+        "mean_ns": 94126,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 466.9909090909091,
+            "late_max_ns": 4291
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 702.959090909091,
+            "late_max_ns": 35042
+          }
+        },
+        "host_load_average": [
+          3.8818359375,
+          6.75390625,
+          6.48095703125
+        ]
+      },
+      "shaped": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 4727917,
+        "min_ns": 4698625,
+        "p90_ns": 4752250,
+        "max_ns": 4870042,
+        "mean_ns": 4732526,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 296.28636363636366,
+            "late_max_ns": 3864
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 280.5833333333333,
+            "late_max_ns": 3810
+          }
+        },
+        "host_load_average": [
+          3.73095703125,
+          6.6748046875,
+          6.45458984375
+        ]
+      },
+      "floor_after": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 97083,
+        "min_ns": 80333,
+        "p90_ns": 120459,
+        "max_ns": 187416,
+        "mean_ns": 100971,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 405.7,
+            "late_max_ns": 11166
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 508.81363636363636,
+            "late_max_ns": 5125
+          }
+        },
+        "host_load_average": [
+          3.73095703125,
+          6.6748046875,
+          6.45458984375
+        ]
+      },
+      "floor_drift_ns": 2875,
+      "error_against_floor_before_ns": 16109.0,
+      "error_against_floor_after_ns": 13234.0,
+      "within_tolerance": true
+    },
+    {
+      "point": {
+        "kind": "joint",
+        "rtt_ms": 1.0,
+        "rate_bits_per_s": 100000000.0
+      },
+      "expected_extra_ns": 5617600.0,
+      "tolerance_ns": 280880.0,
+      "floor_before": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 105667,
+        "min_ns": 82250,
+        "p90_ns": 134667,
+        "max_ns": 203792,
+        "mean_ns": 111075,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 388.25,
+            "late_max_ns": 9042
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 517.6136363636364,
+            "late_max_ns": 3291
+          }
+        },
+        "host_load_average": [
+          3.73095703125,
+          6.6748046875,
+          6.45458984375
+        ]
+      },
+      "shaped": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 5739833,
+        "min_ns": 5710166,
+        "p90_ns": 5771708,
+        "max_ns": 6220417,
+        "mean_ns": 5746075,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 500,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 282.23636363636365,
+            "late_max_ns": 863
+          },
+          "response": {
+            "requested_delay_us": 500,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 985.4863636363636,
+            "late_max_ns": 428370
+          }
+        },
+        "host_load_average": [
+          3.73095703125,
+          6.6748046875,
+          6.45458984375
+        ]
+      },
+      "floor_after": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 96083,
+        "min_ns": 81875,
+        "p90_ns": 141750,
+        "max_ns": 296708,
+        "mean_ns": 105354,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 352.6545454545454,
+            "late_max_ns": 3042
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 524.3984848484848,
+            "late_max_ns": 4708
+          }
+        },
+        "host_load_average": [
+          3.73095703125,
+          6.6748046875,
+          6.45458984375
+        ]
+      },
+      "floor_drift_ns": -9584,
+      "error_against_floor_before_ns": 16566.0,
+      "error_against_floor_after_ns": 26150.0,
+      "within_tolerance": true
+    },
+    {
+      "point": {
+        "kind": "joint",
+        "rtt_ms": 5.0,
+        "rate_bits_per_s": 1000000000.0
+      },
+      "expected_extra_ns": 5461760.0,
+      "tolerance_ns": 273088.0,
+      "floor_before": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 94417,
+        "min_ns": 83792,
+        "p90_ns": 122625,
+        "max_ns": 171000,
+        "mean_ns": 101574,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 347.1727272727273,
+            "late_max_ns": 5791
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 500.17727272727274,
+            "late_max_ns": 2500
+          }
+        },
+        "host_load_average": [
+          3.73095703125,
+          6.6748046875,
+          6.45458984375
+        ]
+      },
+      "shaped": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 5578333,
+        "min_ns": 5553208,
+        "p90_ns": 5606458,
+        "max_ns": 5642166,
+        "mean_ns": 5581223,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 2500,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 331.97727272727275,
+            "late_max_ns": 8161
+          },
+          "response": {
+            "requested_delay_us": 2500,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 337.2530303030303,
+            "late_max_ns": 37189
+          }
+        },
+        "host_load_average": [
+          3.73095703125,
+          6.6748046875,
+          6.45458984375
+        ]
+      },
+      "floor_after": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 98750,
+        "min_ns": 82333,
+        "p90_ns": 114708,
+        "max_ns": 154042,
+        "mean_ns": 100254,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 423.6818181818182,
+            "late_max_ns": 3125
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 641.6969696969697,
+            "late_max_ns": 10083
+          }
+        },
+        "host_load_average": [
+          3.73095703125,
+          6.6748046875,
+          6.45458984375
+        ]
+      },
+      "floor_drift_ns": 4333,
+      "error_against_floor_before_ns": 22156.0,
+      "error_against_floor_after_ns": 17823.0,
+      "within_tolerance": true
+    },
+    {
+      "point": {
+        "kind": "joint",
+        "rtt_ms": 20.0,
+        "rate_bits_per_s": 100000000.0
+      },
+      "expected_extra_ns": 24617600.0,
+      "tolerance_ns": 1230880.0,
+      "floor_before": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 118041,
+        "min_ns": 80333,
+        "p90_ns": 141916,
+        "max_ns": 185125,
+        "mean_ns": 114994,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 363.6636363636364,
+            "late_max_ns": 9125
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 502.71666666666664,
+            "late_max_ns": 3208
+          }
+        },
+        "host_load_average": [
+          3.73095703125,
+          6.6748046875,
+          6.45458984375
+        ]
+      },
+      "shaped": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 24775333,
+        "min_ns": 24727041,
+        "p90_ns": 24813791,
+        "max_ns": 24876125,
+        "mean_ns": 24778719,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 10000,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 263.8909090909091,
+            "late_max_ns": 1280
+          },
+          "response": {
+            "requested_delay_us": 10000,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 307.15,
+            "late_max_ns": 10518
+          }
+        },
+        "host_load_average": [
+          4.521484375,
+          6.75048828125,
+          6.48388671875
+        ]
+      },
+      "floor_after": {
+        "probe": "native-polling",
+        "exchanges": 200,
+        "median_ns": 86167,
+        "min_ns": 73750,
+        "p90_ns": 110209,
+        "max_ns": 170958,
+        "mean_ns": 92396,
+        "available_parallelism": 16,
+        "qos": "default",
+        "affinity": "none requested",
+        "relay": {
+          "request": {
+            "requested_delay_us": 0,
+            "chunks": 220,
+            "bytes": 2548480,
+            "late_mean_ns": 290.49545454545455,
+            "late_max_ns": 2583
+          },
+          "response": {
+            "requested_delay_us": 0,
+            "chunks": 660,
+            "bytes": 10149920,
+            "late_mean_ns": 434.4060606060606,
+            "late_max_ns": 2792
+          }
+        },
+        "host_load_average": [
+          4.521484375,
+          6.75048828125,
+          6.48388671875
+        ]
+      },
+      "floor_drift_ns": -31874,
+      "error_against_floor_before_ns": 39692.0,
+      "error_against_floor_after_ns": 71566.0,
+      "within_tolerance": true
+    }
+  ],
+  "all_within_tolerance": false,
+  "recorded_utc": "2026-11-14T13:38:27Z"
+}

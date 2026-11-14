@@ -191,3 +191,4 @@ mod completions_and_loading;
 mod dense_ffn_workers;
 mod eos_backends_and_layer_workers;
 mod routed_expert_grid;
+mod routed_expert_rows;

@@ -157,7 +157,8 @@ impl Session {
         &mut self,
         path: std::path::PathBuf,
     ) -> Result<Vec<String>, LqlError> {
-        let (runtime, tokenizer, knowledge) = crate::executor::vindex3::bind(&path)?;
+        let source = self.representation_source;
+        let (runtime, tokenizer, knowledge) = crate::executor::vindex3::bind(&path, source)?;
         let plan_layers = runtime.plan().layers.len();
         let out = vec![
             format!(
@@ -176,6 +177,10 @@ impl Session {
                 } else {
                     "absent (token-id capability only)"
                 },
+            ),
+            format!(
+                "Execution: representation source {}.",
+                crate::executor::vindex3::describe_source(source)
             ),
         ];
         // A compiled container carries its L0 knowledge as

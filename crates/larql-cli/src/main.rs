@@ -353,10 +353,21 @@ impl From<ChatArgs> for run_cmd::RunArgs {
     }
 }
 
+/// `larql lql`'s exit status for a failure before any statement ran (LQL spec §3.9: 1 is a failure, 2 a
+/// violated contract).
+const LQL_FAILURE_EXIT: i32 = 1;
+
 #[derive(clap::Args)]
 struct LqlArgs {
     /// LQL statement (e.g. `WALK "The capital of France is" TOP 5;`).
     statement: String,
+
+    /// Where a VINDEX3 container bound by `USE` may take its execution representation from: `stored`
+    /// (the default: the stored weights execute, nothing is manufactured at load), `auto` (the CPU loader
+    /// may quantise large matrices at load: faster, and not the stored arithmetic) or `transient`.
+    /// `LARQL_LQL_REPRESENTATION_SOURCE` sets it when this flag does not.
+    #[arg(long)]
+    representation_source: Option<String>,
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -459,13 +470,24 @@ fn real_main() -> i32 {
         Commands::Filter(args) => filter_cmd::run(args),
 
         // ── LQL ──
-        Commands::Repl => {
-            larql_lql::run_repl_in(lql_session::session());
-            Ok(())
-        }
+        Commands::Repl => match lql_session::session_with(None) {
+            Ok(session) => {
+                larql_lql::run_repl_in(session);
+                Ok(())
+            }
+            Err(e) => Err(e.into()),
+        },
         Commands::Lql(args) => {
-            let outcome =
-                larql_lql::run_batch_outcome_in(&mut lql_session::session(), &args.statement);
+            let mut session = match lql_session::session_with(args.representation_source.as_deref())
+            {
+                Ok(session) => session,
+                Err(e) => {
+                    // A usage error in the command itself: the same status as a statement that failed.
+                    println!("Error: {e}");
+                    return LQL_FAILURE_EXIT;
+                }
+            };
+            let outcome = larql_lql::run_batch_outcome_in(&mut session, &args.statement);
             for line in &outcome.lines {
                 println!("{line}");
             }

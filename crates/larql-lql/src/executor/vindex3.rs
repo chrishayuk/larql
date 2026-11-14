@@ -41,6 +41,25 @@ pub(crate) const SUPPORTED: &str = "SELECT, DESCRIBE, WALK, EXPLAIN WALK, \
      INSERT [MODE KNN|COMPOSE], DELETE, UPDATE, UPDATE WEIGHTS, MERGE, \
      BEGIN/SAVE/APPLY/REMOVE PATCH, COMPILE [CURRENT] INTO VINDEX, DIFF [PHYSICAL], COMPACT INTO VINDEX";
 
+/// How a representation source is spelled, and what it means for the weights a run computes with. The words are
+/// the ones `larql vindex3 exec --representation-source` takes.
+pub(crate) fn describe_source(
+    source: larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource,
+) -> &'static str {
+    use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
+    match source {
+        RepresentationSource::Stored => {
+            "stored (the stored weights execute; nothing is manufactured at load)"
+        }
+        RepresentationSource::Auto => {
+            "auto (the loader may quantise large matrices at load: faster, and not the stored arithmetic)"
+        }
+        RepresentationSource::Transient => {
+            "transient (representations are quantised at load, ignoring any compiled pack)"
+        }
+    }
+}
+
 /// Component id a container's text stack is bound under.
 pub(crate) const V3_COMPONENT: &str = "target";
 

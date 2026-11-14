@@ -179,6 +179,56 @@ There's no `source`.
 
 **What it does not establish:** the derived (quantised) representations a compile re-derives, the digest the op carries (which detects accidental damage, not tampering), and the operand's `origin`. It recomputes with exact rational arithmetic, not by running LARQL's interpreter, so agreement between the two is evidence that neither shares the other's mistake; the interpreter's profile definitions are the common specification.
 
+## Pack contracts: `larql-verify-pack/1`
+
+The same arrangement, for whether a container's re-derived (quantised) representations are what their declared derivation
+rule produces from the container's own canonical weights ([q8-0-pack-derivation.md](q8-0-pack-derivation.md)).
+
+```text
+<verifier> pack --contract <id> --container <dir>
+```
+
+The exit status, stdout and the rules for an acceptable answer are as above, with these differences:
+
+| Field | Meaning |
+|---|---|
+| `schema` | Exactly `larql-verify-pack/1` |
+| `container.path` | The value asked about, unchanged. `sha256` is the verifier's digest of the directory |
+| `derived_from` | What the expected bytes were derived from: the container's own canonical tensor bytes, by the rule the pack names |
+| `derivations` | One entry per representation judged: the pack, its canonical source and that source's payload digest, the derivation rule and the codec |
+
+A `violated` answer may carry `reasons` too: the parts of the container that could not be judged, beside the
+violations found in the parts that were. A consumer shows both.
+
+There's no `source`: the container is its own. `Q8_0_PACK_DERIVATION` is the one contract. It says nothing about whether
+the canonical weights are the intended ones, whether the right tensors were quantised, or whether a kernel reads the pack:
+see the contract document, §1 and §4.
+
+## Residency contracts: `larql-verify-residency/1`
+
+The same arrangement, for whether what a run made resident for each matrix operand is the declared derivation of a
+container's stored weights, in the representation the run's policy selects
+([execution-residency-v1.md](execution-residency-v1.md)).
+
+```text
+<verifier> residency --contract <id> --record <file> --container <dir>
+```
+
+The exit status, stdout and the rules for an acceptable answer are as above, with these differences:
+
+| Field | Meaning |
+|---|---|
+| `schema` | Exactly `larql-verify-residency/1` |
+| `record.path`, `container.path` | The values asked about, unchanged. `record.sha256` is the record file's digest; `container.sha256` the verifier's digest of the directory |
+| `derivation`, `selection` | The two verdicts, each `satisfied`, `violated` or `could_not_evaluate` |
+| `verdicts` | Each in full: `status`, `violations`, `offending` (each finding tagged with its `half`), `reasons`, and how many operands were judged |
+| `failed_halves` | The verdicts that are not `satisfied`, by name |
+| `uncovered_objects` | Objects of the container with stored matrices that the record does not name. Listed, not judged: a `satisfied` answer is about the objects the record covers |
+| `selection_inputs` | The cache size and settings the record reported, which the selection verdict used. Reported, not established |
+
+`status` is `satisfied` only when both verdicts are. `EXECUTION_RESIDENCY_V1` is the one contract. The record is the
+engine's own report: the contract says nothing about whether a kernel consumed what was recorded.
+
 ## Ledger contracts: `larql-verify-ledger/1`
 
 The same arrangement, for whether a compiled container is what its own weight-patch ledger declares of a base container. No patch file is
