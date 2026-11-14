@@ -1,0 +1,93 @@
+{
+  "version": 4,
+  "model": "wsp",
+  "family": "llama",
+  "hidden_size": 64,
+  "num_layers": 2,
+  "system_graph": "system_graph.json",
+  "weight_patches": "weight_patches.json",
+  "representations": {
+    "target.decoder_stack@BF16": {
+      "object": "target.decoder_stack",
+      "encoding": "BF16",
+      "segment": "segments/target.decoder_stack.bin",
+      "tensor_count": 18,
+      "payload_bytes": 238080,
+      "payload_sha256": "e919e665ff66da4dddd830ed29540f3a6536afe84e06b980b3ddf876e4457bc6",
+      "segment_sha256": "890dd949ed0b24534121d2db78c7bda5e7de791494250057a1a3fedf950e607c"
+    },
+    "target.decoder_stack@Q8_0": {
+      "object": "target.decoder_stack",
+      "encoding": "Q8_0",
+      "segment": "segments/target.decoder_stack@Q8_0.bin",
+      "tensor_count": 18,
+      "payload_bytes": 126720,
+      "payload_sha256": "5dd925dc9032f487afc2d53de591bc07c913158b70033afcc48f9967a9949817",
+      "segment_sha256": "0b87579bd715e750def9cc82d1886ed26cbcd9bb800599dfcab573e842fe7e5d",
+      "compiled_from": "target.decoder_stack@BF16",
+      "codec": {
+        "family": "Q8_0",
+        "revision": 1,
+        "group_elems": 32,
+        "element": "ggml-q8_0",
+        "group_scale": "in-block",
+        "tensor_scale": "in-block",
+        "layout": "ggml-block-34"
+      },
+      "source_representation_digest": "e919e665ff66da4dddd830ed29540f3a6536afe84e06b980b3ddf876e4457bc6",
+      "encoder": {
+        "algorithm": "kquant-larql-native",
+        "revision": 2
+      }
+    },
+    "target.embedding@BF16": {
+      "object": "target.embedding",
+      "encoding": "BF16",
+      "segment": "segments/target.embedding.bin",
+      "tensor_count": 1,
+      "payload_bytes": 16384,
+      "payload_sha256": "350d043ca432b900df262d4bc3a3e27003feb7ae50b72a72740affb896f6e575",
+      "segment_sha256": "426a642b56c14f9b8e741cc10399c435a28afe85e2b62e357b922aa0fb750a57"
+    },
+    "target.final_norm@BF16": {
+      "object": "target.final_norm",
+      "encoding": "BF16",
+      "segment": "segments/target.final_norm.bin",
+      "tensor_count": 1,
+      "payload_bytes": 128,
+      "payload_sha256": "6094f12744fea040d0092c0b196f90b61968486548093b93d7ea50d0871a776a",
+      "segment_sha256": "70415ac26cf2e1b72e1dc932a7d36b7b88f4ae5246786ec0d2b77ab67b2d41ca"
+    },
+    "target.output_head@BF16": {
+      "object": "target.output_head",
+      "encoding": "BF16",
+      "segment": "segments/target.output_head.bin",
+      "tensor_count": 1,
+      "payload_bytes": 16384,
+      "payload_sha256": "07859669cd01523d90a47d133c27597a93742deb4f58072be7dd01c400ad5ee4",
+      "segment_sha256": "5272c14f65e0cb9bf6b6526fcd2d1c6be0edf75c6f39a0ce1738ed9e9374a731"
+    }
+  },
+  "profiles": [
+    {
+      "name": "exact"
+    }
+  ],
+  "segments": {
+    "segments/target.decoder_stack": 1,
+    "segments/target.decoder_stack@Q8_0": 1,
+    "segments/target.embedding": 1,
+    "segments/target.final_norm": 1,
+    "segments/target.output_head": 1
+  },
+  "precision_map": {
+    "name": "r0-uniform",
+    "encoding": "Q8_0",
+    "roles": [
+      "decoder-linear",
+      "recurrence-projection",
+      "recurrence-control",
+      "expert-weight"
+    ]
+  }
+}

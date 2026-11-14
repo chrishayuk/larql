@@ -120,12 +120,44 @@ def cases(case_root):
     a = [((r % 5) - 2) / 16.0 for r in range(ROWS)]
     ops = write_operands(d, "a_b.json", 1, a, [0.75, -1.0, 2.0, 0.125], f32_hex, "conformance f32_profile")
     out["f32_profile"] = (d, [add(ops, O_PROJ, J, F32)])
+
+    # 5. Split: a low-rank op on one tensor and a removal on ANOTHER. The removal's tensor stays an element target
+    # (result bits, §3b), so the ledger alone cannot recompute it; the case's patch.vlp carries the op.
+    d = os.path.join(case_root, "split")
+    ops = write_operands(d, "a_b.json", 1, [1.0 / 32.0] * ROWS, [1.0, -0.5], f64_hex, "conformance split")
+    u = [0.5 if r in (0, 3) else 0.0 for r in range(ROWS)]
+    direction = write_direction(d, "u.json", u)
+    out["split"] = (
+        d,
+        [
+            add(ops, DOWN, [8, 9], F64),
+            f'REMOVE DIRECTION "{direction}" FROM "{OTHER}" COLUMNS (33, 34) SCALE 0.5 NUMERICS "{F64}";',
+        ],
+    )
     return out
+
+
+#: Cases whose patch is saved beside them as patch.vlp, for the verifier's `ledger --patch` route.
+WITH_PATCH = ("split",)
+
+
+def save_patch(larql, case_dir, statements):
+    """Record the case's ops as a `.vlp`, in a second session: the same statements between BEGIN and SAVE PATCH. The
+    op digests carry no time or path, so they are the ones the compile listed in its ledger's `origins`."""
+    scratch = tempfile.mkdtemp()
+    staged = os.path.join(scratch, "patch.vlp")
+    text = " ".join([f'USE "{BASE}";', f'BEGIN PATCH "{staged}";'] + statements + ["SAVE PATCH;"])
+    run = subprocess.run([larql, "lql", text], capture_output=True, text=True)
+    if run.returncode != 0 or not os.path.exists(staged):
+        sys.exit(f"{os.path.basename(case_dir)}: larql failed to save the patch\n{run.stdout}\n{run.stderr}")
+    shutil.move(staged, os.path.join(case_dir, "patch.vlp"))
+    shutil.rmtree(scratch)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--larql", required=True)
+    ap.add_argument("--case", action="append", help="regenerate only this case (repeatable); the others' records are kept")
     args = ap.parse_args()
     larql = os.path.abspath(args.larql)
     provenance = {
@@ -135,7 +167,16 @@ def main():
         "base_index_sha256": sha256_file(os.path.join(BASE, "index.json")),
         "cases": {},
     }
+    if args.case:
+        with open(os.path.join(HERE, "provenance.json")) as f:
+            kept = json.load(f)
+        provenance["cases"] = kept["cases"]
+        provenance["larql_binary_sha256"] = kept["larql_binary_sha256"]
+        provenance["larql_binary_sha256_by_case"] = dict(kept.get("larql_binary_sha256_by_case", {}),
+                                                         **{c: sha256_file(larql) for c in args.case})
     for name, (case_dir, statements) in cases(HERE).items():
+        if args.case and name not in args.case:
+            continue
         compiled = os.path.join(case_dir, "compiled")
         if os.path.exists(compiled):
             shutil.rmtree(compiled)
@@ -159,6 +200,8 @@ def main():
             sys.exit(f"{name}: larql failed\n{run.stdout}\n{run.stderr}")
         shutil.move(staged, compiled)
         shutil.rmtree(scratch)
+        if name in WITH_PATCH:
+            save_patch(larql, case_dir, statements)
         provenance["cases"][name] = {
             "ledger_sha256": sha256_file(os.path.join(compiled, "weight_patches.json")),
             "index_sha256": sha256_file(os.path.join(compiled, "index.json")),

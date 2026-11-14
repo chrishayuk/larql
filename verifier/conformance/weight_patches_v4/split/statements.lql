@@ -1,0 +1,4 @@
+USE "../structured_patch/base";
+ADD LOW RANK "split/operands/a_b.json" TO "1.mlp.down_proj.weight" COLUMNS (8, 9) NUMERICS "f64-seq-rne1/v1";
+REMOVE DIRECTION "split/operands/u.json" FROM "0.mlp.down_proj.weight" COLUMNS (33, 34) SCALE 0.5 NUMERICS "f64-seq-rne1/v1";
+COMPILE CURRENT INTO VINDEX "compiled";

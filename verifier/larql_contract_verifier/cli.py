@@ -147,7 +147,7 @@ def judge_patch(contract: str, patch: str, base: str, container: str) -> dict:
     return out
 
 
-def evaluate_ledger(contract: str, base: str, container: str) -> dict:
+def evaluate_ledger(contract: str, base: str, container: str, patch: str | None = None) -> dict:
     """`ledger`: does `container` hold what its `weight-patches/v4` ledger declares of `base`? Two verdicts, numerical
     satisfaction and ledger integrity and provenance, recomputed from the base and the recorded ops, never from the
     ledger's own hashes or counts. `verifier` identifies this program; `engine_reported` is what the ledger says about
@@ -162,7 +162,17 @@ def evaluate_ledger(contract: str, base: str, container: str) -> dict:
         return q8_0_t2.could_not(out, f"unknown contract {contract!r}; this verifier knows {[weight_patches_v4.CONTRACT]}")
     if not os.path.isdir(base) or not os.path.isdir(container):
         return q8_0_t2.could_not(out, "the base and the container must be directories")
-    weight_patches_v4.evaluate(out, os.path.abspath(base), os.path.abspath(container))
+    if patch is not None:
+        # Optional: the `.vlp` the container was compiled from, for the tensors a v4 ledger records only by result bits.
+        out["patch"] = {"path": patch, "sha256": None}
+        if not os.path.isfile(patch):
+            return q8_0_t2.could_not(out, "the patch must be a file")
+        try:
+            out["patch"]["sha256"] = hashlib.sha256(Path(patch).read_bytes()).hexdigest()
+        except OSError as e:
+            return q8_0_t2.could_not(out, f"the patch can't be read: {e}")
+    weight_patches_v4.evaluate(out, os.path.abspath(base), os.path.abspath(container),
+                               None if patch is None else os.path.abspath(patch))
     if out["status"] == "could_not_evaluate":
         return out
     # The digests and the bytes judged came from separate reads, so a verdict needs the inputs not to have changed.
@@ -198,9 +208,10 @@ def main() -> None:
     le.add_argument("--contract", required=True)
     le.add_argument("--base", required=True)
     le.add_argument("--container", required=True)
+    le.add_argument("--patch")
     a = ap.parse_args()
     if a.cmd == "ledger":
-        answer = evaluate_ledger(a.contract, a.base, a.container)
+        answer = evaluate_ledger(a.contract, a.base, a.container, a.patch)
     elif a.cmd == "patch":
         answer = evaluate_patch(a.contract, a.patch, a.base, a.container)
     elif a.cmd == "operator":

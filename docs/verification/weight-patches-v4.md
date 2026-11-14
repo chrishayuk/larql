@@ -119,7 +119,9 @@ An element target (`edits`, no `operations`) is read exactly as in `v2`/`v3`:
 - `encoding: result_bits`: `new_bits` is the declared result of a `remove_direction` op that the ledger does **not**
   carry (a tensor edited only by removals stays an element target, §2). Only the op's digest is in `origins`, so an
   independent verifier can hold the container to the recorded bits but cannot recompute them from the ledger alone;
-  it reports that tensor's numerical half as not evaluated unless it is given the patch.
+  it reports that tensor's numerical half as not evaluated unless it is given the patch (`ledger --patch`,
+  [contract-protocol.md](contract-protocol.md)): then each `remove_direction` op of the patch on that tensor must be
+  intact, bound to the base and listed in `origins`, and the tensor is recomputed from them.
 - No element is listed twice; every element is inside the tensor; all element targets together list at most
   `MAX_PATCH_ELEMENTS` = 2^18 elements. Operation targets do not count against it.
 

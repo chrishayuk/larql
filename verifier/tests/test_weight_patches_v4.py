@@ -828,6 +828,132 @@ class WholeFileSegments(Fixture):
         self.assertTrue(any("duplicate tensor name" in r for r in out["reasons"]), out["reasons"])
 
 
+class PatchSupplied(Fixture):
+    """`ledger --patch`: a compile with a low-rank op on one tensor and a removal on another records the removal's
+    tensor by its result bits (§3b). The ledger alone cannot recompute it; with the patch it is recomputed like any
+    other op, and the patch is held to the ledger's origins."""
+
+    CASE = "split"
+    PATCH = os.path.join(FIXTURES, CASE, "patch.vlp")
+    #: The element target: the tensor the removal edits.
+    REMOVAL_TARGET = 1
+
+    def judge_with(self, container, patch):
+        return cli.evaluate_ledger(W.CONTRACT, BASE, container, patch)
+
+    def patch_copy(self, change):
+        doc = read_json(self.PATCH)
+        change(doc)
+        path = os.path.join(self.work, f"patch-{len(os.listdir(self.work))}.vlp")
+        write_json(path, doc)
+        return path
+
+    def removal(self, doc):
+        return next(op for op in doc["operations"] if op["op"] == W.OP_REMOVE)
+
+    def test_without_the_patch_the_removals_tensor_is_not_evaluated(self):
+        out = self.judge(os.path.join(FIXTURES, self.CASE, "compiled"))
+        self.assertHalves(out, CNE, SAT)
+        self.assertIn("give the patch to recompute them", self.findings(out, W.NUMERICAL))
+        self.assertNotIn("patch", out)
+
+    def test_with_the_patch_every_tensor_is_recomputed(self):
+        out = self.judge_with(os.path.join(FIXTURES, self.CASE, "compiled"), self.PATCH)
+        self.assertHalves(out, SAT, SAT)
+        measured = {m["name"]: m["value"] for m in out["measurements"]}
+        self.assertEqual(measured["result-bits targets recomputed from the patch given"], "1")
+        # Both tensors are compared in full: the operation target and the removal's.
+        self.assertEqual(measured["elements compared"], str(2 * 64 * 256))
+        with open(self.PATCH, "rb") as f:
+            self.assertEqual(out["patch"], {"path": self.PATCH, "sha256": sha(f.read())})
+        self.assertIn("the remove_direction ops of the patch given", out["recomputed_from"])
+
+    def test_a_ledger_and_container_that_agree_on_a_wrong_result_are_caught_only_with_the_patch(self):
+        # A careful tamperer changes a recorded result and the container's element together. The ledger alone has
+        # nothing to recompute it from; the patch does.
+        root = self.copy(self.CASE)
+        target = self.ledger(root)["targets"][self.REMOVAL_TARGET]
+        edit = target["edits"][0]
+        wrong = edit["new_bits"] ^ 1
+        write_element(root, target["tensor"], edit["row"], edit["col"], wrong)
+        self.edit_ledger(root, lambda d: d["targets"][self.REMOVAL_TARGET]["edits"][0].update(new_bits=wrong))
+        reseal_compiled(root)
+        self.assertHalves(self.judge(root), CNE, SAT)
+        out = self.judge_with(root, self.PATCH)
+        self.assertHalves(out, VIOL, VIOL)
+        self.assertIn("is not the recomputed", self.findings(out, W.LEDGER))
+        self.assertIn("differ from the recomputed tensor", self.findings(out, W.NUMERICAL))
+
+    def test_a_container_element_that_differs_from_the_recomputed_result(self):
+        root = self.copy(self.CASE)
+        target = self.ledger(root)["targets"][self.REMOVAL_TARGET]
+        edit = target["edits"][0]
+        write_element(root, target["tensor"], edit["row"], edit["col"], edit["new_bits"] ^ 1)
+        reseal_compiled(root)
+        self.assertHalves(self.judge_with(root, self.PATCH), VIOL, SAT)
+
+    def test_an_edit_the_ledger_leaves_out_or_adds(self):
+        root = self.copy(self.CASE)
+        self.edit_ledger(root, lambda d: d["targets"][self.REMOVAL_TARGET]["edits"].pop())
+        out = self.judge_with(root, self.PATCH)
+        self.assertEqual(out["ledger_integrity"], VIOL)
+        self.assertIn("the ledger does not record it", self.findings(out, W.LEDGER))
+
+        root = self.copy(self.CASE)
+        target = self.ledger(root)["targets"][self.REMOVAL_TARGET]
+        row, col = 5, 100  # outside the removal's columns
+        self.assertNotIn((row, col), {(e["row"], e["col"]) for e in target["edits"]})
+        old = read_element(root, target["tensor"], row, col)
+        extra = {"row": row, "col": col, "delta": 0.0, "delta_bits": 0, "old_bits": old, "new_bits": old,
+                 "encoding": W.RESULT_BITS}
+        self.edit_ledger(root, lambda d: d["targets"][self.REMOVAL_TARGET]["edits"].append(extra))
+        out = self.judge_with(root, self.PATCH)
+        self.assertEqual(out["ledger_integrity"], VIOL)
+        self.assertIn("the patch's ops do not make", self.findings(out, W.LEDGER))
+
+    def test_a_patch_this_container_was_not_compiled_from_is_refused(self):
+        # Another scale, resealed: an intact op, but not one of the ledger's origins.
+        def rescale(doc):
+            op = self.removal(doc)
+            op["alpha"] = "3fd0000000000000"  # 0.25
+            op["digest"] = W.op_digest(op)
+
+        out = self.judge_with(os.path.join(FIXTURES, self.CASE, "compiled"), self.patch_copy(rescale))
+        self.assertHalves(out, CNE, VIOL)
+        self.assertIn("not among the ledger's origins", self.findings(out, W.LEDGER))
+
+    def test_a_damaged_patch_op_is_refused(self):
+        def damage(doc):
+            self.removal(doc)["alpha"] = "3fd0000000000000"  # the digest no longer covers it
+
+        out = self.judge_with(os.path.join(FIXTURES, self.CASE, "compiled"), self.patch_copy(damage))
+        self.assertHalves(out, CNE, VIOL)
+        self.assertIn("digest is not intact", self.findings(out, W.LEDGER))
+
+    def test_a_patch_without_the_removal_leaves_the_tensor_not_evaluated(self):
+        def drop(doc):
+            doc["operations"] = [op for op in doc["operations"] if op["op"] != W.OP_REMOVE]
+
+        out = self.judge_with(os.path.join(FIXTURES, self.CASE, "compiled"), self.patch_copy(drop))
+        self.assertHalves(out, CNE, SAT)
+        self.assertIn("holds no remove_direction op on this tensor", self.findings(out, W.NUMERICAL))
+
+    def test_a_patch_that_is_not_a_readable_patch_is_could_not_evaluate(self):
+        compiled = os.path.join(FIXTURES, self.CASE, "compiled")
+        out = self.judge_with(compiled, os.path.join(self.work, "absent.vlp"))
+        self.assertEqual(out["status"], CNE)
+        self.assertIn("the patch must be a file", " ".join(out["reasons"]))
+        out = self.judge_with(compiled, self.patch_copy(lambda doc: doc.pop("operations")))
+        self.assertEqual(out["status"], CNE)
+        self.assertIn("no operations list", " ".join(out["reasons"]))
+
+    def test_the_patch_changes_nothing_for_a_ledger_that_needs_none(self):
+        for case in CASES:
+            with self.subTest(case=case):
+                out = self.judge_with(os.path.join(FIXTURES, case, "compiled"), self.PATCH)
+                self.assertHalves(out, SAT, SAT)
+
+
 class ExactSumRounding(unittest.TestCase):
     """`bf16-rne-of-exact-sum` where a binary64 sum is not the exact sum: the delta sits on a BF16 tie and the stored
     value is too small for a binary64 to keep. The exact sum is off the tie, so the small term decides the direction;

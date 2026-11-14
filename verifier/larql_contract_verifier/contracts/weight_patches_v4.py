@@ -56,6 +56,8 @@ OP_FIELDS = {
     OP_REMOVE: {"op", "source", "tensor", "numerics", "operand", "alpha", "columns", "origin", "digest",
                 "operands_sha256", "changed_elements"},
 }
+#: What a ledger adds to an op when it records it; a `.vlp` op carries neither.
+LEDGER_OP_FIELDS = {"operands_sha256", "changed_elements"}
 OPERAND_KEYS = {OP_LOW_RANK: ("a", "b"), OP_REMOVE: ("u", "alpha")}
 SOURCE_FIELDS = ("model", "index_sha256", "representation", "payload_sha256")
 OPERATION_TARGET_FIELDS = {"object", "representation", "tensor", "dtype", "shape", "operations",
@@ -368,6 +370,22 @@ def delta_as_binary32(delta) -> Fraction | None:
         return None
 
 
+def read_patch_removals(path: str) -> dict[str, list]:
+    """The `remove_direction` ops of the `.vlp` at `path`, by tensor, in file order. They are what a v4 ledger does not
+    carry (§3b): a tensor edited only by removals is recorded by its result bits, with the op's digest in `origins`.
+    Ops of other kinds are not read from the patch: a low-rank op is in the ledger and a delta is its own edits."""
+    with open(path, "rb") as f:
+        patch = strict_json(f.read(), "the patch")
+    operations = patch.get("operations") if isinstance(patch, dict) else None
+    if not isinstance(operations, list):
+        raise CannotEvaluate("the patch has no operations list")
+    by_tensor: dict[str, list] = {}
+    for op in operations:
+        if isinstance(op, dict) and op.get("op") == OP_REMOVE and isinstance(op.get("tensor"), str):
+            by_tensor.setdefault(op["tensor"], []).append(op)
+    return by_tensor
+
+
 def exact_sum_to_bf16(old_bits: int, delta_bits: int) -> int:
     """BF16 RNE of the exact sum of a BF16 and a binary32, once (no intermediate format). Zero signs follow IEEE-754
     addition: two zeros keep a negative sign only if both are negative, any other exact zero is +0, and a nonzero sum
@@ -393,6 +411,10 @@ def exact_sum_to_bf16(old_bits: int, delta_bits: int) -> int:
 class Judge:
     def __init__(self, base: str, container: str):
         self.base_root, self.new_root = base, container
+        #: `remove_direction` ops of the `.vlp` the caller supplied, by tensor; `None` when no patch was given.
+        self.patch_ops: dict[str, list] | None = None
+        self.patch: str | None = None
+        self.recomputed_from_patch = 0
         self.L, self.N = Half(LEDGER), Half(NUMERICAL)
         self.engine: dict = {}
         self.digests_checked = 0
@@ -440,6 +462,8 @@ class Judge:
             return
         self.ledger = ledger
         self.L.judged = True
+        if self.patch is not None:
+            self.patch_ops = read_patch_removals(self.patch)
         self.judge()
 
     def judge(self) -> None:
@@ -645,7 +669,9 @@ class Judge:
             N.cannot(f"{label}: an op is refused (see the ledger half), so the tensor is not reconstructed")
         return plan
 
-    def plan_op(self, where: str, op, tensor: str, shape, source: dict):
+    def plan_op(self, where: str, op, tensor: str, shape, source: dict, from_patch: bool = False):
+        """`from_patch`: the op is read from a `.vlp`, not from the ledger, so it carries no `operands_sha256` and no
+        `changed_elements`. Every other check is the same."""
         L = self.L
         if not isinstance(op, dict):
             L.violate(where, "the op is not an object")
@@ -654,7 +680,7 @@ class Judge:
         if kind not in OP_FIELDS:
             L.cannot(f"{where}: op {kind!r} is not one this contract supports ({sorted(OP_FIELDS)})")
             return None
-        extra = set(op) - OP_FIELDS[kind]
+        extra = set(op) - (OP_FIELDS[kind] - LEDGER_OP_FIELDS if from_patch else OP_FIELDS[kind])
         if extra:
             L.cannot(f"{where}: unsupported op fields {sorted(extra)}")
             return None
@@ -698,6 +724,8 @@ class Judge:
             L.violate(where, f"the op must be refused: {e.code} ({e.detail})")
             return None
         parsed.kind = kind
+        if from_patch:
+            return parsed
         recorded = op.get("operands_sha256")
         keys = OPERAND_KEYS[kind]
         sound = True
@@ -752,7 +780,55 @@ class Judge:
         plan["edits"] = parsed
         if plan["refused"]:
             N.cannot(f"{label}: a malformed edit (see the ledger half), so the tensor is not reconstructed")
+            return plan
+        if self.patch_ops is not None and any(e.get("encoding") == RESULT_BITS for e in parsed):
+            self.plan_patch_removals(plan)
         return plan
+
+    def plan_patch_removals(self, plan: dict) -> None:
+        """A result-bits element target, with the patch in hand: admit the patch's `remove_direction` ops on this
+        tensor exactly as a ledger's ops are admitted (§5, §3a), and require each to be one this compile was assembled
+        from (its digest among the ledger's `origins`). The ops then make the tensor recomputable (§3b)."""
+        L, N = self.L, self.N
+        label, shape = plan["label"], plan["shape"]
+        ops = self.patch_ops.get(plan["tensor"], [])
+        if not ops:
+            return  # nothing to recompute from: expected_edits says so
+        if any(e.get("encoding") != RESULT_BITS for e in plan["edits"]):
+            L.cannot(f"{label}: an element target mixes delta and result-bits edits; a tensor takes one form")
+            N.cannot(f"{label}: mixed edit forms")
+            plan["refused"] = True
+            return
+        src = self.ledger.get("source")
+        source = {"model": src.get("model") if isinstance(src, dict) else None,
+                  "index_sha256": self.base_index_sha, "representation": self.rep,
+                  "payload_sha256": self.bc.reps[self.rep]["payload_sha256"]}
+        origins = self.ledger.get("origins")
+        origins = set(origins) if isinstance(origins, list) and all(isinstance(o, str) for o in origins) else set()
+        footprint: dict[int, int] = {}
+        for j, op in enumerate(ops):
+            where = f"{label} patch op {j}"
+            parsed = self.plan_op(where, op, plan["tensor"], shape, source, from_patch=True)
+            if parsed is None:
+                plan["refused"] = True
+                continue
+            if op.get("digest") not in origins:
+                L.violate(where, "the op's digest is not among the ledger's origins: the patch is not the one this "
+                                 "container was compiled from")
+                plan["refused"] = True
+                continue
+            for c in parsed.columns:
+                if c in footprint:
+                    L.violate(where, f"column {c} is also written by patch op {footprint[c]}: the ops of one tensor "
+                                     "must have pairwise disjoint columns (§4)")
+                    plan["refused"] = True
+                    break
+            for c in parsed.columns:
+                footprint.setdefault(c, j)
+            plan["ops"].append((j, op, parsed))
+        if plan["refused"]:
+            plan["ops"] = []
+            N.cannot(f"{label}: a patch op is refused (see the ledger half), so the tensor is not reconstructed")
 
     def check_patch_elements(self, plans) -> None:
         """§3b: all element targets together list at most MAX_PATCH_ELEMENTS elements (inclusive)."""
@@ -766,13 +842,14 @@ class Judge:
                     self.N.cannot(f"{plan['label']}: the element targets exceed MAX_PATCH_ELEMENTS")
 
     def check_work(self, plans) -> None:
-        work = sum(p.work() for plan in plans if plan and plan["kind"] == "operations" for _, _, p in plan["ops"])
+        # Removals read from a supplied patch count too: §5 bounds one compile's structured ops together.
+        work = sum(p.work() for plan in plans if plan for _, _, p in plan["ops"])
         self.L.measure("structured work (multiply-adds, §5)", f"{work} of {MAX_STRUCTURED_WORK}")
         if work > MAX_STRUCTURED_WORK:
             self.L.violate("ledger", f"the structured ops need {work} multiply-adds, over MAX_STRUCTURED_WORK "
                                      f"{MAX_STRUCTURED_WORK} (§5)")
             for plan in plans:
-                if plan and plan["kind"] == "operations" and not plan["refused"]:
+                if plan and plan["ops"] and not plan["refused"]:
                     plan["refused"] = True
                     self.N.cannot(f"{plan['label']}: the compile exceeds MAX_STRUCTURED_WORK, so nothing is recomputed")
 
@@ -798,9 +875,8 @@ class Judge:
         if expected is None:
             return
         footprint = np.zeros(cols, dtype=bool)
-        if plan["kind"] == "operations":
-            for _, _, p in plan["ops"]:
-                footprint[p.columns] = True
+        for _, _, p in plan["ops"]:
+            footprint[p.columns] = True
         self.compare(label, base2d, new2d, expected, footprint)
 
     def expected_operations(self, plan: dict, base2d: np.ndarray):
@@ -847,9 +923,46 @@ class Judge:
         self.expected_changes += computed_total
         return expected
 
+    def expected_from_patch(self, plan: dict, base2d: np.ndarray):
+        """A result-bits element target recomputed from the supplied patch's `remove_direction` ops: each op on the
+        base, its columns joined (§4), and the ledger's edits held to exactly the elements that change."""
+        L, N = self.L, self.N
+        label = plan["label"]
+        expected = base2d.copy()
+        role = self.tensor_role(plan["tensor"])
+        for j, _, parsed in plan["ops"]:
+            where = f"{label} patch op {j}"
+            try:
+                result = parsed.apply(base2d, tensor_shape=plan["shape"], tensor_role=role)
+            except V.Refusal as e:
+                L.violate(where, f"the op must be refused: {e.code} ({e.detail})")
+                N.cannot(f"{where}: refused ({e.code}), so the tensor is not reconstructed")
+                return None
+            cols = np.asarray(parsed.columns, dtype=np.int64)
+            if not np.any(result[:, cols] != base2d[:, cols]):
+                L.violate(where, "the op changes no element: it must be refused, not compiled")
+            expected[:, cols] = result[:, cols]
+        recorded = {(e["row"], e["col"]): e for e in plan["edits"]}
+        changed = {(int(r), int(c)) for r, c in zip(*np.nonzero(expected != base2d))}
+        for r, c in sorted(changed - set(recorded))[:OFFENDING_LIMIT]:
+            L.violate(f"{label} ({r}, {c})", "the patch's ops change this element and the ledger does not record it")
+        for (r, c), e in recorded.items():
+            where = f"{label} ({r}, {c})"
+            if e["old_bits"] != int(base2d[r, c]):
+                L.violate(where, f"old_bits {e['old_bits']:04x} is not the base's {int(base2d[r, c]):04x}")
+            if (r, c) not in changed:
+                L.violate(where, "the ledger records an edit the patch's ops do not make")
+            elif e["new_bits"] != int(expected[r, c]):
+                L.violate(where, f"new_bits {e['new_bits']:04x} is not the recomputed {int(expected[r, c]):04x}")
+        self.expected_changes += len(changed)
+        self.recomputed_from_patch += 1
+        return expected
+
     def expected_edits(self, plan: dict, base2d: np.ndarray, new2d: np.ndarray):
         L, N = self.L, self.N
         label = plan["label"]
+        if plan["ops"]:
+            return self.expected_from_patch(plan, base2d)
         expected = base2d.copy()
         recomputable = True
         for e in plan["edits"]:
@@ -893,8 +1006,9 @@ class Judge:
             mism = int(np.count_nonzero(new2d != expected))
             if mism:
                 L.violate(label, f"{mism} elements differ from the base with the ledger's recorded bits", mism)
-            N.cannot(f"{label}: an element target records result bits of an op that is not in the ledger, so its "
-                     "numerics cannot be recomputed from the ledger")
+            why = "and the patch given holds no remove_direction op on this tensor" if self.patch_ops is not None \
+                else "so its numerics cannot be recomputed from the ledger alone; give the patch to recompute them"
+            N.cannot(f"{label}: an element target records result bits of an op that is not in the ledger, {why}")
             return None
         return expected
 
@@ -1059,11 +1173,18 @@ def could_not(out: dict, *reasons: str) -> dict:
     return out
 
 
-def evaluate(out: dict, base: str, container: str) -> dict:
-    """Fill `out` with the two verdicts and the combined status. Never raises for a bad input."""
+def evaluate(out: dict, base: str, container: str, patch: str | None = None) -> dict:
+    """Fill `out` with the two verdicts and the combined status. Never raises for a bad input. `patch`, when given, is
+    the `.vlp` the container was compiled from: it supplies the `remove_direction` ops a v4 ledger records only by
+    their result bits (§3b), so those tensors can be recomputed too."""
     out["recomputed_from"] = ("the base container's weights and the operands the compiled container's ledger records; "
                               "the ledger's hashes and counts are checked, never used as expected values")
+    if patch is not None:
+        out["recomputed_from"] += ("; for a tensor the ledger records only by result bits, the remove_direction ops of "
+                                   "the patch given, each held to the ledger's origins")
     judge = Judge(base, container)
+    judge.patch = patch
+    judge.recomputed_from_patch = 0
     judge.shams = 0
     judge.expected_changes = 0
     judge.elements_compared = 0
@@ -1083,6 +1204,8 @@ def evaluate(out: dict, base: str, container: str) -> dict:
     N.measure("elements compared", judge.elements_compared)
     N.measure("elements expected to change", judge.expected_changes)
     N.measure("sham targets (every op zero-valued)", judge.shams)
+    if patch is not None:
+        N.measure("result-bits targets recomputed from the patch given", judge.recomputed_from_patch)
     halves = {NUMERICAL: N.report(), LEDGER: L.report()}
     stale = getattr(judge, "stale", None)
     digest_findings = any("digest is not intact" in o["detail"] for o in L.offending)

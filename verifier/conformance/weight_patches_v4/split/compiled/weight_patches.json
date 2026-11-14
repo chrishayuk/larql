@@ -1,0 +1,206 @@
+{
+  "schema": "weight-patches/v4",
+  "rounding": "bf16-rne-of-exact-sum",
+  "writer": "larql-vindex weight_patch v1",
+  "source": {
+    "model": "wsp",
+    "index_sha256": "1f68b2cf5f932baab50fc55280b84f9f456f3e2a822d20c006ea8f618983d750",
+    "canonical": {
+      "payload_sha256": "fc7c2807decd21c939155e6f84f25d351ce8dff86bfc1b6070d3a8158c1d6fad",
+      "segment_sha256": "1ae6b26382292bf208a53b545562bf707e30b38bb5a05f490b22edb6aadb5e06"
+    },
+    "derived": [
+      {
+        "representation": "target.decoder_stack@Q8_0",
+        "encoding": "Q8_0",
+        "payload_sha256": "57ef1b1c57bf1b9bd7463ad1d1e788800a2c469e4d387a860b3a27a59e051b80",
+        "segment_sha256": "ce9d8624980ea9d155add245e869219d78cc4823cfba73a6cb347c4d8b7939c7",
+        "encoder": {
+          "algorithm": "kquant-larql-native",
+          "revision": 2
+        }
+      }
+    ]
+  },
+  "targets": [
+    {
+      "object": "target.decoder_stack",
+      "representation": "target.decoder_stack@BF16",
+      "tensor": "1.mlp.down_proj.weight",
+      "dtype": "BF16",
+      "shape": [
+        64,
+        256
+      ],
+      "operations": [
+        {
+          "op": "low_rank_columns_weight",
+          "source": {
+            "model": "wsp",
+            "index_sha256": "1f68b2cf5f932baab50fc55280b84f9f456f3e2a822d20c006ea8f618983d750",
+            "representation": "target.decoder_stack@BF16",
+            "payload_sha256": "fc7c2807decd21c939155e6f84f25d351ce8dff86bfc1b6070d3a8158c1d6fad"
+          },
+          "tensor": "1.mlp.down_proj.weight",
+          "numerics": "f64-seq-rne1/v1",
+          "rank": 1,
+          "a": [
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000",
+            "3fa0000000000000"
+          ],
+          "b": [
+            "3ff0000000000000",
+            "bfe0000000000000"
+          ],
+          "columns": [
+            8,
+            9
+          ],
+          "origin": "conformance split",
+          "digest": "1705e551acfb255d0703de83303b4436e6e793885585c1129fc48efb04a116d7",
+          "operands_sha256": {
+            "a": "f0f2fa7fe9c56757287cf367cbc2c7a80279801abd66fabdff8d4dc890ce7d1d",
+            "b": "b75ba3b875def5d2f34361fcc7cbea9b45aa3f9ef590f96ad71c90a955800533"
+          },
+          "changed_elements": 128
+        }
+      ],
+      "base_tensor_sha256": "161ad806bfea2514aee3fb3b34e8397e9873123f0234bdd246e6bee9aa10ff51",
+      "result_tensor_sha256": "5fbf52eff4d7cc89ad8f47887c25d6e9c6285b4cc58b806d86605dc20270fb54",
+      "changed_elements": 128
+    },
+    {
+      "object": "target.decoder_stack",
+      "representation": "target.decoder_stack@BF16",
+      "tensor": "0.mlp.down_proj.weight",
+      "dtype": "BF16",
+      "shape": [
+        64,
+        256
+      ],
+      "edits": [
+        {
+          "row": 0,
+          "col": 33,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48398,
+          "new_bits": 48384,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 0,
+          "col": 34,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48438,
+          "new_bits": 48420,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 3,
+          "col": 33,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15351,
+          "new_bits": 15411,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 3,
+          "col": 34,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15395,
+          "new_bits": 15466,
+          "encoding": "result_bits"
+        }
+      ]
+    }
+  ],
+  "origins": [
+    "1705e551acfb255d0703de83303b4436e6e793885585c1129fc48efb04a116d7",
+    "9fe4247d985aaaf221a7f336b91eb4bc181b7f4b3da37ebd3c3ff83ae20e7c94"
+  ],
+  "result": {
+    "canonical": {
+      "payload_sha256": "e919e665ff66da4dddd830ed29540f3a6536afe84e06b980b3ddf876e4457bc6",
+      "segment_sha256": "890dd949ed0b24534121d2db78c7bda5e7de791494250057a1a3fedf950e607c"
+    },
+    "derived": [
+      {
+        "representation": "target.decoder_stack@Q8_0",
+        "encoding": "Q8_0",
+        "source_representation_digest": "e919e665ff66da4dddd830ed29540f3a6536afe84e06b980b3ddf876e4457bc6",
+        "payload_sha256": "5dd925dc9032f487afc2d53de591bc07c913158b70033afcc48f9967a9949817",
+        "segment_sha256": "0b87579bd715e750def9cc82d1886ed26cbcd9bb800599dfcab573e842fe7e5d",
+        "encoder": {
+          "algorithm": "kquant-larql-native",
+          "revision": 2
+        }
+      }
+    ]
+  }
+}

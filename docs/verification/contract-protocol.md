@@ -185,8 +185,17 @@ The same arrangement, for whether a compiled container is what its own weight-pa
 needed: a `weight-patches/v4` ledger carries every op it applied ([weight-patches-v4.md](weight-patches-v4.md)).
 
 ```text
-<verifier> ledger --contract <id> --base <dir> --container <dir>
+<verifier> ledger --contract <id> --base <dir> --container <dir> [--patch <file>]
 ```
+
+`--patch` is optional: the `.vlp` the container was compiled from. A tensor edited only by `remove_direction` ops is
+recorded by its result bits, with the ops' digests in `origins` and the ops themselves nowhere in the ledger
+([weight-patches-v4.md](weight-patches-v4.md) §3b). Without the patch that tensor's numerical half is
+`could_not_evaluate`. With it, the patch's `remove_direction` ops on that tensor are admitted exactly as a ledger's ops
+are (binding, digest, bounds, disjoint columns), each must be one of the ledger's `origins`, and the tensor is
+recomputed from the base and compared in full; the ledger's edits must be exactly the elements the ops change. A patch
+op that is not among the origins is a ledger violation: the patch is not the one this container was compiled from.
+The answer then carries `patch.path` and `patch.sha256`. Ops of other kinds in the patch are not read from it.
 
 The exit status, stdout and the rules for an acceptable answer are as above, with these differences:
 
