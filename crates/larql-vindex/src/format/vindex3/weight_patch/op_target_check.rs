@@ -98,9 +98,10 @@ pub(super) fn check_operation_target(
                 ));
             }
         }
-        match (op.is_zero_valued().unwrap_or(false), entry.changed_elements) {
-            (false, 0) => defects.push(format!("{at} records no changed element")),
-            (true, n) if n > 0 => defects.push(format!(
+        match (op.is_zero_valued(), entry.changed_elements) {
+            (Err(e), _) => defects.push(format!("{at}: {e}")),
+            (Ok(false), 0) => defects.push(format!("{at} records no changed element")),
+            (Ok(true), n) if n > 0 => defects.push(format!(
                 "{at} is zero-valued but records {n} changed element(s)"
             )),
             _ => {}

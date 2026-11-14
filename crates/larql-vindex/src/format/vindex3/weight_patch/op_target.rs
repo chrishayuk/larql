@@ -163,7 +163,8 @@ impl StructuredOpRecord {
     /// Whether the op is **zero-valued** (VLP numerics v2 §5): an `add_low_rank_columns` op in which no element
     /// has a term with both factors nonzero, i.e. for every `k` either column `k` of `a` or row `k` of `b` is all
     /// zero (`−0` included). Under the v2 identity rule it leaves its tensor byte-identical, so it is the declared
-    /// form of a sham edit. Decided from the operands alone. A `remove_direction` op is never zero-valued.
+    /// form of a sham edit. Decided from the operands alone. A `remove_direction` op is never zero-valued. An op
+    /// whose operand lengths do not fit its rank and columns is an error, not a verdict.
     pub fn is_zero_valued(&self) -> Result<bool, WeightPatchError> {
         Ok(match self.kind()? {
             OpKind::AddLowRankColumns {
@@ -176,7 +177,18 @@ impl StructuredOpRecord {
                     OperandBits::F64(v) => v[i] & !F64_SIGN == 0,
                     OperandBits::F32(v) => v[i] & !F32_SIGN == 0,
                 };
-                let (rows, n) = (a.len() / rank.max(1), columns.len());
+                // The record may come from a ledger nobody has run: its operand lengths are checked here, not
+                // trusted, so a short `a` or `b` is an error and never an index out of range.
+                let n = columns.len();
+                if rank == 0 || a.len() % rank != 0 || rank.checked_mul(n) != Some(b.len()) {
+                    return Err(WeightPatchError::Structured(format!(
+                        "a rank-{rank} op over {n} column(s) carries {} `a` and {} `b` operand(s); `a` must be \
+                         rows x rank and `b` rank x columns",
+                        a.len(),
+                        b.len()
+                    )));
+                }
+                let rows = a.len() / rank;
                 (0..rank).all(|k| {
                     (0..rows).all(|r| zero(&a, r * rank + k)) || (0..n).all(|p| zero(&b, k * n + p))
                 })

@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use super::gate_overlay::GateOverlay;
 
 /// A single entry in the retrieval-override KNN store.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KnnEntry {
     /// L2-normalized residual key (hidden_size floats).
     pub key: Vec<f32>,
@@ -191,6 +191,12 @@ impl KnnStore {
     /// Direct access to entries.
     pub fn entries(&self) -> &HashMap<usize, Vec<KnnEntry>> {
         &self.entries
+    }
+
+    /// Whether `self` and `other` hold the same entries, layer by layer and in order. The key rows are derived
+    /// from the entries, so they are not compared.
+    pub fn same_entries(&self, other: &KnnStore) -> bool {
+        self.entries == other.entries
     }
 
     /// Construct from a fully-populated entries map. Used by

@@ -672,6 +672,10 @@ REMOVE PATCH <patch_path>
 REMOVE PATCH "fix-hallucinations.vlp";
 ```
 
+On a VINDEX3 binding the remaining patches are replayed over what the container itself carries, so the L0
+knowledge in the container's own `knn_store.bin` is kept. Knowledge edits staged directly in the session
+(outside any patch) are reset, as on VINDEX2. Stored-weight edits staged directly in the session are kept.
+
 ```
 SHOW PATCHES
 
@@ -1399,8 +1403,13 @@ diffs and `INTO PATCH` are later rungs.
 storage (today: garbage collection — unreferenced files dropped and
 named, referenced segments carried byte-identically). The logical
 DIFF is its proof instrument (`SemanticDiff(input, output) = ∅`), and
-it refuses while the session holds overlay state: COMPILE materialises
-meaning, COMPACT reorganises it — never a second compiler.
+it refuses while the session holds any pending edit, of knowledge or of
+stored weights (`UPDATE WEIGHTS`, `REMOVE DIRECTION`, `ADD LOW RANK`,
+staged directly or by an applied patch): COMPILE materialises
+meaning, COMPACT reorganises it — never a second compiler. Knowledge
+the bound container already carries (`knn_store.bin`) is not an edit
+and is carried, and so is a weight-patched container's ledger
+(`weight_patches.json`).
 The whole-language sweep test
 (`tests/vindex3_lql.rs::every_statement_is_sensible_on_a_v3_binding`)
 pins that every statement either executes or refuses this way — never

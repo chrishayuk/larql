@@ -1,0 +1,6 @@
+[
+ {"name": "fox", "text": "The quick brown fox jumps over the lazy dog", "tokens": [2, 818, 3823, 8864, 37423, 38167, 1024, 506, 31770, 4799]},
+ {"name": "water", "text": "Water boils at one hundred degrees", "tokens": [2, 17390, 104264, 657, 886, 7549, 10674]},
+ {"name": "door", "text": "She opened the old wooden door and", "tokens": [2, 5778, 8678, 506, 2255, 7116, 5232, 532]},
+ {"name": "prime", "text": "In mathematics, a prime number is", "tokens": [2, 902, 29282, 236764, 496, 8355, 1548, 563]}
+]
