@@ -378,6 +378,89 @@ class Judging(unittest.TestCase):
         self.assertEqual(driver.point_of({"rtt_ms": 5.0})["rate_bits_per_s"], lm.UNLIMITED)
 
 
+class WholeValidSchedule(unittest.TestCase):
+    """Every scheduled trial as a full trial record, through the driver's
+    gates and the analysis, with nothing void: the path a valid admissible
+    run takes, which no diagnostic on a busy machine has exercised."""
+
+    WORKER_NS = 4_000_000   # per row, inside the worker
+    COORDINATOR_NS = 20_000_000  # per position, outside the exchanges
+
+    def record(self, entry):
+        """A trial that obeys the exchange model exactly at its delay."""
+        width = bt.ARMS[entry["arm"]] or 1
+        run = trial(entry["arm"], profiled=entry["profiled"], handler_ns=width * self.WORKER_NS)
+        relayed = entry["role"] != bt.ROLE_DIRECT
+        roundtrip = width * self.WORKER_NS + (entry["rtt_ms"] * bt.NS_PER_MS if relayed else 0)
+        for exchange_record in run["exchanges"]:
+            exchange_record["roundtrip_ns"] = int(roundtrip)
+        run["wall_ns"] = int(len(run["exchanges"]) * roundtrip + bt.MEASURED_POSITIONS * self.COORDINATOR_NS)
+        return run
+
+    def run_schedule(self):
+        import block_time as driver
+        observations = []
+        for entry in bt.schedule():
+            relay = None if entry["role"] == bt.ROLE_DIRECT else [
+                {"late_sum_ns": 0, "late_max_ns": 0, "chunks": 10, "bytes": 1}]
+            observations.append(driver.observe(entry, self.record(entry), relay, HASHES, BASE_NS))
+        return driver.judge(observations)
+
+    def test_every_trial_is_valid_and_every_cell_is_filled(self):
+        judged = self.run_schedule()
+        self.assertEqual(len(judged), 50)
+        self.assertEqual([o["label"] for o in judged if not o["valid"]], [])
+        report = bt.analyse(judged)
+        self.assertEqual((report["valid"], report["void"]), (50, 0))
+        self.assertEqual(len(report["cells"]), len(bt.ARMS) * len(bt.RTT_MS))
+        for cell in report["cells"]:
+            self.assertNotIn(None, cell["repeats_ns"])
+
+    def test_slopes_are_fitted_and_classified_for_every_arm(self):
+        report = bt.analyse(self.run_schedule())
+        for arm, slope in report["slopes"].items():
+            predicted = bt.exchanges_per_position(arm)
+            self.assertAlmostEqual(slope["fitted"], predicted, places=6, msg=arm)
+            self.assertAlmostEqual(slope["differential"], predicted, places=6, msg=arm)
+            self.assertEqual([round(v, 6) for v in slope["differential_per_repeat"]], [predicted, predicted])
+            self.assertTrue(slope["fit_within_band"] and slope["differential_within_band"], arm)
+            self.assertTrue(slope["follows_exchange_model"], arm)
+            for residual in slope["residuals_ns"].values():
+                self.assertAlmostEqual(residual, 0.0, places=2)
+            # The intercept is the per-position cost with no added delay.
+            self.assertAlmostEqual(slope["intercept_ns"],
+                                   bt.ROUTED_LAYERS * self.WORKER_NS + self.COORDINATOR_NS, places=0)
+
+    def test_speed_claims_follow_the_registered_rule_at_each_delay(self):
+        claims = {(c["arm"], c["rtt_ms"]): c for c in bt.analyse(self.run_schedule())["faster"]}
+        self.assertEqual(set(claims), {(arm, rtt) for arm in ("block-2", "block-4", "block-8") for rtt in bt.RTT_MS})
+        for (arm, rtt_ms), claim in claims.items():
+            # Same worker and coordinator cost per position in every arm, so a
+            # block is faster exactly where there is a delay to amortise.
+            self.assertEqual(claim["faster_in_every_repeat"], rtt_ms > 0, (arm, rtt_ms))
+            sequential = bt.ROUTED_LAYERS * (self.WORKER_NS + rtt_ms * bt.NS_PER_MS) + self.COORDINATOR_NS
+            block = bt.ROUTED_LAYERS * self.WORKER_NS + bt.exchanges_per_position(arm) * rtt_ms * bt.NS_PER_MS \
+                + self.COORDINATOR_NS
+            for reduction in claim["reduction_per_repeat"]:
+                self.assertAlmostEqual(reduction, (sequential - block) / sequential, places=9)
+
+    def test_decomposition_and_profiling_controls_are_complete(self):
+        import block_time as driver
+        judged = self.run_schedule()
+        for observation in judged:
+            wanted = driver.WORKER_TIMING_COMPLETE if observation["profiled"] else driver.WORKER_TIMING_NOT_REQUESTED
+            self.assertEqual(observation["worker_timing"], wanted)
+            summary = observation["summary"]
+            self.assertEqual(summary["coordinator_ns"], bt.MEASURED_POSITIONS * self.COORDINATOR_NS)
+            if observation["profiled"]:
+                # Nothing is left over once delay and worker time are removed.
+                self.assertEqual(summary["worker"]["unattributed_exchange_ns"], 0)
+        overhead = bt.analyse(judged)["profiling_overhead"]
+        self.assertEqual(len(overhead), len(bt.ARMS) * bt.REPEATS)
+        for row in overhead:
+            self.assertAlmostEqual(row["relative"], 0.0, places=9)
+
+
 class Admission(unittest.TestCase):
     """What the driver refuses before it starts anything."""
 
