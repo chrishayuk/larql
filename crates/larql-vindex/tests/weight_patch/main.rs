@@ -8,6 +8,7 @@ mod errors;
 mod fixture;
 mod golden;
 mod inspection;
+mod lifecycle;
 mod low_rank_op;
 mod multi;
 mod op;
