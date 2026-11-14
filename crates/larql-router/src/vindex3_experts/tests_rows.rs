@@ -100,7 +100,7 @@ async fn rows(
         _ => {}
     }
     let mut reply = ([(axum::http::header::CONTENT_TYPE, content_type)], response).into_response();
-    if profiled {
+    if profiled && fault != NO_TIMING_HEADER {
         let timing = wire::WorkerTiming {
             handler_ns: WORKER_HANDLER_NS,
             ..Default::default()
@@ -113,6 +113,13 @@ async fn rows(
     reply
 }
 
+/// Stub mode that answers correctly but returns no timing header, as a
+/// worker older than the timing header does. Not a fault: the call succeeds.
+const NO_TIMING_HEADER: usize = 14;
+/// A fault found only after the whole response has been read.
+const DROPPED_OUTPUT: usize = 1;
+/// A fault that ends the exchange at the HTTP status.
+const UNAVAILABLE: usize = 11;
 /// Requests the stub saw carrying the profile header.
 static PROFILED_REQUESTS: AtomicUsize = AtomicUsize::new(0);
 /// The handler time the stub worker reports: far below any real round trip.
@@ -180,6 +187,41 @@ async fn rows_cross_once_keep_their_bits_and_refuse_every_wrong_answer() {
         let unprofiled = client.forward_rows(0, LAYER, &asked).unwrap();
         assert_eq!(unprofiled, outputs);
         assert_eq!(PROFILED_REQUESTS.load(Ordering::SeqCst), 1);
+
+        // A profiled call that fails still leaves exactly one record, marked
+        // incomplete, carrying what was known when it failed.
+        let failed = |fault: usize| {
+            mode.store(fault, Ordering::SeqCst);
+            let capture = crate::profile_testing::Capture::start();
+            assert!(client.forward_rows(0, LAYER, &asked).is_err());
+            let trace = capture.finish_provider_calls();
+            mode.store(0, Ordering::SeqCst);
+            assert_eq!(trace.len(), 1, "fault {fault}");
+            assert_eq!(trace[0]["complete"], false);
+            assert!(trace[0]["total_ns"].is_u64());
+            trace[0].clone()
+        };
+        // Refused at the status line: no response was read.
+        let refused = failed(UNAVAILABLE);
+        assert!(refused.get("roundtrip_ns").is_none());
+        assert!(refused.get("worker").is_none());
+        // Read in full, then rejected: the exchange was timed.
+        let rejected = failed(DROPPED_OUTPUT);
+        assert!(rejected["roundtrip_ns"].is_u64());
+        assert_eq!(rejected["worker"]["handler_ns"], WORKER_HANDLER_NS);
+
+        // A worker that returns no timing is not an error; the record says so
+        // and carries no worker fields for a reader to mistake for zeros.
+        mode.store(NO_TIMING_HEADER, Ordering::SeqCst);
+        let capture = crate::profile_testing::Capture::start();
+        assert_eq!(client.forward_rows(0, LAYER, &asked).unwrap(), outputs);
+        let trace = capture.finish_provider_calls();
+        mode.store(0, Ordering::SeqCst);
+        assert_eq!(trace[0]["complete"], true);
+        assert_eq!(trace[0]["worker_profile_complete"], false);
+        assert!(trace[0]["roundtrip_ns"].is_u64());
+        assert!(trace[0].get("worker").is_none());
+        assert!(trace[0].get("transport_remainder_ns").is_none());
 
         for fault in FAULTS {
             mode.store(fault, Ordering::SeqCst);
