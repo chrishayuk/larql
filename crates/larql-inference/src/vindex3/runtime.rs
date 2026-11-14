@@ -402,6 +402,12 @@ impl<B: PlanBackend> Vindex3Runtime<B> {
         )
     }
 
+    /// The operand store this runtime loads through: where it may source representations from, and which
+    /// tensors it has quantised at load so far.
+    pub fn store(&self) -> &OperandStore {
+        &self.store
+    }
+
     /// The component's executable plan — the model-meaning authority.
     pub fn plan(&self) -> &ComponentOpPlan {
         &self.plan

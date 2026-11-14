@@ -266,6 +266,7 @@ impl OperandStore {
             read_bytes: std::sync::atomic::AtomicU64::new(0),
             runtime_quantised: std::sync::atomic::AtomicU64::new(0),
             residency: std::sync::Mutex::new(None),
+            runtime_quantised_names: std::sync::Mutex::new(Vec::new()),
             stored_precision: std::sync::atomic::AtomicU64::new(0),
             touched: std::sync::Mutex::new(std::collections::BTreeSet::new()),
             #[cfg(test)]
@@ -384,6 +385,17 @@ impl OperandStore {
             operand.order = records.len() as u64;
             records.push(operand);
         }
+    }
+
+    /// The tensors quantised at load so far, by name, in load order. Empty under
+    /// [`RepresentationSource::Stored`], which refuses instead. This is the EFFECTIVE representation of a
+    /// run, as distinct from the source it was asked for: a tensor named here executed from a representation
+    /// manufactured in this process, not from the container's stored bytes.
+    pub fn runtime_quantised_tensors(&self) -> Vec<String> {
+        self.runtime_quantised_names
+            .lock()
+            .map(|names| names.clone())
+            .unwrap_or_default()
     }
 
     /// Where this store was allowed to source representations from.
@@ -532,6 +544,9 @@ impl OperandStore {
         }
         self.runtime_quantised
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if let Ok(mut names) = self.runtime_quantised_names.lock() {
+            names.push(tensor.to_string());
+        }
         Ok(())
     }
 }

@@ -206,6 +206,21 @@ impl Parser {
                 container,
             });
         }
+        if matches!(self.peek(), Token::Ident(ref got) if got.eq_ignore_ascii_case("LEDGER")) {
+            self.advance();
+            let container = self.expect_string()?;
+            self.expect_word("USING")?;
+            self.expect_word("CONTRACT")?;
+            let contract = self.expect_string()?;
+            self.expect_keyword(Keyword::From)?;
+            let base = self.expect_string()?;
+            self.eat_semicolon();
+            return Ok(Statement::VerifyLedger {
+                container,
+                contract,
+                base,
+            });
+        }
         self.expect_word("REPRESENTATION")?;
         let container = self.expect_string()?;
         self.expect_word("USING")?;

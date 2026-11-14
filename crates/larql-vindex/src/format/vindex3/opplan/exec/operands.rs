@@ -120,6 +120,9 @@ pub struct OperandStore {
     runtime_quantised: std::sync::atomic::AtomicU64,
     /// An open residency record of this store's loads, if one was asked for. See [`super::residency_record`].
     residency: std::sync::Mutex<Option<Vec<super::residency_record::OperandRecord>>>,
+    /// The tensors behind that count, by name, in the order they were quantised: which operands this store's
+    /// run does NOT execute from their stored bytes. See [`Self::runtime_quantised_tensors`].
+    runtime_quantised_names: std::sync::Mutex<Vec<String>>,
     /// Tensors bound at their stored precision rather than the format the
     /// backend asked for — see [`Self::bound_at_stored_precision`].
     stored_precision: std::sync::atomic::AtomicU64,

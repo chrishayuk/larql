@@ -223,6 +223,27 @@ USE MODEL "google/gemma-3-4b-it" AUTO_EXTRACT;
 USE REMOTE "https://models.example.com/larql";
 ```
 
+**What a VINDEX3 binding executes from.** A session binds a VINDEX3 container under a **representation
+source**, and `USE` states it in its reply (`Execution: representation source …`):
+
+| Source | What `INFER` computes with |
+|---|---|
+| `stored` (default) | The container's stored weights. Nothing is manufactured at load |
+| `auto` | Stored weights, except that the CPU loader may quantise at load any matrix whose stored image does not fit the host's cache. Faster on large models; **not the stored arithmetic**, and which matrices are affected depends on the host |
+| `transient` | Representations quantised at load, ignoring any compiled pack |
+
+The default is `stored`, the same as `larql vindex3 exec --backend production` and the CPU server, so that
+`INFER` in a session computes with the weights the session's edits and `VERIFY` statements are about. There is
+no LQL statement for the source: the embedding program sets it (`Session::set_representation_source`) and
+`larql lql` takes `--representation-source` or `LARQL_LQL_REPRESENTATION_SOURCE`. It applies to a later `USE`;
+a container already bound keeps the source it was bound under. `Session::runtime_quantised_tensors` names the
+tensors a binding has quantised at load: the effective representation, as distinct from the one asked for.
+
+**Compatibility.** Sessions used to bind under `auto`. On a model with matrices larger than the host's cache
+(every `down_proj` of Gemma 3 4B on a 16 MiB L2), `INFER` under the new default is slower and its logits differ
+from what the same session printed before. Neither output is claimed to match the other. `auto` remains
+available as an explicit choice.
+
 ### 3.3 Knowledge Browser Statements
 
 ```
@@ -903,6 +924,8 @@ is declared by its operands and `COMPILE` writes the exact BF16 results; no f32 
   elements, so a whole-matrix edit stays a small record (`docs/verification/weight-patches-v4.md`). `REMOVE DIRECTION`
   ops on the same tensor are recorded with it; other tensors keep their element form. Structured ops are bounded by
   rank, operand size, tensor size and total work (`MAX_STRUCTURED_*`), not by `MAX_PATCH_ELEMENTS`.
+- **Verification.** The ledger and `check_ledger` establish consistency only. Whether the compiled container holds
+  what the ledger's ops compute is for `VERIFY LEDGER` (section 3.9), which recomputes them from the base.
 
 ### 3.6 Schema Introspection Statements
 
@@ -1133,6 +1156,29 @@ the rest against the base) and every other BF16 tensor against the base. A stale
 profile, an operation of another kind, overlapping columns, or a malformed operand is `could_not_evaluate`.
 It does not establish the derived (quantised) representations, the op digest, or the operand's origin, and
 says so. Everything above about an unauthenticated verifier applies.
+
+```sql
+VERIFY LEDGER "<container>" USING CONTRACT "<id>" FROM "<base>";
+
+-- Judge whether <container> is what its own weight-patch ledger declares of <base>, using an independent verifier.
+
+VERIFY LEDGER "edited.vindex3"
+  USING CONTRACT "WEIGHT_PATCHES_V4"
+  FROM "model.vindex3";
+```
+
+**No patch file is needed: a `weight-patches/v4` ledger records every op it applied.** This is how a compile with an
+`ADD LOW RANK` op is verified. `WEIGHT_PATCHES_V4` recomputes each recorded op from the base's weights and the
+ledger's operands, and gives two verdicts that are kept apart:
+
+- **Numerical satisfaction:** every element of every tensor the ledger names equals the recomputed BF16 bits.
+- **Ledger integrity and provenance:** the ledger is bound to this base, every op is intact and within the
+  structured-op bounds, every digest and count agrees with the containers, and nothing outside the edit changed.
+
+The statement is satisfied only when both halves are; the output names a half that failed. An answer whose overall
+status is not the one its halves make is refused. A ledger of another schema (`v2`, `v3`) is `could_not_evaluate`:
+a `REMOVE DIRECTION`-only compile is verified with `VERIFY PATCH`. It judges the canonical BF16 weights only: **the
+re-derived (quantised) representations, which inference may execute, are not judged**, and the output says so.
 
 **`larql lql` exit status:**
 
