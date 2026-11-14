@@ -383,6 +383,7 @@ impl Session {
                 columns,
                 numerics,
             } => self.exec_add_low_rank(operands, tensor, columns, numerics),
+            Statement::DiscardWeightEdits => self.exec_discard_weight_edits(),
             Statement::Merge {
                 source,
                 target,

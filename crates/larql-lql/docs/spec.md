@@ -904,6 +904,21 @@ is declared by its operands and `COMPILE` writes the exact BF16 results; no f32 
   ops on the same tensor are recorded with it; other tensors keep their element form. Structured ops are bounded by
   rank, operand size, tensor size and total work (`MAX_STRUCTURED_*`), not by `MAX_PATCH_ELEMENTS`.
 
+### 3.5.4 Withdrawing staged weight edits: `DISCARD WEIGHT EDITS` (VINDEX3)
+
+```sql
+DISCARD WEIGHT EDITS;
+```
+
+Drops every stored-weight op staged directly in the session (`UPDATE WEIGHTS`, `REMOVE DIRECTION`,
+`ADD LOW RANK`), so a mis-staged edit can be withdrawn without re-binding the container. Nothing is written.
+
+- **An open recording forgets them too.** The copies a `BEGIN PATCH` recording holds are removed, so `SAVE PATCH`
+  does not write a discarded edit.
+- **An applied patch's ops stay with the patch.** `REMOVE PATCH` removes those; the reply says how many remain.
+- **The elements and columns are free again.** A discarded op no longer conflicts with a later one.
+- With nothing staged it says so and is not an error. It is all or nothing: there is no form that drops one op.
+
 ### 3.6 Schema Introspection Statements
 
 ```
