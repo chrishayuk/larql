@@ -65,7 +65,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Activate the pinned Rust toolchain
         run: rustup show active-toolchain
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: TLS gate controls
@@ -79,7 +79,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       # -B: no __pycache__ anywhere; v2's tests require the frozen v1 directory to hold exactly its five files,
