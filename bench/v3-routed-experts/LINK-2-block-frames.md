@@ -1,10 +1,12 @@
 # LINK-2 block-frame addendum (pre-registration, DRAFT)
 
-Status: **approved in principle on 2026-11-14; not yet frozen. No diagnostic
-or qualifying run has been made under it.** Once frozen, any change to a
-parameter or rule is a new revision, not an edit. A development check made
-while building the harness is recorded at the end and needs a decision
-first.
+Status: **superseded on 2026-11-14 by
+[revision 2](LINK-2-block-frames-revision-2.md), and kept as the record of
+revision 1. It was never frozen. Its one declared diagnostic
+([receipt](link-results/link-2-block-frames/20261114-01-diagnostic/calibration.json))
+failed at width 8 and a 1 ms round trip, and that failure stands as
+recorded.** No run under this revision counts under any other. The text below
+is revision 1 as it stood, apart from this paragraph.
 
 It adds evidence beside [LINK-2 revision 3](LINK-2-revision-3.md). It does
 not amend revision 3, re-score any run made under it, or touch its receipts.

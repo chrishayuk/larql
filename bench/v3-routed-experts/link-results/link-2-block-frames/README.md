@@ -1,8 +1,10 @@
 # LINK-2 block-frame addendum: runs
 
-Runs of [`link_block_frames.py`](../../link_block_frames.py) under the
-[block-frame addendum](../../LINK-2-block-frames.md). The addendum is not
-frozen and nothing here qualifies the relay at these frame sizes.
+Runs under the LINK-2 block-frame addendum. Both runs below were made under
+[revision 1](../../LINK-2-block-frames.md), which
+[revision 2](../../LINK-2-block-frames-revision-2.md) supersedes because of
+what they found. Nothing here qualifies the relay at these frame sizes, and
+nothing here counts under revision 2.
 
 | Run | Kind | Result |
 |---|---|---|

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""LINK-2 block-frame addendum harness (LINK-2-block-frames.md). Nothing runs on import.
+"""LINK-2 block-frame addendum harness, revision 2 (LINK-2-block-frames-revision-2.md).
+
+Nothing runs on import.
 
   --diagnostic LABEL   a development run; declared before it starts, never counted
   --qualifying         a qualification attempt; refuses to start while a
                        compiler or model process is running
 
 Drives the frozen relay with `v3_link_pair` at the multi-row frame sizes of
-block widths 1, 2, 4 and 8, and judges every point with LINK-2 revision 3's
-rules, unchanged. No exchange, pair or point is ever excluded.
+block widths 1, 2, 4 and 8, at the null point and round trips of 5 and 20 ms,
+and judges every point with LINK-2 revision 3's rules, unchanged. No exchange, pair or point is ever excluded.
 """
 import argparse
 import json

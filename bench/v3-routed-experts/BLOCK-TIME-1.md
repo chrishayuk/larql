@@ -1,15 +1,27 @@
-# BLOCK-TIME-1: block verification width against round-trip time (pre-registration, DRAFT)
+# BLOCK-TIME-1, revision 2: block verification width against round-trip time (pre-registration, DRAFT)
 
-Status: **draft, revised 2026-11-14 after review. Approved in principle; not
-frozen. No timed run has been made.** The instrument is built and tested on
-synthetic records but has not run end to end. After freezing, any change to
-a parameter, gate or rule is a new revision, not an edit.
+Status: **revision 2 draft, 2026-11-14. Not frozen. No timed run has been
+made.** The instrument is built and tested on synthetic records, and the
+trial binary has passed an end-to-end smoke; the driver has not run a full
+schedule. After freezing, any change to a parameter, gate or rule is a new
+revision, not an edit.
 
-Changes in this revision: worker-side timing is part of the decomposition
-(it needs the multi-row worker-timing change, which is separate and not yet
-merged); every arm also runs unprofiled at 0 ms; the saved-control alignment
-is derived and tested, not stated as a position range; the thresholds are
-described as a model-fit band and a minimum effect, not significance.
+**What revision 2 changes.** Revision 1 (the draft in this file's history)
+compared the arms at 0, 1, 5 and 20 ms. The relay could not be qualified at
+block frame sizes for 1 ms under the existing calibration
+([block-frame addendum, revision 2](LINK-2-block-frames-revision-2.md)). So:
+
+- the primary comparison is at **0, 5 and 20 ms**;
+- **1 ms is run as a diagnostic only**: reported, never fitted, never the
+  basis of a statement;
+- the slope is fitted over the three primary delays with its residuals, and
+  a **5-to-20 ms differential slope** is reported beside it, which does not
+  use the zero-delay arm;
+- the interpretation separates the relay's buffering behaviour from the
+  configured delay.
+
+Nothing else changes: arms, supplied ids, measured region, profiling
+controls, one worker, the 10% and 1% thresholds.
 
 Correctness of the path being timed is recorded in
 [BLOCK-CHECK](BLOCK-CHECK.md). This protocol measures time only.
@@ -58,9 +70,34 @@ of the route and of the block session from the effect of width.
 
 ## Points
 
-Round trips of **0 (relay at zero delay), 1, 5 and 20 ms**, unlimited rate.
+**Primary:** round trips of **0 (relay at zero delay), 5 and 20 ms**,
+unlimited rate. The relay is qualified at block frame sizes for 5 and 20 ms.
+The 0 ms arm is the zero-delay relay, a measured control.
+
+**Diagnostic only:** **1 ms**. The additive-delay calibration failed its
+tolerance for width-8 frames at this round trip, so the relay is unqualified
+there at block frame sizes. The trials are run and reported in a separate
+table. They enter no fit and support no statement, whatever they show. This
+is not a claim that 1 ms cannot be measured; it has not been qualified by
+this calibration.
+
 One further control, `direct` (no relay), is run for `sequential` only and
 prices the relay itself; it is not part of any comparison.
+
+### The zero-delay arm is a different transport regime
+
+The zero-delay relay and the delayed relay do not forward a large frame
+alike. With no delay the relay interleaves reading and writing; with a delay
+it reads the whole frame while the chunks wait. A chunk trace measured the
+difference at about 100 µs per width-8 exchange, less for smaller frames
+([runs](link-results/link-2-block-frames/README.md)). At three exchanges per
+position for `block-8` that is roughly 0.3 ms per position, against a
+per-position time expected to be of the order of 100 ms.
+
+It is small, but it is systematic and it falls on the wide arms at 0 ms
+only. So the 0 ms arm is read as "block execution through the zero-delay
+relay", not as the delayed arms extrapolated to zero, and the analysis
+reports a slope that does not use it.
 
 ## Trial
 
@@ -88,8 +125,8 @@ frame is the same bytes either way.
 Warm-up `sequential` trials at 0 ms until two consecutive measured-region
 times agree within 1%, at most four. If they never agree the run stops.
 
-Then two repeats. In each, the four delays are visited in order (reversed in
-the second repeat). At each delay the five arms run in an order rotated by
+Then two repeats. In each, the three primary delays are visited in order
+(reversed in the second repeat). At each delay the five arms run in an order rotated by
 one position per delay, reversed in the second repeat. A `sequential` trial
 at 0 ms brackets every delay, before and after.
 
@@ -98,10 +135,14 @@ also runs once per repeat **unprofiled**, directly after the profiled arms
 of that delay and inside the same brackets, so the cost of asking the worker
 for its timing is measured and not assumed.
 
-That is 40 arm trials, 10 unprofiled trials, 10 bracket trials and 2
-`direct` trials: 62 in the order `block_time_model.schedule()` produces.
-Estimated duration is 70 to 90 minutes, dominated by `sequential` and
-`block-1` at 20 ms.
+Each repeat then ends with the diagnostic delay: the five arms at 1 ms,
+followed by a bracket, after every primary trial of that repeat has run, so
+the diagnostic trials cannot sit between a primary trial and its brackets.
+
+That is 30 primary arm trials, 10 unprofiled trials, 10 diagnostic trials,
+10 bracket trials and 2 `direct` trials: 62 in the order
+`block_time_model.schedule()` produces. Estimated duration is 70 to 90
+minutes, dominated by `sequential` and `block-1` at 20 ms.
 
 ## Validity gates
 
@@ -133,7 +174,7 @@ A **trial is valid** only if all hold:
 A void trial is kept as a diagnostic and never fitted, pooled or replaced.
 
 The **run is admissible** only if two passing
-[block-frame qualification](LINK-2-block-frames.md) receipts for the relay
+[block-frame qualification](LINK-2-block-frames-revision-2.md) receipts for the relay
 binary in use are supplied, the peer sessions confirmed a quiet machine
 before the first trial and the handshake is saved with the receipts, and no
 compiler or model process other than this experiment's was running at start
@@ -144,11 +185,17 @@ or end.
 `t(arm, delay)` is the measured-region wall time divided by 56, the mean of
 the valid repeats. A cell with no valid trial is reported as missing.
 
-1. **Table.** `t` for all twenty cells, with both repeats shown.
-2. **Slope.** For each arm, a least-squares line of `t` on configured round
-   trip over the four delays. The network model predicts a slope of
-   `24 / W` round trips per position (24 for `sequential` and `block-1`).
-   Reported: fitted slope, predicted slope, their ratio, and the intercept.
+1. **Table.** `t` for the fifteen primary cells, with both repeats shown.
+   The five 1 ms cells are in a separate diagnostic table.
+2. **Slope.** The exchange model predicts `24 / W` round trips per position
+   (24 for `sequential` and `block-1`, then 12, 6 and 3). Two estimates per
+   arm, each with its ratio to the prediction:
+   - **Three-point fit**: a least-squares line of `t` on configured round
+     trip over 0, 5 and 20 ms, with its intercept and the residual at each
+     of the three delays.
+   - **Differential slope**: `S = (t(20) − t(5)) / 15 ms`, from the two
+     qualified delays alone, also reported for each repeat separately. It
+     does not use the zero-delay arm.
 3. **Decomposition per cell**, from the per-exchange records:
 
    ```text
@@ -192,25 +239,41 @@ protocol is frozen.
 Fixed before any data:
 
 - **"Elapsed time per evaluated position follows the exchange model"** for
-  an arm only if its fitted slope is within 10% of `24 / W`.
-- **"Width W reduced elapsed time per evaluated position at delay D"** only
-  if, in each repeat separately, `t(block-W, D)` is below `t(sequential, D)`
+  an arm only if **both** its three-point fitted slope and its differential
+  slope are within 10% of `24 / W`. Each is also reported on its own, so a
+  disagreement between them, which would point at the zero-delay regime, is
+  visible and not averaged away.
+- **"Width W reduced elapsed time per evaluated position at delay D"**, for
+  D of 5 or 20 ms, only if, in each repeat separately, `t(block-W, D)` is below `t(sequential, D)`
   by more than 1% of `t(sequential, D)`. Both repeats' reductions are
   reported individually.
 
 The 10% band is a model-fit criterion and the 1% a minimum effect that must
 appear in both repeats. Neither is a significance level: two repeats cannot
 support a confidence statement, and none is made.
-- **"Block execution costs more (or less) at zero added delay"** from the
-  0 ms column and the `block-1` control, stated with its size.
+- **"Block execution costs more (or less) through the zero-delay relay"**
+  from the 0 ms column and the `block-1` control, stated with its size and
+  with the regime note above. It is a statement about that arm, not about a
+  network with no latency.
+
+No statement of any kind is made from the 1 ms trials.
 
 If a slope is outside 10%, or a block arm is not faster at 5 or 20 ms, that
 is the result, reported with the decomposition that locates it.
 
+**Interpretation keeps two things apart.** The configured round trip is what
+the relay adds to each exchange by design. How the relay and the sockets
+buffer a frame is a property of this instrument and changes with frame size
+and with whether a delay is present. A difference between arms is attributed
+to the configured delay only as far as the slope and the decomposition
+support it; the remainder is reported as unattributed, never as network
+latency.
+
 ## Not claimed whatever the outcome
 
 Accepted-token or generation throughput; any benefit of speculative
-decoding; behaviour on a physical network; rate-limited links; two or more
+decoding; behaviour on a physical network; anything at a 1 ms round trip;
+rate-limited links; two or more
 workers; any reduction in expert weight reads; any model other than
 GPT-OSS 20B on this host.
 
@@ -233,28 +296,16 @@ GPT-OSS 20B on this host.
   and analysis, pure, with `test_block_time_model.py`.
 - [`block_time.py`](block_time.py): starts the worker and relays, runs the
   schedule and applies the model. `--admissible` refuses without two passing
-  [block-frame](LINK-2-block-frames.md) receipts for the relay in use, the
+  [block-frame](LINK-2-block-frames-revision-2.md) receipts for the relay in use, the
   saved peer handshake and a quiet machine. `--diagnostic` runs are labelled
   and never count.
 
 ## Before freezing
 
-1. The multi-row worker-timing change is reviewed and merged.
-2. A declared diagnostic run completes end to end.
-3. The block-frame qualification question below is settled.
+1. The multi-row worker-timing change is reviewed and merged, and the
+   binaries are built from it.
+2. This revision and block-frame addendum revision 2 are approved.
+3. A declared diagnostic run of the driver completes end to end.
 
-## Open: the relay at large frames and short delays
-
-A development check of the frozen relay at the block frame sizes (ten pairs
-per point, on a loaded machine, not a diagnostic of record) gave these
-errors against the configured 1 ms round trip: width 1 +32 µs, width 2
-−3 µs, width 4 −34 µs, width 8 −88 µs. Width 8 read −72 µs at 5 ms and
-−18 µs at 20 ms. LINK-2's tolerance at 1 ms is 50 µs.
-
-If a proper diagnostic confirms this, the block-frame qualification fails at
-(width 8, 1 ms) by its own rule and this experiment does not run as drawn.
-It would also matter directly: 88 µs per exchange is 9% of the configured
-delay there, against a 10% slope band. The tolerance is not to be changed.
-The options are a decision for the protocol's owner, for example dropping
-the 1 ms delay from this experiment or treating it as below the relay's
-resolution at width 8.
+Then, in order: two passing block-frame qualifications under revision 2 on a
+quiet machine, and the one admissible run.

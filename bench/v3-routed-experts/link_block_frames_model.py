@@ -1,4 +1,10 @@
-"""LINK-2 block-frame addendum: points, geometry and verdicts (LINK-2-block-frames.md).
+"""LINK-2 block-frame addendum, revision 2: points, geometry and verdicts
+(LINK-2-block-frames-revision-2.md).
+
+Revision 1 (LINK-2-block-frames.md) measured a 1 ms round trip as well. Its
+one diagnostic failed there at width 8, and the chunk trace showed why: the
+additive expectation does not hold for multi-chunk frames. Revision 2
+qualifies 5 and 20 ms only. A revision 1 receipt is never accepted here.
 
 Pure and frozen with the addendum. Every measurement parameter and decision
 rule is LINK-2 revision 3's and is taken from `link_pair_model`, never
@@ -10,13 +16,16 @@ from pathlib import Path
 import link_model as lm
 import link_pair_model as pm
 
-ADDENDUM = "LINK-2 block-frame addendum 1"
+ADDENDUM = "LINK-2 block-frame addendum revision 2"
+# The superseded revision, named so its receipts are refused by name.
+SUPERSEDED = "LINK-2 block-frame addendum 1"
 SCHEMA = "larql.v3.link-block-frames.v1"
 GEOMETRY_FILE = "block_frames.json"
 # Block widths of BLOCK-TIME-1, in the order they are measured.
 WIDTHS = (1, 2, 4, 8)
-# Round trips of BLOCK-TIME-1 other than zero, which is the null point.
-RTT_MS = (1.0, 5.0, 20.0)
+# The non-zero round trips of BLOCK-TIME-1's primary comparison. Zero is the
+# null point. 1 ms is not qualified: see the module docstring.
+RTT_MS = (5.0, 20.0)
 PASSING_RUNS_REQUIRED = 2
 
 
@@ -55,6 +64,8 @@ def run_verdict(judged):
 
 def check_qualifying_receipt(receipt, relay_sha256):
     """Refuse anything but a passing qualifying run of this addendum on this relay build."""
+    if receipt.get("protocol") == SUPERSEDED:
+        raise ValueError(f"{SUPERSEDED} is superseded and never counts under {ADDENDUM}")
     if receipt.get("schema") != SCHEMA or receipt.get("protocol") != ADDENDUM:
         raise ValueError(f"not a {ADDENDUM} receipt")
     if receipt.get("rules") != pm.REVISION:

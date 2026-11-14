@@ -43,10 +43,11 @@ class Geometry(unittest.TestCase):
     def test_points_are_null_then_each_round_trip_for_each_width(self):
         points = bm.frozen_points()
         self.assertEqual(len(points), len(bm.WIDTHS) * (1 + len(bm.RTT_MS)))
-        self.assertEqual([p["width"] for p in points[::4]], list(bm.WIDTHS))
-        for start in range(0, len(points), 4):
-            group = points[start:start + 4]
-            self.assertEqual([p["kind"] for p in group], ["null", "axis", "axis", "axis"])
+        per_width = 1 + len(bm.RTT_MS)
+        self.assertEqual([p["width"] for p in points[::per_width]], list(bm.WIDTHS))
+        for start in range(0, len(points), per_width):
+            group = points[start:start + per_width]
+            self.assertEqual([p["kind"] for p in group], ["null"] + ["axis"] * len(bm.RTT_MS))
             self.assertEqual([p["rtt_ms"] for p in group], [0.0, *bm.RTT_MS])
             self.assertTrue(all(p["rate_bits_per_s"] == lm.UNLIMITED for p in group))
 
@@ -76,7 +77,8 @@ class Verdict(unittest.TestCase):
 
     def test_points_missing_or_out_of_order_are_refused_not_judged(self):
         judged = judged_run()
-        for broken in (judged[:-1], judged[::-1], judged[4:] + judged[:4]):
+        per_width = 1 + len(bm.RTT_MS)
+        for broken in (judged[:-1], judged[::-1], judged[per_width:] + judged[:per_width]):
             with self.assertRaises(ValueError):
                 bm.run_verdict(broken)
 
@@ -103,6 +105,29 @@ class Qualification(unittest.TestCase):
         fewer_pairs = dict(pm.frozen_parameters(), pairs=pm.PAIRS // 2)
         self.refused(good, receipt(judged, started="x", frozen=fewer_pairs))
         bm.check_qualification([good, later], RELAY_SHA)
+
+    def test_one_millisecond_is_not_a_qualified_point(self):
+        self.assertEqual(bm.RTT_MS, (5.0, 20.0))
+        self.assertNotIn(1.0, [p["rtt_ms"] for p in bm.frozen_points()])
+        self.assertEqual(len(bm.frozen_points()), 12)
+
+    def test_a_revision_1_receipt_is_refused_by_name_whatever_it_says(self):
+        judged = judged_run()
+        old = receipt(judged, protocol=bm.SUPERSEDED)
+        with self.assertRaisesRegex(ValueError, "superseded"):
+            bm.check_qualifying_receipt(old, RELAY_SHA)
+
+    def test_the_recorded_revision_1_diagnostic_cannot_qualify(self):
+        import json
+        from pathlib import Path
+        recorded = json.loads((Path(__file__).with_name("link-results") / "link-2-block-frames"
+                               / "20261114-01-diagnostic" / "calibration.json").read_text())
+        self.assertFalse(recorded["run_passes"])
+        with self.assertRaises(ValueError):
+            bm.check_qualifying_receipt(recorded, recorded["binary_sha256"]["v3_link_shaper"])
+        # Even its points cannot be read as a revision 2 run.
+        with self.assertRaises(ValueError):
+            bm.run_verdict(recorded["points"])
 
     def test_a_revision_3_receipt_is_not_a_block_frame_receipt(self):
         with self.assertRaises(ValueError):

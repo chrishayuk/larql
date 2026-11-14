@@ -9,7 +9,7 @@ import statistics
 import link_model as lm
 from profile_exact import agreement
 
-PROTOCOL = "BLOCK-TIME-1 draft"
+PROTOCOL = "BLOCK-TIME-1 revision 2 draft"
 SCHEMA = "larql.v3.block-time.v1"
 
 # GPT-OSS 20B, one worker owning every routed layer and expert.
@@ -19,7 +19,14 @@ SEQUENTIAL = "sequential"
 ARMS = {SEQUENTIAL: None, "block-1": 1, "block-2": 2, "block-4": 4, "block-8": 8}
 # The arm with sequential's exchange count on the block route: a control.
 CONTROL_ARM = "block-1"
-RTT_MS = (0.0, 1.0, 5.0, 20.0)
+# The primary comparison. The relay is qualified at block frame sizes for
+# the non-zero delays here; 0 ms is the zero-delay relay, a measured control.
+RTT_MS = (0.0, 5.0, 20.0)
+# Run and reported, never fitted or claimed on: the additive-delay
+# calibration failed its tolerance for width-8 frames at this round trip.
+DIAGNOSTIC_RTT_MS = (1.0,)
+# The two delays of the differential slope, which does not use the 0 ms arm.
+DIFFERENTIAL_RTT_MS = (5.0, 20.0)
 REPEATS = 2
 # The supplied stream and the region of it that is timed.
 POSITIONS = 216
@@ -36,6 +43,8 @@ SLOPE_BAND = 0.10
 MINIMUM_EFFECT = 0.01
 
 ROLE_BRACKET, ROLE_ARM, ROLE_UNPROFILED, ROLE_DIRECT = "bracket", "arm", "unprofiled", "direct"
+# An arm trial at an unqualified delay: bracketed and gated like any other.
+ROLE_DIAGNOSTIC = "diagnostic"
 
 
 def exchanges_per_position(arm):
@@ -51,6 +60,9 @@ def schedule():
     delay the arms run in an order rotated by one per delay, reversed in the
     second repeat. At 0 ms each arm also runs once unprofiled, so the cost
     of asking the worker for its timing is measured and not assumed.
+
+    Each repeat then ends with the diagnostic delays, bracketed the same
+    way, after every primary trial of that repeat has run.
     """
     trials = []
 
@@ -72,6 +84,10 @@ def schedule():
             if rtt_ms == 0.0:
                 for arm in order:
                     add(ROLE_UNPROFILED, arm, rtt_ms, repeat, False)
+            add(ROLE_BRACKET, SEQUENTIAL, 0.0, repeat, True)
+        for rtt_ms in DIAGNOSTIC_RTT_MS:
+            for arm in (arms if repeat % 2 == 0 else list(reversed(arms))):
+                add(ROLE_DIAGNOSTIC, arm, rtt_ms, repeat, True)
             add(ROLE_BRACKET, SEQUENTIAL, 0.0, repeat, True)
     return trials
 
@@ -172,6 +188,17 @@ def bracket_drift(before, after):
     return agreement(before["per_position_ns"], after["per_position_ns"])
 
 
+def differential_slope(low, high):
+    """Round trips per position between two delayed points, each (ns, ns).
+
+    Uses no zero-delay measurement, so it does not depend on the zero-delay
+    relay behaving like the delayed one.
+    """
+    if high[0] == low[0]:
+        raise ValueError("a differential slope needs two distinct delays")
+    return (high[1] - low[1]) / (high[0] - low[0])
+
+
 def fit_slope(points):
     """Least-squares line of per-position time on configured round trip.
 
@@ -210,18 +237,41 @@ def analyse(observations):
             cells[(arm, rtt_ms)] = {"repeats_ns": repeats,
                                     "mean_ns": statistics.fmean(valid) if valid else None}
 
+    def within_band(slope, predicted):
+        return abs(slope / predicted - 1) <= SLOPE_BAND
+
     slopes = {}
     for arm in ARMS:
         points = [(rtt_ms * NS_PER_MS, cells[(arm, rtt_ms)]["mean_ns"]) for rtt_ms in RTT_MS]
         predicted = exchanges_per_position(arm)
         if any(value is None for _, value in points):
             slopes[arm] = {"predicted": predicted, "fitted": None, "ratio": None, "intercept_ns": None,
+                           "residuals_ns": None, "fit_within_band": None,
+                           "differential": None, "differential_ratio": None,
+                           "differential_per_repeat": None, "differential_within_band": None,
                            "follows_exchange_model": None, "note": "a delay has no valid trial"}
             continue
         slope, intercept = fit_slope(points)
-        slopes[arm] = {"predicted": predicted, "fitted": slope, "ratio": slope / predicted,
-                       "intercept_ns": intercept,
-                       "follows_exchange_model": abs(slope / predicted - 1) <= SLOPE_BAND}
+        low, high = (next(p for p in points if p[0] == rtt_ms * NS_PER_MS) for rtt_ms in DIFFERENTIAL_RTT_MS)
+        differential = differential_slope(low, high)
+        per_repeat = []
+        for repeat in range(REPEATS):
+            pair = [per_position(ROLE_ARM, arm, rtt_ms, repeat) for rtt_ms in DIFFERENTIAL_RTT_MS]
+            per_repeat.append(None if None in pair else differential_slope(
+                (DIFFERENTIAL_RTT_MS[0] * NS_PER_MS, pair[0]), (DIFFERENTIAL_RTT_MS[1] * NS_PER_MS, pair[1])))
+        slopes[arm] = {
+            "predicted": predicted, "fitted": slope, "ratio": slope / predicted, "intercept_ns": intercept,
+            # Measured less fitted, at each delay of the fit.
+            "residuals_ns": {str(rtt_ms): value - (intercept + slope * x)
+                             for rtt_ms, (x, value) in zip(RTT_MS, points)},
+            "fit_within_band": within_band(slope, predicted),
+            "differential": differential, "differential_ratio": differential / predicted,
+            "differential_per_repeat": per_repeat,
+            "differential_within_band": within_band(differential, predicted),
+            # Both the fit over every primary delay and the slope between
+            # the two delayed points must be within the band.
+            "follows_exchange_model": within_band(slope, predicted) and within_band(differential, predicted),
+        }
 
     faster = []
     for arm in ARMS:
@@ -246,9 +296,16 @@ def analyse(observations):
             overhead.append({"arm": arm, "repeat": repeat, "profiled_ns": profiled, "unprofiled_ns": plain,
                              "relative": None if None in (profiled, plain) else (profiled - plain) / plain})
 
+    diagnostic = [{"arm": arm, "rtt_ms": rtt_ms,
+                   "repeats_ns": [per_position(ROLE_DIAGNOSTIC, arm, rtt_ms, repeat) for repeat in range(REPEATS)]}
+                  for arm in ARMS for rtt_ms in DIAGNOSTIC_RTT_MS]
+
     return {
         "cells": [{"arm": arm, "rtt_ms": rtt_ms, **cell} for (arm, rtt_ms), cell in cells.items()],
         "slopes": slopes, "faster": faster, "profiling_overhead": overhead,
+        "diagnostic_cells": diagnostic,
+        "diagnostic_note": "delays the relay is not qualified for at block frame sizes; reported only, "
+                           "never fitted and never the basis of a statement",
         "valid": sum(o["valid"] for o in observations),
         "void": sum(not o["valid"] for o in observations),
         "thresholds": {"slope_band": SLOPE_BAND, "minimum_effect": MINIMUM_EFFECT, "gate": GATE},

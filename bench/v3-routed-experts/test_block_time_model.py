@@ -62,7 +62,7 @@ class Schedule(unittest.TestCase):
     def test_every_delay_group_sits_between_two_sequential_zero_delay_brackets(self):
         trials = bt.schedule()
         for index, entry in enumerate(trials):
-            if entry["role"] not in (bt.ROLE_ARM, bt.ROLE_UNPROFILED):
+            if entry["role"] not in (bt.ROLE_ARM, bt.ROLE_UNPROFILED, bt.ROLE_DIAGNOSTIC):
                 continue
             before = next(t for t in reversed(trials[:index]) if t["role"] == bt.ROLE_BRACKET)
             after = next(t for t in trials[index:] if t["role"] == bt.ROLE_BRACKET)
@@ -85,6 +85,25 @@ class Schedule(unittest.TestCase):
         plain = [t for t in bt.schedule() if t["role"] == bt.ROLE_UNPROFILED]
         self.assertEqual(len(plain), len(bt.ARMS) * bt.REPEATS)
         self.assertTrue(all(t["rtt_ms"] == 0.0 and not t["profiled"] for t in plain))
+
+    def test_one_millisecond_runs_last_in_each_repeat_and_only_as_a_diagnostic(self):
+        self.assertEqual(bt.RTT_MS, (0.0, 5.0, 20.0))
+        self.assertEqual(bt.DIAGNOSTIC_RTT_MS, (1.0,))
+        trials = bt.schedule()
+        at_one = [t for t in trials if t["rtt_ms"] == 1.0]
+        self.assertEqual(len(at_one), len(bt.ARMS) * bt.REPEATS)
+        self.assertTrue(all(t["role"] == bt.ROLE_DIAGNOSTIC for t in at_one))
+        for repeat in range(bt.REPEATS):
+            mine = [t for t in trials if t["repeat"] == repeat]
+            last_primary = max(i for i, t in enumerate(mine) if t["role"] in (bt.ROLE_ARM, bt.ROLE_UNPROFILED))
+            first_diagnostic = min(i for i, t in enumerate(mine) if t["role"] == bt.ROLE_DIAGNOSTIC)
+            self.assertLess(last_primary, first_diagnostic)
+
+    def test_the_schedule_has_the_registered_number_of_trials(self):
+        roles = [t["role"] for t in bt.schedule()]
+        self.assertEqual({role: roles.count(role) for role in set(roles)},
+                         {bt.ROLE_ARM: 30, bt.ROLE_UNPROFILED: 10, bt.ROLE_DIAGNOSTIC: 10,
+                          bt.ROLE_BRACKET: 10, bt.ROLE_DIRECT: 2})
 
     def test_measured_region_is_whole_blocks_at_every_width(self):
         for width in filter(None, bt.ARMS.values()):
@@ -213,6 +232,48 @@ class Analysis(unittest.TestCase):
             self.assertAlmostEqual(slope["intercept_ns"], BASE_NS, places=0)
         self.assertEqual(report["void"], 0)
 
+    def test_the_differential_slope_does_not_use_the_zero_delay_arm(self):
+        # The zero-delay relay costs a wide block extra; the delayed arms obey the model.
+        offset = 0.5 * bt.exchanges_per_position("block-8") * 20.0 * bt.NS_PER_MS
+
+        def offset_at_zero(arm, rtt_ms, repeat):
+            return model(arm, rtt_ms, repeat) + (offset if arm == "block-8" and rtt_ms == 0.0 else 0)
+        slope = bt.analyse(observations(offset_at_zero))["slopes"]["block-8"]
+        self.assertAlmostEqual(slope["differential"], bt.exchanges_per_position("block-8"), places=6)
+        self.assertTrue(slope["differential_within_band"])
+        self.assertFalse(slope["fit_within_band"])
+        # The statement needs both.
+        self.assertFalse(slope["follows_exchange_model"])
+        self.assertEqual([round(value, 6) for value in slope["differential_per_repeat"]], [3.0, 3.0])
+
+    def test_a_differential_outside_the_band_fails_even_if_the_fit_passes(self):
+        def bent(arm, rtt_ms, repeat):
+            # Raise the middle delay: the three-point fit barely moves, the 5-to-20 slope does.
+            lift = 0.2 * bt.exchanges_per_position(arm) * 15.0 * bt.NS_PER_MS
+            return model(arm, rtt_ms, repeat) + (lift if arm == "block-4" and rtt_ms == 5.0 else 0)
+        slope = bt.analyse(observations(bent))["slopes"]["block-4"]
+        self.assertTrue(slope["fit_within_band"])
+        self.assertFalse(slope["differential_within_band"])
+        self.assertFalse(slope["follows_exchange_model"])
+
+    def test_residuals_are_reported_at_every_fitted_delay_and_vanish_on_the_model(self):
+        slope = bt.analyse(observations(model))["slopes"]["block-2"]
+        self.assertEqual(set(slope["residuals_ns"]), {str(rtt_ms) for rtt_ms in bt.RTT_MS})
+        for value in slope["residuals_ns"].values():
+            self.assertAlmostEqual(value, 0.0, places=3)
+
+    def test_one_millisecond_is_reported_and_never_fitted_or_claimed_on(self):
+        def absurd_at_one(arm, rtt_ms, repeat):
+            return 1.0 if rtt_ms == 1.0 else model(arm, rtt_ms, repeat)
+        report = bt.analyse(observations(absurd_at_one))
+        clean = bt.analyse(observations(model))
+        self.assertEqual(report["slopes"], clean["slopes"])
+        self.assertEqual(report["faster"], clean["faster"])
+        self.assertFalse(any(cell["rtt_ms"] == 1.0 for cell in report["cells"]))
+        self.assertFalse(any(claim["rtt_ms"] == 1.0 for claim in report["faster"]))
+        self.assertEqual(len(report["diagnostic_cells"]), len(bt.ARMS))
+        self.assertTrue(all(cell["repeats_ns"] == [1.0, 1.0] for cell in report["diagnostic_cells"]))
+
     def test_predicted_slopes_are_exchanges_per_position(self):
         self.assertEqual([bt.exchanges_per_position(arm) for arm in bt.ARMS], [24, 24, 12, 6, 3])
 
@@ -306,7 +367,7 @@ class Judging(unittest.TestCase):
         judged = driver.judge(out)
         brackets = [i for i, o in enumerate(judged) if o["role"] == bt.ROLE_BRACKET]
         for index, observation in enumerate(judged):
-            if observation["role"] not in (bt.ROLE_ARM, bt.ROLE_UNPROFILED):
+            if observation["role"] not in (bt.ROLE_ARM, bt.ROLE_UNPROFILED, bt.ROLE_DIAGNOSTIC):
                 continue
             beside = brackets[1] < index < brackets[3]
             self.assertEqual(observation["valid"], not beside, observation["label"])
