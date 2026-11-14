@@ -154,6 +154,25 @@ impl ExpertTransport for Experts {
             })
             .collect())
     }
+    fn forward_rows(
+        &self,
+        _shard: usize,
+        _layer: usize,
+        rows: &[larql_router_protocol::vindex3_expert_rows::Row],
+    ) -> Result<Vec<larql_router_protocol::vindex3_expert_rows::Output>, String> {
+        Ok(rows
+            .iter()
+            .flat_map(|row| {
+                row.experts.iter().map(|&expert| {
+                    larql_router_protocol::vindex3_expert_rows::Output {
+                        row: row.id,
+                        expert,
+                        values: row.input.clone(),
+                    }
+                })
+            })
+            .collect())
+    }
 }
 
 #[test]

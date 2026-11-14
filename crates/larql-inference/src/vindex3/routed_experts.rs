@@ -3,7 +3,7 @@ use super::dense_ffn::profile;
 pub use super::dense_ffn::DenseFfnSession as RoutedExpertSession;
 use super::{dense_ffn::identities, distributed::artifact_identity, PreparedVindex3};
 use crate::error::InferenceError;
-use larql_router_protocol::{vindex3, vindex3_experts::Binding};
+use larql_router_protocol::{vindex3, vindex3_expert_rows as rows_wire, vindex3_experts::Binding};
 use larql_vindex::{
     error::VindexError,
     format::vindex3::opplan::{
@@ -24,6 +24,9 @@ use std::{path::Path, sync::Arc};
 /// own row type is [`PlacedExpertOutput`]; `Grid` converts at the boundary.
 pub use larql_router_protocol::vindex3_transport::{ExpertOutput, ExpertTransport};
 use larql_vindex::format::vindex3::opplan::exec::routed_experts::ExpertOutput as PlacedExpertOutput;
+pub use larql_vindex::format::vindex3::opplan::exec::routed_experts::{
+    ExpertRow, RowExpertOutput, RowsAccounting,
+};
 fn cpu<B: PlanBackend + ?Sized>(backend: &B) -> Result<(), InferenceError> {
     if backend.identity() != LoweringIdentity::cpu_production() {
         return Err(InferenceError::Parse(
@@ -150,6 +153,20 @@ impl<B: PlanBackend> BoundExpertWorker<B> {
     ) -> Result<Vec<PlacedExpertOutput>, InferenceError> {
         self.apply_profiled(layer, experts, row, None)
     }
+    /// Several rows in one call, grouped by expert on this worker.
+    pub fn apply_rows(
+        &self,
+        layer: usize,
+        rows: &[ExpertRow<'_>],
+        accounting: Option<&mut RowsAccounting>,
+    ) -> Result<Vec<RowExpertOutput>, InferenceError> {
+        Ok(self
+            .runtime
+            .operands()
+            .routed_experts()
+            .expect("bound worker")
+            .apply_rows(self.runtime.backend(), layer, rows, accounting)?)
+    }
     pub fn apply_profiled(
         &self,
         layer: usize,
@@ -171,6 +188,13 @@ struct Grid<T> {
     bindings: Vec<Binding>,
 }
 impl<T: ExpertTransport> RoutedExpertProvider for Grid<T> {
+    fn apply_rows(
+        &self,
+        layer: usize,
+        rows: &[ExpertRow<'_>],
+    ) -> Result<Vec<RowExpertOutput>, VindexError> {
+        self.dispatch_rows(layer, rows)
+    }
     fn apply(
         &self,
         layer: usize,
@@ -283,13 +307,114 @@ impl<T: ExpertTransport> RoutedExpertProvider for Grid<T> {
         })
     }
 }
-pub fn prepare_coordinator<B: PlanBackend, T: ExpertTransport + 'static>(
+impl<T: ExpertTransport> Grid<T> {
+    /// Split a multi-row call by owning shard, send each shard one frame,
+    /// and accept the result only if every shard answered every pair it was
+    /// asked for. Any shard failing fails the call: nothing is returned for
+    /// the shards that did answer.
+    fn dispatch_rows(
+        &self,
+        layer: usize,
+        rows: &[ExpertRow<'_>],
+    ) -> Result<Vec<RowExpertOutput>, VindexError> {
+        let owners = self
+            .owners
+            .get(layer)
+            .ok_or_else(|| VindexError::Parse("unowned expert layer".into()))?;
+        // Row and expert identity is decided here, for the whole call, and
+        // not left to each worker's frame: two rows sharing an id could
+        // otherwise be split across workers into frames that are each
+        // well formed, and come back as one row built from two inputs.
+        let mut ids = std::collections::BTreeSet::new();
+        for row in rows {
+            if !ids.insert(row.id) {
+                return Err(VindexError::Parse(
+                    "duplicate row id in expert rows call".into(),
+                ));
+            }
+            let distinct: std::collections::BTreeSet<_> = row.experts.iter().collect();
+            if row.experts.is_empty() || distinct.len() != row.experts.len() {
+                return Err(VindexError::Parse(
+                    "a row must select at least one expert, each at most once".into(),
+                ));
+            }
+        }
+        if rows.is_empty() {
+            return Err(VindexError::Parse("expert rows call carries no row".into()));
+        }
+        let mut frames = std::collections::BTreeMap::<usize, Vec<rows_wire::Row>>::new();
+        for row in rows {
+            let mut by_owner = std::collections::BTreeMap::<usize, Vec<usize>>::new();
+            for expert in row.experts {
+                let owner = *owners
+                    .get(*expert)
+                    .ok_or_else(|| VindexError::Parse("unowned selected expert".into()))?;
+                by_owner.entry(owner).or_default().push(*expert);
+            }
+            for (owner, experts) in by_owner {
+                frames.entry(owner).or_default().push(rows_wire::Row {
+                    id: row.id,
+                    experts,
+                    input: row.input.to_vec(),
+                });
+            }
+        }
+        std::thread::scope(|scope| {
+            let pending: Vec<_> = frames
+                .iter()
+                .map(|(shard, frame)| {
+                    scope.spawn(move || {
+                        let outputs = self
+                            .transport
+                            .forward_rows(*shard, layer, frame)
+                            .map_err(VindexError::Parse)?;
+                        let binding = &self.bindings[*shard];
+                        rows_wire::check_correspondence(frame, &outputs, binding.program.hidden)
+                            .map_err(VindexError::Parse)?;
+                        // Ownership needs no second check: a frame holds only
+                        // experts its worker owns, and correspondence admits
+                        // nothing outside the frame.
+                        Ok(outputs)
+                    })
+                })
+                .collect();
+            // Join every dispatch before deciding: no request outlives the
+            // call, and one failure discards every shard's answer.
+            let joined: Vec<Result<Vec<rows_wire::Output>, VindexError>> = pending
+                .into_iter()
+                .map(|p| {
+                    p.join().unwrap_or_else(|_| {
+                        Err(VindexError::Parse("expert rows dispatch panicked".into()))
+                    })
+                })
+                .collect();
+            let mut out = Vec::new();
+            for outputs in joined {
+                out.extend(outputs?.into_iter().map(|o| RowExpertOutput {
+                    row: o.row,
+                    expert: o.expert,
+                    output: o.values,
+                }));
+            }
+            Ok(out)
+        })
+    }
+}
+/// Admit a set of workers against the local artifact and return the
+/// provider that dispatches to them: complete, non-overlapping ownership of
+/// every routed layer, and every worker bound to this artifact, plan and
+/// numerical provider. Nothing local is loaded.
+///
+/// [`prepare_coordinator`] binds this provider into coordinator operands for
+/// single-row decode. It is also the seam a multi-row caller drives through
+/// [`RoutedExpertProvider::apply_rows`].
+pub fn admit_expert_provider<B: PlanBackend, T: ExpertTransport + 'static>(
     path: &Path,
     plan: &ComponentOpPlan,
     source: OperandSource<'_>,
     backend: &B,
     transport: T,
-) -> Result<PreparedOperands, InferenceError> {
+) -> Result<Arc<dyn RoutedExpertProvider>, InferenceError> {
     cpu(backend)?;
     super::provider_observer::install();
     if source.stamp() != OperandSource::from(source.store()).stamp() {
@@ -363,16 +488,26 @@ pub fn prepare_coordinator<B: PlanBackend, T: ExpertTransport + 'static>(
     {
         return Err(InferenceError::Parse("incomplete expert coverage".into()));
     }
+    Ok(Arc::new(Grid {
+        transport,
+        owners,
+        bindings,
+    }))
+}
+pub fn prepare_coordinator<B: PlanBackend, T: ExpertTransport + 'static>(
+    path: &Path,
+    plan: &ComponentOpPlan,
+    source: OperandSource<'_>,
+    backend: &B,
+    transport: T,
+) -> Result<PreparedOperands, InferenceError> {
+    let provider = admit_expert_provider(path, plan, source, backend, transport)?;
     let mut ops = PreparedOperands::load(
         plan,
         source,
         backend,
         ExecutionSlice::RoutedExpertCoordinator,
     )?;
-    ops.bind_routed_expert_provider(Arc::new(Grid {
-        transport,
-        owners,
-        bindings,
-    }))?;
+    ops.bind_routed_expert_provider(provider)?;
     Ok(ops)
 }

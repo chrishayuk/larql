@@ -48,6 +48,14 @@ async fn v3_routed_expert_http_grid_preserves_order_ownership_and_failed_step_hi
             rows.reverse();
             Ok(rows)
         }
+        fn forward_rows(
+            &self,
+            shard: usize,
+            layer: usize,
+            rows: &[larql_router_protocol::vindex3_expert_rows::Row],
+        ) -> Result<Vec<larql_router_protocol::vindex3_expert_rows::Output>, String> {
+            self.inner.forward_rows(shard, layer, rows)
+        }
     }
     let checkpoint = tempfile::tempdir().unwrap();
     let container = tempfile::tempdir().unwrap();

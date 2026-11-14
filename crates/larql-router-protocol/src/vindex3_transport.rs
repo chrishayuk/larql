@@ -9,7 +9,7 @@
 //! `larql_inference::vindex3::{distributed, dense_ffn, routed_experts}`
 //! re-export each trait at its original path.
 
-use crate::{vindex3, vindex3_experts, vindex3_ffn};
+use crate::{vindex3, vindex3_expert_rows, vindex3_experts, vindex3_ffn};
 
 /// Layer-prefix shards. A transport must return the server's binding, not
 /// manufacture one locally.
@@ -62,4 +62,17 @@ pub trait ExpertTransport: Send + Sync {
         experts: &[usize],
         row: &[f32],
     ) -> Result<Vec<ExpertOutput>, String>;
+
+    /// Several rows for one shard in ONE exchange, answered per
+    /// `(row, expert)`. Deliberately not defaulted to repeated
+    /// [`Self::forward`] calls: a transport either carries the multi-row
+    /// frame or says it cannot, so a caller is never told a batch crossed
+    /// once when it crossed once per row. An error is the whole answer;
+    /// there is no partial result.
+    fn forward_rows(
+        &self,
+        shard: usize,
+        layer: usize,
+        rows: &[vindex3_expert_rows::Row],
+    ) -> Result<Vec<vindex3_expert_rows::Output>, String>;
 }

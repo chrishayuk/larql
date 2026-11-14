@@ -103,6 +103,7 @@ mod mrope_parity;
 mod nvfp4_decode;
 mod nvfp4_projection;
 mod output_gate_fused;
+mod placement_rows;
 mod placement_seams;
 mod plan_fixtures;
 mod projection_bench;
