@@ -10,6 +10,7 @@ use super::super::kv::KvState;
 use super::super::observe::{NoopObserver, StepObserver};
 use super::super::operands::OperandSource;
 use super::super::prepared::{ExecutionSlice, PreparedOperands};
+use super::super::{Plane, PlaneEvent};
 use crate::error::VindexError;
 
 #[allow(unused_imports)]
@@ -252,6 +253,127 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         Ok(StepOutput { logits: out.logits })
     }
 
+    /// [`step_many`](Self::step_many), returning the logits of EVERY
+    /// position instead of only the last: row `i` is what
+    /// [`step`](Self::step) returns after consuming `tokens[..=i]`.
+    ///
+    /// The traversal is the same one `step_many` runs, with the same
+    /// continuation state left behind. The only addition is at the exit:
+    /// the final norm and the output head are applied to each position's
+    /// own final residual, where `step_many` applies them to the last
+    /// position's alone. `step_many` itself is unchanged.
+    ///
+    /// Implemented for a single-stream residual. A hyper-connected or
+    /// attention-residual component leaves the stack through a reduction
+    /// over more than one row per position, and is refused here, before
+    /// any state moves, rather than given a per-position exit this method
+    /// has no gate for.
+    pub fn step_many_logits(&mut self, tokens: &[u32]) -> Result<Vec<Vec<f32>>, VindexError> {
+        if tokens.is_empty() {
+            return Err(VindexError::Parse(
+                "step_many_logits advances a continuation through supplied tokens and was \
+                 given none; an empty advance is a caller bug, not a no-op"
+                    .to_string(),
+            ));
+        }
+        let Self {
+            plan,
+            backend,
+            ops,
+            kv,
+        } = self;
+        let ops = ops.get();
+        let hidden = ops.hidden();
+        if ops.hyper_connection().is_some() || ops.carries_attention_residual() {
+            return Err(VindexError::Parse(
+                "every-position logits are implemented for a single-stream residual; this \
+                 component leaves the stack through a per-position reduction"
+                    .to_string(),
+            ));
+        }
+        if ops.output().is_none() {
+            return Err(VindexError::Parse(
+                "this prepared image carries no output head, so it has no logits to return \
+                 for any position"
+                    .to_string(),
+            ));
+        }
+        let embed_table = ops.embed_table().ok_or_else(|| {
+            VindexError::Parse(
+                "this prepared image carries no embedding table — a layer-range slice consumes \
+                 hidden states, not token ids"
+                    .to_string(),
+            )
+        })?;
+        // Checked for EVERY token before any state moves, as `step_many` does.
+        for token in tokens {
+            if (*token as usize + 1) * hidden > embed_table.len() {
+                return Err(VindexError::Parse(format!(
+                    "token id {token} is outside the embedding table",
+                )));
+            }
+        }
+        let state = kv.state_mut();
+        let base = state.position();
+        // Every position's residual as it leaves the stack: the plane after
+        // the last executed layer, or the embedded plane if none executed.
+        let mut exit_rows: Option<Vec<Vec<f32>>> = None;
+        let out = super::super::traverse(
+            plan,
+            ops,
+            tokens,
+            *backend,
+            None,
+            &mut |event| {
+                match event {
+                    PlaneEvent::Embedded(Plane::Rows(rows)) => exit_rows = Some(rows.clone()),
+                    PlaneEvent::Layer { trace, .. } => {
+                        if let Plane::Rows(rows) = trace.post_layer {
+                            exit_rows = Some(rows);
+                        }
+                    }
+                    _ => {}
+                }
+                Ok(())
+            },
+            Some(state),
+            Mutation::None,
+        )?;
+        let rows = exit_rows
+            .filter(|rows| rows.len() == tokens.len())
+            .ok_or_else(|| {
+                VindexError::Parse(
+                    "the traversal did not report one final residual per position".to_string(),
+                )
+            })?;
+        let mut logits = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let final_hidden = match ops.final_norm() {
+                Some(norm) => norm.apply(*backend, row),
+                None => row.clone(),
+            };
+            logits.push(
+                ops.head_over_normed(*backend, &final_hidden)?
+                    .ok_or_else(|| {
+                        VindexError::Parse("the output head produced no logits".to_string())
+                    })?,
+            );
+        }
+        // The last row went through the same exit the traversal ran itself.
+        // If the two ever disagree, the per-position exit is not the exit.
+        if out.logits.as_deref().map(bits) != logits.last().map(|row| bits(row)) {
+            return Err(VindexError::Parse(
+                "the per-position exit disagrees with the traversal's own exit for the last \
+                 position"
+                    .to_string(),
+            ));
+        }
+        // The provider is the position authority, and the traversal does
+        // not move it — the same contract `step_many` keeps.
+        state.set_position(base + tokens.len());
+        Ok(logits)
+    }
+
     /// [`step`](Self::step) with a subscriber on the step's operation
     /// boundaries (LQL-2 TRACE). This IS the step — `step()` calls it
     /// with [`NoopObserver`] — so observation can never fork the
@@ -450,4 +572,9 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
         }
         Ok(())
     }
+}
+
+/// A row's exact bit pattern, for comparisons that must not tolerate drift.
+fn bits(row: &[f32]) -> Vec<u32> {
+    row.iter().map(|value| value.to_bits()).collect()
 }

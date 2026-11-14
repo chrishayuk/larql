@@ -178,6 +178,7 @@ mod sinks_bias;
 mod site_capture;
 mod smoke;
 mod source_head;
+mod step_many_logits;
 mod streaming;
 mod system_clock;
 mod timing;
