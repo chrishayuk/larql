@@ -41,6 +41,9 @@ mockito = "1.7"
 # on-disk vindex+weights fixture (see
 # `larql_inference::test_utils::write_synthetic_model_dir`).
 tempfile = "3"
+# The hyper-connected miniature (`fixtures_hyper_connection`), for the
+# statements that refuse a residual that is a bundle of streams.
+larql-vindex = { path = "../larql-vindex", features = ["test-utils"] }
 
 [[bench]]
 name = "parser"

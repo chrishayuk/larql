@@ -337,6 +337,21 @@ impl Session {
             } => {
                 self.exec_export_weight(tensor, rows.as_deref(), columns.as_deref(), output, *bits)
             }
+            Statement::Capture {
+                site,
+                layers,
+                prompt,
+                continuation,
+                positions,
+                output,
+            } => self.exec_capture(&crate::executor::vindex3::CaptureRequest {
+                site: *site,
+                layers: layers.as_ref(),
+                prompt,
+                continuation: continuation.as_ref(),
+                positions,
+                output,
+            }),
             Statement::ShowProvenance { object } => self.exec_show_provenance(object.as_deref()),
             Statement::ShowAuthority => self.exec_show_authority(),
             Statement::ShowCompactStatus => self.exec_show_compact_status(),

@@ -12,7 +12,7 @@ fn staging_writes_nothing_and_compile_writes_a_clean_container() {
     assert!(
         staged
             .iter()
-            .any(|l| l.contains("In effect for INFER and TRACE in this session")),
+            .any(|l| l.contains("In effect for INFER, TRACE and CAPTURE in this session")),
         "{staged:?}"
     );
     assert!(

@@ -128,7 +128,14 @@ impl Session {
             return Err(LqlError::Execution(format!("patch not found: {path}")));
         }
 
-        let mut patch = larql_vindex::VindexPatch::load(&patch_path)
+        // Read once: the bytes parsed are the bytes digested, so a capture can name exactly what was applied.
+        let bytes =
+            std::fs::read(&patch_path).map_err(|e| LqlError::exec("failed to load patch", e))?;
+        let file_sha256 = {
+            use sha2::{Digest, Sha256};
+            format!("{:x}", Sha256::digest(&bytes))
+        };
+        let mut patch: larql_vindex::VindexPatch = serde_json::from_slice(&bytes)
             .map_err(|e| LqlError::exec("failed to load patch", e))?;
 
         let (ins, upd, del) = patch.counts();
@@ -199,6 +206,7 @@ impl Session {
                 overlay,
                 runtime,
                 knowledge,
+                patch_files,
                 ..
             } => {
                 patch
@@ -223,6 +231,10 @@ impl Session {
                     })
                     .map_err(refused)?;
                 overlay.try_apply_patch(patch).map_err(refused)?;
+                patch_files.push(crate::executor::vindex3::AppliedPatchFile {
+                    path: path.to_string(),
+                    sha256: file_sha256,
+                });
             }
             _ => return Err(LqlError::NoBackend),
         }
@@ -331,8 +343,15 @@ impl Session {
                 }
                 None => None,
             },
-            Backend::Vindex3 { overlay, .. } => match overlay.patches.iter().position(by_name) {
+            Backend::Vindex3 {
+                overlay,
+                patch_files,
+                ..
+            } => match overlay.patches.iter().position(by_name) {
                 Some(i) => {
+                    if i < patch_files.len() {
+                        patch_files.remove(i);
+                    }
                     carried_weight_ops = overlay.patches[i]
                         .operations
                         .iter()

@@ -9,9 +9,7 @@
 //! (`prefill_into → session_with_kv → continue_session`), so a fourth
 //! entry point joins the equality chain the SERVE-1 gates established.
 
-use larql_inference::layer_graph::generate::detok::Detokenizer;
-use larql_inference::vindex3::{continue_session, Vindex3Runtime};
-use larql_inference::{EosConfig, SamplingConfig};
+use larql_inference::vindex3::Vindex3Runtime;
 use larql_vindex::format::vindex3::opplan::exec::continuation::{
     plan_continuation_geometry, LayerContinuationGeometry,
 };
@@ -21,14 +19,18 @@ use larql_vindex::format::vindex3::opplan::LayerAttention;
 use crate::error::LqlError;
 use crate::executor::{Backend, Session};
 
+mod capture;
 mod export_weight;
+mod generate;
 mod live;
 mod low_rank;
 mod npy;
+mod npy_output;
 mod overrides;
 mod session;
 mod tensors;
 mod weights;
+pub(crate) use capture::{AppliedPatchFile, CaptureRequest};
 pub(crate) use live::{live_weight_lines, nothing_in_effect_line};
 pub(crate) use overrides::*;
 pub(crate) use session::*;
@@ -240,31 +242,13 @@ impl Session {
                 Ok(out)
             }
             Some(n) => {
-                let mut kv = v3_continuation(runtime)?.build();
-                let overrides = execution_overrides(runtime, overlay)?;
-                let prefill_logits = match &overrides {
-                    Some(ov) => runtime.prefill_into_overlaid(&prompt_ids, ov, &mut *kv),
-                    None => runtime.prefill_into(&prompt_ids, &mut *kv),
-                }
-                .map_err(|e| LqlError::exec("v3 prefill failed", e))?;
-                let mut session = match &overrides {
-                    Some(ov) => runtime.session_with_kv_overlaid(&mut *kv, ov),
-                    None => runtime.session_with_kv(&mut *kv),
-                }
-                .map_err(|e| LqlError::exec("v3 session failed", e))?;
-                confirm_patched_weights_ran(overrides.as_ref())?;
-                let mut detok = Detokenizer::new(tokenizer);
-                detok.seed(&prompt_ids);
-                let mut text = String::new();
-                let result = continue_session(
-                    &mut session,
-                    prefill_logits,
+                let (result, text) = generate::greedy_generate(
+                    runtime,
+                    overlay,
+                    tokenizer,
+                    &prompt_ids,
                     n as usize,
-                    SamplingConfig::greedy(),
-                    &EosConfig::builtin(),
-                    |id| text.push_str(&detok.push(id)),
-                )
-                .map_err(|e| LqlError::exec("v3 decode failed", e))?;
+                )?;
                 let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
                 let ids: Vec<String> = result.tokens.iter().map(u32::to_string).collect();

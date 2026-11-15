@@ -134,12 +134,23 @@ pub(super) fn row_logits<B: PlanBackend + ?Sized>(
     backend: &B,
     row: &[f32],
 ) -> Result<Vec<f32>, VindexError> {
+    row_exit(ops, backend, row).map(|(_, logits)| logits)
+}
+
+/// [`row_logits`] with the vector the head read: the final-normed row (the row itself where the image declares
+/// no final norm), then the logits over it.
+pub(super) fn row_exit<B: PlanBackend + ?Sized>(
+    ops: &PreparedOperands,
+    backend: &B,
+    row: &[f32],
+) -> Result<(Vec<f32>, Vec<f32>), VindexError> {
     let hidden = match ops.final_norm() {
         Some(norm) => norm.apply(backend, row),
         None => row.to_vec(),
     };
     let logits = ops.head_over_normed(backend, &hidden)?;
-    logits.ok_or_else(|| VindexError::Parse(NO_HEAD.into()))
+    let logits = logits.ok_or_else(|| VindexError::Parse(NO_HEAD.into()))?;
+    Ok((hidden, logits))
 }
 
 /// The fail-closed self-check: the last position's row is the traversal's

@@ -68,6 +68,7 @@ topic_enum! {
         Walk,
         Explain,
         Trace,
+        Capture,
         // Edit weights
         UpdateWeights,
         RemoveDirection,

@@ -48,6 +48,8 @@ pub mod encode;
 /// integration tests can encode a real container without duplicating
 /// the frozen fixture geometry the executor's parity gates certify.
 pub mod fixtures;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod fixtures_hyper_connection;
 pub mod fixtures_kimi;
 pub mod fixtures_qwen;
 pub mod fixtures_routed;

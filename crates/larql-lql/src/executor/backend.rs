@@ -75,6 +75,9 @@ pub(crate) enum Backend {
         /// the same fact from its architecture, and the two must agree
         /// (`v2_and_v3_prompt_encoders_agree_on_a_bos_requiring_model`).
         bos_token: Option<u32>,
+        /// The `.vlp` file behind each applied patch, as `APPLY PATCH` read it: index-aligned with
+        /// `overlay.patches`, so a capture names the exact bytes applied.
+        patch_files: Vec<crate::executor::vindex3::AppliedPatchFile>,
     },
     /// Remote server backend — queries forwarded via HTTP. Every request
     /// carries `session_id`, so mutations and patches live in this

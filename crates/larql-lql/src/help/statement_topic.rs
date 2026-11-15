@@ -41,6 +41,7 @@ impl Statement {
             Statement::ShowRepresentations { .. } => StatementTopic::ShowRepresentations,
             Statement::ShowTensors { .. } => StatementTopic::ShowTensors,
             Statement::ExportWeight { .. } => StatementTopic::ExportWeight,
+            Statement::Capture { .. } => StatementTopic::Capture,
             Statement::ShowProvenance { .. } => StatementTopic::ShowProvenance,
             Statement::ShowAuthority => StatementTopic::ShowAuthority,
             Statement::VerifyRepresentation { .. } => StatementTopic::VerifyRepresentation,

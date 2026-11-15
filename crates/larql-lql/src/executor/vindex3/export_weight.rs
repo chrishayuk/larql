@@ -5,44 +5,25 @@
 //! container, and is not part of an export; the sidecar says so (`"reads": "stored"`). Nothing is overwritten: an
 //! output or sidecar that exists is refused before anything is written, and a failed write removes what it wrote.
 
-use std::path::{Path, PathBuf};
-
-use larql_vindex::format::filenames::INDEX_JSON;
 use larql_vindex::format::vindex3::represent::codec::codecs::float::FloatDtype;
 use larql_vindex::format::vindex3::stored_tensor::{locate_stored_tensor, Selection, StoredTensor};
-use sha2::{Digest, Sha256};
 
 use super::npy::{NpyDescr, NpyWriter};
+use super::npy_output::{
+    container_index, container_path, index_list, literal, output_paths, remove_partial,
+    write_sidecar, LARQL_VERSION,
+};
 use crate::error::LqlError;
 use crate::executor::Session;
 
 const STATEMENT: &str = "EXPORT WEIGHT";
-/// The extension an output must carry.
-const NPY_SUFFIX: &str = ".npy";
-/// Appended to the output's name to name the sidecar.
-const SIDECAR_SUFFIX: &str = ".json";
 /// The sidecar's schema id.
 const SIDECAR_SCHEMA: &str = "larql-export-weight/v1";
 /// What an export reads: the container's stored bytes, never session state.
 const READS_STORED: &str = "stored";
-/// The LARQL version that wrote the export (the workspace version).
-const LARQL_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn refused(e: impl std::fmt::Display) -> LqlError {
-    LqlError::Execution(format!("{STATEMENT} refused: {e}"))
-}
-
-/// A string as an LQL literal.
-fn literal(text: &str) -> String {
-    format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
-}
-
-fn index_list(indices: &[usize]) -> String {
-    indices
-        .iter()
-        .map(usize::to_string)
-        .collect::<Vec<_>>()
-        .join(", ")
+    super::npy_output::refused(STATEMENT, e)
 }
 
 /// The statement as LQL text, in its canonical form: what the sidecar records.
@@ -97,23 +78,6 @@ fn write_body(
         .map_err(|e| LqlError::exec("read the stored tensor", e))
 }
 
-/// Remove what a failed export wrote. A file that cannot be removed is reported, never ignored silently.
-fn remove_partial(paths: &[&Path], cause: LqlError) -> LqlError {
-    let leftovers: Vec<String> = paths
-        .iter()
-        .filter(|p| p.exists() && std::fs::remove_file(p).is_err())
-        .map(|p| p.display().to_string())
-        .collect();
-    if leftovers.is_empty() {
-        cause
-    } else {
-        LqlError::Execution(format!(
-            "{cause}; could not remove the partial output {}",
-            leftovers.join(", ")
-        ))
-    }
-}
-
 impl Session {
     pub(crate) fn exec_export_weight(
         &self,
@@ -124,33 +88,8 @@ impl Session {
         bits: bool,
     ) -> Result<Vec<String>, LqlError> {
         let root = self.v3_container_root(STATEMENT)?.to_path_buf();
-        let named_npy = Path::new(output)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.len() > NPY_SUFFIX.len() && name.ends_with(NPY_SUFFIX));
-        if !named_npy {
-            return Err(refused(format!(
-                "the output `{output}` is not a {NPY_SUFFIX} file; name it `<file>{NPY_SUFFIX}`"
-            )));
-        }
-        let npy_path = PathBuf::from(output);
-        let sidecar_path = PathBuf::from(format!("{output}{SIDECAR_SUFFIX}"));
-        for path in [&npy_path, &sidecar_path] {
-            // `symlink_metadata` sees a dangling symlink too: nothing at the path may be replaced.
-            if path.symlink_metadata().is_ok() {
-                return Err(refused(format!(
-                    "refusing to write `{}`: it already exists, and an export never overwrites",
-                    path.display()
-                )));
-            }
-        }
-
-        let index_bytes = std::fs::read(root.join(INDEX_JSON))
-            .map_err(|e| LqlError::exec("read container index", e))?;
-        let index: larql_vindex::format::vindex3::Vindex3Index =
-            serde_json::from_slice(&index_bytes)
-                .map_err(|e| LqlError::exec("parse container index", e))?;
-        let index_sha256 = format!("{:x}", Sha256::digest(&index_bytes));
+        let (npy_path, sidecar_path) = output_paths(STATEMENT, output)?;
+        let (index, index_sha256) = container_index(&root)?;
 
         let stored = locate_stored_tensor(&root, tensor).map_err(refused)?;
         let selection = stored.select(rows, columns).map_err(refused)?;
@@ -171,11 +110,10 @@ impl Session {
             }
         };
 
-        let container = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
         let sidecar = serde_json::json!({
             "schema": SIDECAR_SCHEMA,
             "statement": statement_text(tensor, rows, columns, output, bits),
-            "container": container.display().to_string(),
+            "container": container_path(&root),
             "index_sha256": index_sha256,
             "model": index.model,
             "reads": READS_STORED,
@@ -191,21 +129,7 @@ impl Session {
             "npy_sha256": npy_sha256,
             "larql_version": LARQL_VERSION,
         });
-        let written = serde_json::to_vec_pretty(&sidecar)
-            .map_err(std::io::Error::other)
-            .and_then(|text| {
-                use std::io::Write;
-                let mut file = std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&sidecar_path)?;
-                file.write_all(&text)?;
-                file.sync_all()
-            });
-        if let Err(e) = written {
-            let cause = LqlError::exec(format!("write {}", sidecar_path.display()), e);
-            return Err(remove_partial(&[&npy_path, &sidecar_path], cause));
-        }
+        write_sidecar(&sidecar_path, &sidecar, &[&npy_path])?;
 
         Ok(vec![
             format!(
