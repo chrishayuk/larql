@@ -98,6 +98,12 @@ jobs:
       # under test come from the release.
       - uses: actions/checkout@v7
 
+      # The README's Linux prerequisite, installed the way a user is told to. A fresh ubuntu-latest (26.04) no
+      # longer has it.
+      - name: Install the OpenBLAS runtime (Linux prerequisite)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libopenblas0
+
       - name: Install from /releases/download/<tag>/
         run: bash scripts/release-smoke.sh install "$TAG" "$WORK"
 

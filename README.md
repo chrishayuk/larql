@@ -26,7 +26,7 @@ Download a prebuilt binary — no Rust toolchain needed:
 curl -L https://github.com/chrishayuk/larql/releases/latest/download/larql-aarch64-apple-darwin.tar.gz | tar xz
 sudo mv larql-aarch64-apple-darwin/larql* /usr/local/bin/
 
-# Linux (x86_64)
+# Linux (x86_64). Needs the OpenBLAS runtime: sudo apt-get install -y libopenblas0
 curl -L https://github.com/chrishayuk/larql/releases/latest/download/larql-x86_64-unknown-linux-gnu.tar.gz | tar xz
 sudo mv larql-x86_64-unknown-linux-gnu/larql* /usr/local/bin/
 ```
