@@ -226,6 +226,22 @@ fn main() -> Result<(), BoxErr> {
     let wall_ns = started.elapsed().as_nanos() as u64;
     recorder.stop();
 
+    // Requested, emitted, prefill-produced and timed ids, kept apart: the
+    // first emitted id is prefill's and produced before the clock started.
+    let prefill_produced = usize::from(!ids.is_empty());
+    let ended_by = match ids.last() {
+        None => "nothing requested",
+        Some(last) if stop.contains(last) => "stop id",
+        Some(_) => "generation limit",
+    };
+    let id_counts = serde_json::json!({
+        "requested": args.generate,
+        "emitted": ids.len(),
+        "prefill_produced": prefill_produced,
+        "timed": ids.len() - prefill_produced,
+        "ended_by": ended_by,
+    });
+
     let exchanges = exchanges.lock().unwrap();
     let count = |from: usize, route: &str| {
         exchanges[from..]
@@ -252,7 +268,8 @@ fn main() -> Result<(), BoxErr> {
         "prefill_width": PREFILL_WIDTH,
         "generate": args.generate,
         "stop": args.stop,
-        "timed_ids": ids.len().saturating_sub(1),
+        "timed_ids": ids.len() - prefill_produced,
+        "id_counts": id_counts,
         "ids": ids,
         "first_id_source": "prefill, untimed; the clock covers the other `timed_ids`",
         "clock": "monotonic wall time from after prefill to the last generated id; load, \
