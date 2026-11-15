@@ -26,7 +26,7 @@ pub(super) static GROUP: GroupHelp = GroupHelp {
 
 /// How a tensor is named, for all three statements.
 const TENSOR_NAME: Need = Need::Other(
-    "The tensor's name as the container stores it, such as \"0.mlp.down_proj.weight\": EXPLAIN INFER \"x\"; lists them after \"::\".",
+    "The tensor's name as the container stores it, such as \"0.mlp.down_proj.weight\", or <representation>::<tensor> where that bare name is ambiguous: SHOW TENSORS; lists every name.",
 );
 
 /// What every staged op has in common about visibility.

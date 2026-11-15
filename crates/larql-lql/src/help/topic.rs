@@ -51,6 +51,8 @@ topic_enum! {
         Stats,
         ShowComponents,
         ShowRepresentations,
+        ShowTensors,
+        ExportWeight,
         ShowProvenance,
         ShowAuthority,
         ShowLayers,

@@ -26,7 +26,9 @@ impl Statement {
             | Statement::CompactInto { .. }
             // Persists the MEMIT store into the bound vindex directory.
             | Statement::CompactMajor { .. }
-            | Statement::SavePatch => true,
+            | Statement::SavePatch
+            // Writes a .npy file and its sidecar.
+            | Statement::ExportWeight { .. } => true,
             Statement::Diff { into_patch, .. } => into_patch.is_some(),
             Statement::Trace { save, .. } => save.is_some(),
             Statement::Pipe { left, right } => left.writes_artifact() || right.writes_artifact(),
@@ -52,6 +54,7 @@ impl Statement {
             | Statement::ShowModels
             | Statement::ShowComponents
             | Statement::ShowRepresentations { .. }
+            | Statement::ShowTensors { .. }
             | Statement::ShowProvenance { .. }
             | Statement::ShowAuthority
             | Statement::VerifyRepresentation { .. }

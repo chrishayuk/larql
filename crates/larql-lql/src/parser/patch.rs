@@ -101,7 +101,7 @@ impl Parser {
 
 impl Parser {
     /// `(<n>, <n>, …)`: a parenthesised, non-empty list of column indices.
-    fn parse_column_list(&mut self) -> Result<Vec<usize>, ParseError> {
+    pub(super) fn parse_column_list(&mut self) -> Result<Vec<usize>, ParseError> {
         self.expect_token(&Token::LParen)?;
         let mut columns = vec![self.expect_u32()? as usize];
         while matches!(self.peek(), Token::Comma) {

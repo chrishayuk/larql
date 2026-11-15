@@ -59,6 +59,7 @@ pub(super) fn locate(
     patch: &DeclaredPatch,
 ) -> Result<Located, WeightPatchError> {
     let name = patch.tensor();
+    let wanted = super::super::TensorName::parse(name);
     let mut holders = Vec::new();
     for (id, entry) in index
         .representations
@@ -66,7 +67,7 @@ pub(super) fn locate(
         .filter(|(_, e)| e.compiled_from.is_none())
     {
         let (header, payload_start) = read_segment_header(&src.join(&entry.segment))?;
-        if let Some(t) = header.tensors.iter().find(|t| t.name == name) {
+        if let Some(t) = header.tensors.iter().find(|t| wanted.names(id, &t.name)) {
             holders.push((
                 id.clone(),
                 entry.clone(),

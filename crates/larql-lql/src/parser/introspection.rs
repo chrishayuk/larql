@@ -134,6 +134,13 @@ impl Parser {
                 self.eat_semicolon();
                 Ok(Statement::ShowRepresentations { object })
             }
+            // `TENSORS` is a word in this position, not a reserved keyword.
+            Token::Ident(ref s) if s.eq_ignore_ascii_case("TENSORS") => {
+                self.advance();
+                let filter = self.maybe_object_filter()?;
+                self.eat_semicolon();
+                Ok(Statement::ShowTensors { filter })
+            }
             Token::Keyword(Keyword::Provenance) => {
                 self.advance();
                 let object = self.maybe_object_filter()?;

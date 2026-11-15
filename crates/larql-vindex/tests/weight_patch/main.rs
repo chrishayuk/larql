@@ -20,6 +20,7 @@ mod multi;
 mod op;
 mod op_target;
 mod overlay;
+mod qualified_names;
 mod real_scale;
 mod refusals;
 mod rounding;
