@@ -133,8 +133,9 @@ fn container_with(write_checkpoint: impl FnOnce(&Path)) -> tempfile::TempDir {
     container
 }
 
-/// Ties keep the first index — the same rule the V3 exec harness and
-/// the greedy sampler use.
+/// Ties keep the first index — the V3 exec harness's rule. (The greedy
+/// sampler differs: it takes the last of equal maxima and skips
+/// non-finite values; see `speculation::greedy`.)
 fn argmax(logits: &[f32]) -> u32 {
     logits
         .iter()
@@ -280,3 +281,4 @@ mod explain_lql_2_the_structured_explanation;
 mod refusals;
 mod routed_block;
 mod routed_expert_rows;
+mod speculate;
