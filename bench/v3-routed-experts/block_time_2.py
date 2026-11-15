@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import threading
 import time
+import traceback
 
 import block_time as b1
 import block_time_2_model as b2
@@ -35,6 +36,9 @@ HARNESS = ("block_time_2.py", "block_time_2_model.py", "host_telemetry.py", "blo
 # is removed. Pausing only between pairs voids nothing, because every pair is
 # bracketed on its own.
 PAUSE_FILE = "PAUSE"
+# Written by the driver while it is holding, and removed when it resumes, so
+# the session that asked knows when the in-flight pair has finished.
+PAUSED_FILE = "PAUSED"
 PAUSE_POLL_S = 5.0
 BEFORE_WARM_UP = -1
 
@@ -51,47 +55,36 @@ def wait_while_paused(out, before_pair, pauses, sleep=time.sleep, now=None):
     if not flag.exists():
         return
     started = now()
+    held = out / PAUSED_FILE
+    held.write_text(f"holding before pair {before_pair} since {started}; remove {PAUSE_FILE} to resume\n")
     print(f"paused before pair {before_pair} at {started}: remove {flag} to resume", flush=True)
     while flag.exists():
         sleep(PAUSE_POLL_S)
+    held.unlink(missing_ok=True)
     pauses.append({"before_pair": before_pair, "paused_utc": started, "resumed_utc": now()})
     print(f"resumed before pair {before_pair}", flush=True)
 
 
-# A stall of the driver itself: its process was stopped (SIGSTOP), the machine
-# slept, or the thread was starved. Any of these inside a trial puts time in
-# its measurement that no other gate can see, so the trial's pair is void.
-SUSPENSION_TICK_S = 0.2
-SUSPENSION_GAP_S = 2.0
+class StallWatch:
+    """Ticks in a thread of the driver and records every stall (rule 5, `block_time_2_model`).
 
+    It sees the driver's own process only. Stopping the run's process group,
+    the documented way to stop everything, stops the driver too and is seen.
+    A stop of the worker, relay or trial process alone is not.
+    """
 
-def suspension_between(previous, current, threshold=SUSPENSION_GAP_S):
-    """A stall between two (monotonic, wall) ticks, or None. Either clock may show it."""
-    elapsed = max(current[0] - previous[0], current[1] - previous[1])
-    if elapsed <= threshold:
-        return None
-    return {"start_epoch": previous[1], "end_epoch": current[1], "seconds": elapsed}
-
-
-def overlapping(suspensions, start_epoch, end_epoch):
-    return [s for s in suspensions if s["start_epoch"] < end_epoch and s["end_epoch"] > start_epoch]
-
-
-class SuspensionWatch:
-    """Ticks in a thread and records every stall longer than the threshold."""
-
-    def __init__(self, tick=SUSPENSION_TICK_S, clocks=lambda: (time.monotonic(), time.time())):
+    def __init__(self, tick=b2.STALL_TICK_S, clocks=lambda: (time.monotonic(), time.time())):
         self.tick, self.clocks = tick, clocks
-        self.suspensions, self.stop_event = [], threading.Event()
+        self.stalls, self.stop_event = [], threading.Event()
         self.thread = threading.Thread(target=self.loop, daemon=True)
 
     def loop(self):
         previous = self.clocks()
         while not self.stop_event.wait(self.tick):
             current = self.clocks()
-            found = suspension_between(previous, current)
+            found = b2.stall_between(previous, current)
             if found:
-                self.suspensions.append(found)
+                self.stalls.append(found)
             previous = current
 
     def __enter__(self):
@@ -105,17 +98,10 @@ class SuspensionWatch:
 
 
 def timed_trial(root, model, ids, out, env, entry, worker_urls):
-    started, started_epoch = ht.utc_now(), time.time()
+    started, started_monotonic = ht.utc_now(), time.monotonic()
     trial, relay_records = b1.run_trial(root, model, ids, out, env, entry, worker_urls)
     return trial, relay_records, {"started_utc": started, "ended_utc": ht.utc_now(),
-                                  "started_epoch": started_epoch, "ended_epoch": time.time()}
-
-
-def attach_suspensions(observations, suspensions):
-    """Give every trial the stalls that overlap it; a trial with any voids its pair."""
-    for observation in observations:
-        observation["suspensions"] = overlapping(suspensions, observation["started_epoch"],
-                                                 observation["ended_epoch"])
+                                  "started_monotonic": started_monotonic, "ended_monotonic": time.monotonic()}
 
 
 def warm_up(root, model, args, out, env, worker_urls, saved, stream):
@@ -167,7 +153,8 @@ def execute(args, root, model, out, kind):
         "positions": bt.POSITIONS, "measure_from": bt.MEASURE_FROM,
         "shuffle_seed": b2.SHUFFLE_SEED, "pairs": b2.pair_units(), "schedule": order,
         "thresholds": {"gate": b2.GATE, "slope_band": b2.SLOPE_BAND,
-                       "minimum_valid_pairs": b2.MINIMUM_VALID_PAIRS},
+                       "minimum_valid_pairs": b2.MINIMUM_VALID_PAIRS,
+                       "within_pair_consistency": b2.CONSISTENCY},
         "frames_qualification": [{"path": str(path), "sha256": sha(path)} for path in args.frames_qualification],
         "binary_sha256": {name: sha(root / path) for name, path in
                           (("v3_block_time", b1.TRIAL), ("larql-server", b1.SERVER), ("v3_link_shaper", RELAY))},
@@ -178,13 +165,13 @@ def execute(args, root, model, out, kind):
                       "gates_anything": False},
         "clock": "monotonic wall time around the measured region inside each trial process",
         "pause": {"file": PAUSE_FILE, "where": "between pairs only", "poll_s": PAUSE_POLL_S},
-        "suspension_watch": {"tick_s": SUSPENSION_TICK_S, "gap_s": SUSPENSION_GAP_S,
-                             "effect": "a trial overlapping a stall voids its pair"},
+        "stall_watch": {"tick_s": b2.STALL_TICK_S, "gap_s": b2.STALL_GAP_S, "sees": "the driver process only",
+                        "effect": "a trial overlapping a stall voids its pair"},
         "started_utc": started,
     }
     save(out / "manifest.json", manifest)
     observations, stop, pauses = [], None, []
-    with ht.Sampler(out / "telemetry.jsonl") as sampler, SuspensionWatch() as watch:
+    with ht.Sampler(out / "telemetry.jsonl") as sampler, StallWatch() as watch:
         try:
             with workers(root, model, out, b1.TOPOLOGY, args.port, env) as worker_urls:
                 wait_while_paused(out, BEFORE_WARM_UP, pauses)
@@ -203,17 +190,28 @@ def execute(args, root, model, out, kind):
         except b1.Stop as error:
             stop = str(error)
             print(f"STOPPED: {stop}", flush=True)
+        except (Exception, KeyboardInterrupt) as error:
+            # Any other failure (a trial that crashed or timed out, a worker
+            # that died, an interrupt) also stops the run. The records so far
+            # are still judged and written; nothing is analysed.
+            stop = f"{type(error).__name__}: {error}"
+            (out / "failure.txt").write_text(traceback.format_exc())
+            print(f"STOPPED: {stop}", flush=True)
     ended = ht.utc_now()
     save(out / "spotlight.json", ht.spotlight_starts(started, ended))
-    attach_suspensions(observations, watch.suspensions)
-    save(out / "suspensions.json", watch.suspensions)
+    b2.attach_stalls(observations, watch.stalls)
+    save(out / "suspensions.json", watch.stalls)
     verdicts = b2.judge_pairs(observations)
     save(out / "trials.json", observations)
     complete = stop is None and len(observations) == len(order)
     report = b2.analyse(observations, verdicts) if complete else {"note": "the run stopped; nothing is analysed"}
-    report.update(kind=kind, counts=kind == "admissible" and complete, complete=complete, stopped=stop,
+    host_after = lp.host_state()
+    # The protocol requires a quiet machine at the end as well as the start.
+    quiet_at_end = not host_after["busy_processes"]
+    report.update(kind=kind, counts=kind == "admissible" and complete and quiet_at_end,
+                  quiet_at_end=quiet_at_end, complete=complete, stopped=stop,
                   scheduled=len(order), observed=len(observations), telemetry_samples=sampler.samples,
-                  pauses=pauses, suspensions=watch.suspensions,
+                  pauses=pauses, suspensions=watch.stalls,
                   outcomes={
                       "valid_pairs": [v["pair"] for v in verdicts if v["valid"]],
                       "void_pairs": {str(v["pair"]): v["void_reasons"] for v in verdicts if not v["valid"]},
@@ -221,7 +219,7 @@ def execute(args, root, model, out, kind):
                       "worker_timing_incomplete": [o["label"] for o in observations
                                                    if o.get("worker_timing") == b1.WORKER_TIMING_INCOMPLETE],
                   },
-                  host_after=lp.host_state(), exclusivity_evidence_supplied=handshake is not None,
+                  host_after=host_after, exclusivity_evidence_supplied=handshake is not None,
                   ended_utc=ended)
     save(out / "analysis.json", report)
     save(out / "verification.json",

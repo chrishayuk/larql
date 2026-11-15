@@ -44,6 +44,10 @@ SLOPE_BAND = bt.SLOPE_BAND
 # brackets either side cannot see. An engineering tolerance, not a measured
 # bound on natural variation, and not evidence of external interference.
 CONSISTENCY = 0.05
+# Rule 5. A stall of the driver: a gap between its watch's ticks longer than
+# this in either clock. The watch ticks this often.
+STALL_TICK_S = 0.1
+STALL_GAP_S = 0.5
 ROLE_BRACKET, ROLE_ARM = bt.ROLE_BRACKET, bt.ROLE_ARM
 
 if len(ORDER_SEQUENCE) != ROUNDS:
@@ -86,6 +90,31 @@ def trial_defects(observation):
     for suspension in observation.get("suspensions", []):
         reasons.append(f"driver suspended {suspension['seconds']:.1f} s during the trial")
     return reasons
+
+
+def stall_between(previous, current, threshold=STALL_GAP_S):
+    """A stall between two (monotonic, wall) ticks, or None.
+
+    Either clock may show it: a stopped process moves both, a system sleep
+    may move only the wall clock. The stall is placed on the monotonic clock,
+    which never steps backwards, so a wall-clock correction cannot hide it.
+    """
+    elapsed = max(current[0] - previous[0], current[1] - previous[1])
+    if elapsed <= threshold:
+        return None
+    return {"start_monotonic": previous[0], "end_monotonic": current[0], "seconds": elapsed}
+
+
+def stalls_within(stalls, start_monotonic, end_monotonic):
+    """The stalls that overlap a trial's monotonic span, including one of zero monotonic length inside it."""
+    return [s for s in stalls if s["start_monotonic"] <= end_monotonic and s["end_monotonic"] >= start_monotonic]
+
+
+def attach_stalls(observations, stalls):
+    """Give every trial the stalls that overlap it. Must run before `judge_pairs`."""
+    for observation in observations:
+        observation["suspensions"] = stalls_within(stalls, observation["started_monotonic"],
+                                                   observation["ended_monotonic"])
 
 
 def relative_difference(a, b):
@@ -132,15 +161,21 @@ def judge_pairs(observations):
             if drift > GATE:
                 reasons.append(f"brackets differ by {drift:.4f}")
             differences, inconsistent = within_pair(arms)
+        else_rule_4 = list(reasons)
+        if set(brackets) == {"before", "after"} and len(arms) == 2:
             reasons += inconsistent
         for member in members:
             member["pair_valid"] = not reasons
             member["valid"] = not reasons
-            member["void_reasons"] = trial_defects(member)
+            member["trial_defects"] = trial_defects(member)
+            member["void_reasons"] = list(reasons)
         verdicts.append({"pair": pair, "round": members[0]["round"], "arm": members[0]["pair_arm"],
                          "arm_pair": members[0]["arm_pair"],
                          "order": members[0]["order"], "bracket_drift": drift,
                          "within_pair_difference": differences,
+                         # Every rule except rule 4 holds: the pairs behind the
+                         # secondary, ungated slope.
+                         "valid_without_rule_4": not else_rule_4,
                          "valid": not reasons, "void_reasons": reasons})
     return verdicts
 
@@ -160,17 +195,21 @@ def execution_per_position(observation):
 
 
 def spread(values):
-    values = sorted(v for v in values if v is not None)
-    if not values:
-        return None
-    return {"min": values[0], "median": statistics.median(values), "max": values[-1], "values": values}
+    values = list(values)
+    present = sorted(v for v in values if v is not None)
+    if not present:
+        return {"missing": len(values), "values": []} if values else None
+    return {"min": present[0], "median": statistics.median(present), "max": present[-1], "values": present,
+            "missing": len(values) - len(present)}
 
 
 def within_pair_failures(pairs):
-    """Pairs whose coordinator or worker-execution difference exceeded the consistency gate."""
+    """Complete pairs that failed rule 4 on each cost: over the tolerance, or the value missing."""
     def failed(pair, name):
+        if "incomplete pair" in pair["void_reasons"]:
+            return False
         value = pair["within_pair_difference"][name]
-        return value is not None and value > CONSISTENCY
+        return value is None or value > CONSISTENCY
     return {"coordinator": sum(failed(p, "coordinator") for p in pairs),
             "execution": sum(failed(p, "execution") for p in pairs), "of": len(pairs)}
 
@@ -195,6 +234,22 @@ def analyse(observations, verdicts):
                  # How often the within-pair gate fired for this arm: reported,
                  # so a gate that keeps rejecting one arm is visible as a finding.
                  "within_pair_failures": within_pair_failures(mine)}
+        # Secondary, not the registered statement: rule 4 removes pairs whose
+        # coordinator or worker cost moved between the delays, and those are
+        # two of the three ways the slope can leave 24 / W. Over the pairs that
+        # pass every other rule, a systematic change shows here as a number.
+        ungated = [p for p in mine if p["valid_without_rule_4"] and p["slope"] is not None]
+        ungated_mean = statistics.fmean([p["slope"] for p in ungated]) if len(ungated) >= MINIMUM_VALID_PAIRS else None
+        entry["secondary_without_rule_4"] = {
+            "pairs": len(ungated), "slopes": [p["slope"] for p in ungated], "slope": ungated_mean,
+            "ratio": None if ungated_mean is None else ungated_mean / predicted}
+        # The largest slope shift rule 4 can still admit in one pair: both costs
+        # moving by the full tolerance, in round trips per position.
+        costs = [coordinator_per_position(o) + (execution_per_position(o) or 0.0)
+                 for o in observations if o["role"] == ROLE_ARM and o["arm"] == arm]
+        entry["rule_4_admits_shift"] = None if not costs else {
+            "round_trips": CONSISTENCY * statistics.fmean(costs) / DELAY_SPAN_NS,
+            "share_of_predicted": CONSISTENCY * statistics.fmean(costs) / DELAY_SPAN_NS / predicted}
         if len(valid) >= MINIMUM_VALID_PAIRS:
             mean = statistics.fmean(entry["valid_slopes"])
             entry.update(slope=mean, ratio=mean / predicted,

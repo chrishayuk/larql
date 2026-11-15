@@ -73,7 +73,7 @@ def parse_sysctl(text):
 
 
 def count_per_minute(log_text):
-    """Unified-log lines per UTC minute, `HH:MM` to count."""
+    """Unified-log lines per minute of the log's own timestamps (local time), `HH:MM` to count."""
     counts = Counter()
     for line in log_text.splitlines():
         match = LOG_LINE.match(line)

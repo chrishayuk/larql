@@ -225,9 +225,13 @@ class WithinPairConsistency(unittest.TestCase):
         def damage(entry, run):
             if entry["pair"] == self.PAIR and entry["role"] == bt.ROLE_ARM and entry["rtt_ms"] == 5.0:
                 run["worker_records"][0] = {"worker_profile_complete": False}
-        verdict = run_schedule(damage=damage)[1][self.PAIR]
+        observations, verdicts = run_schedule(damage=damage)
+        verdict = verdicts[self.PAIR]
         self.assertFalse(verdict["valid"])
         self.assertIn("worker execution time missing, zero or not finite in an arm trial", verdict["void_reasons"])
+        # A missing value is a rule-4 failure in the counts too, not silently skipped.
+        failures = b2.analyse(observations, verdicts)["arms"][verdict["arm"]]["within_pair_failures"]
+        self.assertEqual(failures["execution"], 1)
 
     def test_differences_are_reported_for_every_pair_valid_or_void(self):
         _, verdicts = run_schedule(extra=lambda e: 0.03 * BASE_NS if e["pair"] == 2 and e["bracket"] == "after" else 0.0)
@@ -265,43 +269,179 @@ class WithinPairConsistency(unittest.TestCase):
 
 
 class Suspension(unittest.TestCase):
-    """A stall of the driver inside a trial voids that trial's pair."""
+    """Rule 5: a stall of the driver inside a trial voids that trial's pair."""
+
+    def test_the_stall_rule_is_in_the_contract_and_pinned(self):
+        self.assertEqual((b2.STALL_GAP_S, b2.STALL_TICK_S), (0.5, 0.1))
+        self.assertEqual(b2.SLOPE_BAND, 0.10)
 
     def test_a_jump_in_either_clock_beyond_the_threshold_is_a_stall(self):
-        import block_time_2 as driver
-        self.assertIsNone(driver.suspension_between((0.0, 100.0), (0.2, 100.2)))
-        self.assertIsNone(driver.suspension_between((0.0, 100.0), (2.0, 102.0)))
-        found = driver.suspension_between((0.0, 100.0), (5.2, 105.2))
-        self.assertEqual((found["start_epoch"], found["end_epoch"]), (100.0, 105.2))
+        self.assertIsNone(b2.stall_between((0.0, 100.0), (0.1, 100.1)))
+        self.assertIsNone(b2.stall_between((0.0, 100.0), (0.5, 100.5)))
+        found = b2.stall_between((0.0, 100.0), (5.2, 105.2))
+        self.assertEqual((found["start_monotonic"], found["end_monotonic"]), (0.0, 5.2))
         self.assertAlmostEqual(found["seconds"], 5.2)
-        # A sleep of the machine can stop the monotonic clock but not the wall clock.
-        self.assertIsNotNone(driver.suspension_between((0.0, 100.0), (0.2, 160.0)))
-        self.assertEqual(driver.SUSPENSION_GAP_S, 2.0)
+        # A system sleep can stop the monotonic clock but not the wall clock.
+        sleep = b2.stall_between((10.0, 100.0), (10.1, 160.0))
+        self.assertIsNotNone(sleep)
+
+    def test_a_backward_wall_clock_step_neither_hides_nor_invents_a_stall(self):
+        self.assertIsNone(b2.stall_between((0.0, 100.0), (0.1, 40.0)))
+        found = b2.stall_between((0.0, 100.0), (3.0, 40.0))
+        self.assertEqual(b2.stalls_within([found], 1.0, 2.0), [found])
+
+    def test_overlap_is_judged_on_the_monotonic_span_including_its_edges(self):
+        stall = {"start_monotonic": 10.0, "end_monotonic": 12.0, "seconds": 2.0}
+        self.assertEqual(b2.stalls_within([stall], 12.0, 20.0), [stall])  # touches the start
+        self.assertEqual(b2.stalls_within([stall], 0.0, 10.0), [stall])   # touches the end
+        self.assertEqual(b2.stalls_within([stall], 12.01, 20.0), [])
+        self.assertEqual(b2.stalls_within([stall], 0.0, 9.99), [])
+        point = {"start_monotonic": 15.0, "end_monotonic": 15.0, "seconds": 60.0}  # a sleep
+        self.assertEqual(b2.stalls_within([point], 14.0, 16.0), [point])
 
     def test_the_watch_records_a_stall_from_its_clocks(self):
         import time
         import block_time_2 as driver
-        ticks = iter([(0.0, 100.0), (0.2, 100.2), (6.0, 106.0)] + [(6.2 + i, 106.2 + i) for i in range(10**6)])
-        with driver.SuspensionWatch(tick=0.001, clocks=lambda: next(ticks)) as watch:
+        ticks = iter([(0.0, 100.0), (0.1, 100.1), (6.0, 106.0)] + [(6.1 + i / 10, 106.1 + i / 10)
+                                                                    for i in range(10**6)])
+        with driver.StallWatch(tick=0.001, clocks=lambda: next(ticks)) as watch:
             time.sleep(0.05)
-        self.assertEqual(len(watch.suspensions), 1)
-        self.assertEqual(watch.suspensions[0]["start_epoch"], 100.2)
+        self.assertEqual(len(watch.stalls), 1)
+        self.assertEqual(watch.stalls[0]["start_monotonic"], 0.1)
 
     def test_a_trial_overlapping_a_stall_voids_its_pair_by_name(self):
-        import block_time_2 as driver
         observations, _ = run_schedule()
         for index, observation in enumerate(observations):
-            observation["started_epoch"], observation["ended_epoch"] = 1000.0 + 60 * index, 1060.0 + 60 * index
+            observation["started_monotonic"], observation["ended_monotonic"] = 60.0 * index, 60.0 * index + 59
         target = observations[9]
-        stall = {"start_epoch": target["started_epoch"] + 10, "end_epoch": target["started_epoch"] + 15,
-                 "seconds": 5.0}
-        between = {"start_epoch": 5000.0 - 0.5 + 0.0, "end_epoch": 5000.0 - 0.1, "seconds": 0.4}
-        driver.attach_suspensions(observations, [stall])
+        stall = {"start_monotonic": target["started_monotonic"] + 10,
+                 "end_monotonic": target["started_monotonic"] + 15, "seconds": 5.0}
+        b2.attach_stalls(observations, [stall])
         verdicts = b2.judge_pairs(observations)
         self.assertEqual([v["pair"] for v in verdicts if not v["valid"]], [target["pair"]])
         self.assertIn(f"{target['label']}: driver suspended 5.0 s during the trial",
                       verdicts[target["pair"]]["void_reasons"])
-        self.assertEqual(driver.overlapping([between], 0.0, 10.0), [])
+        for member in observations:
+            if member["pair"] == target["pair"]:
+                # Every member reads void, with the pair's reasons, not only its own.
+                self.assertFalse(member["valid"])
+                self.assertEqual(member["void_reasons"], verdicts[target["pair"]]["void_reasons"])
+
+
+class Execute(unittest.TestCase):
+    """The driver's run loop end to end, with every process replaced by a fake."""
+
+    def run_execute(self, fail_at=None, stall_trial=None, busy_at_end=(), kind="diagnostic"):
+        import argparse
+        import contextlib
+        import json
+        import tempfile
+        from pathlib import Path
+        import block_time_2 as driver
+
+        folder = Path(tempfile.mkdtemp())
+        model = folder / "model"
+        model.mkdir()
+        for name in ("index.json", "system_graph.json"):
+            (model / name).write_text("{}")
+        out = folder / "out"
+        out.mkdir()
+        clock = {"t": 0.0, "count": 0}
+
+        def timed_trial(root, model_, ids, out_, env, entry, urls):
+            if fail_at is not None and clock["count"] == fail_at:
+                raise RuntimeError("trial process exited 101")
+            clock["count"] += 1
+            start = clock["t"]
+            clock["t"] += 60.0
+            return record(entry), RELAY_ON_TIME, {"started_utc": "x", "ended_utc": "y",
+                                                  "started_monotonic": start, "ended_monotonic": start + 59}
+
+        class Watch:
+            def __init__(self):
+                self.stalls = [] if stall_trial is None else [
+                    {"start_monotonic": 60.0 * stall_trial + 5, "end_monotonic": 60.0 * stall_trial + 8,
+                     "seconds": 3.0}]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        class Sampler:
+            samples = 0
+
+            def __init__(self, path):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        replaced = {"timed_trial": timed_trial, "StallWatch": Watch,
+                    "workers": lambda *a, **k: contextlib.nullcontext(["http://worker"]),
+                    "warm_up": lambda *a, **k: (HASHES, BASE_NS), "sha": lambda path: "0" * 64}
+        saved = {name: getattr(driver, name) for name in replaced}
+        saved_ht = (driver.ht.Sampler, driver.ht.spotlight_starts)
+        saved_b1 = driver.b1.provenance
+        saved_host = driver.lp.host_state
+        saved_check = driver.bm.check_qualification
+        try:
+            driver.bm.check_qualification = lambda receipts, relay_sha: None
+            for name, value in replaced.items():
+                setattr(driver, name, value)
+            driver.ht.Sampler = Sampler
+            driver.ht.spotlight_starts = lambda start, end: {"per_minute": {}}
+            driver.b1.provenance = lambda root, sources: {}
+            driver.lp.host_state = lambda: {"load_average": [0, 0, 0], "busy_processes": list(busy_at_end)}
+            ids = Path(driver.__file__).with_name("link-results") / "control" / "ids.json"
+            args = argparse.Namespace(frames_qualification=[], ids=ids, peer_handshake=None,
+                                      diagnostic="unit test", continue_unsettled=False, port=0)
+            report = driver.execute(args, Path(driver.__file__).resolve().parents[2], model, out, kind)
+        finally:
+            for name, value in saved.items():
+                setattr(driver, name, value)
+            driver.ht.Sampler, driver.ht.spotlight_starts = saved_ht
+            driver.b1.provenance = saved_b1
+            driver.lp.host_state = saved_host
+            driver.bm.check_qualification = saved_check
+        files = {p.name for p in out.iterdir()}
+        trials = json.loads((out / "trials.json").read_text())
+        return report, files, trials, out
+
+    def test_a_clean_run_writes_everything_and_analyses_all_pairs(self):
+        report, files, trials, _ = self.run_execute()
+        self.assertTrue(report["complete"])
+        self.assertEqual((report["valid_pairs"], report["void_pairs"]), (20, 0))
+        self.assertTrue({"manifest.json", "trials.json", "analysis.json", "verification.json",
+                         "suspensions.json", "spotlight.json"} <= files)
+        self.assertEqual(len(trials), 80)
+
+    def test_stalls_are_attached_before_pairs_are_judged(self):
+        report, _, trials, _ = self.run_execute(stall_trial=13)
+        pair = trials[13]["pair"]
+        self.assertEqual([int(p) for p in report["outcomes"]["void_pairs"]], [pair])
+        self.assertTrue(any("driver suspended 3.0 s" in r for r in report["outcomes"]["void_pairs"][str(pair)]))
+
+    def test_any_failure_stops_the_run_and_still_writes_every_record(self):
+        report, files, trials, out = self.run_execute(fail_at=30)
+        self.assertFalse(report["complete"])
+        self.assertIn("RuntimeError: trial process exited 101", report["stopped"])
+        self.assertEqual(len(trials), 30)
+        self.assertEqual(len(report["outcomes"]["not_run"]), 50)
+        self.assertTrue({"analysis.json", "verification.json", "suspensions.json", "failure.txt"} <= files)
+        self.assertIn("nothing is analysed", report["note"])
+
+    def test_a_busy_machine_at_the_end_means_an_admissible_run_does_not_count(self):
+        quiet, _, _, _ = self.run_execute(kind="admissible")
+        self.assertTrue(quiet["counts"])
+        busy, _, _, _ = self.run_execute(kind="admissible", busy_at_end=["rustc"])
+        self.assertTrue(busy["complete"])
+        self.assertFalse(busy["quiet_at_end"])
+        self.assertFalse(busy["counts"])
 
 
 class Analysis(unittest.TestCase):
@@ -423,9 +563,12 @@ class Pausing(unittest.TestCase):
 
             def sleep(seconds):
                 polls.append(seconds)
+                # The driver says it is holding while the file is there.
+                self.assertTrue((Path(folder) / driver.PAUSED_FILE).exists())
                 if len(polls) == 3:
                     flag.unlink()
             driver.wait_while_paused(Path(folder), 7, pauses, sleep=sleep, now=lambda: next(clock))
+            self.assertFalse((Path(folder) / driver.PAUSED_FILE).exists())
         self.assertEqual(polls, [driver.PAUSE_POLL_S] * 3)
         self.assertEqual(pauses, [{"before_pair": 7, "paused_utc": "2026-11-15T12:00:00Z",
                                    "resumed_utc": "2026-11-15T12:10:00Z"}])
