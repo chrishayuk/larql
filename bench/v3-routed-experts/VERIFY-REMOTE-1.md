@@ -148,7 +148,13 @@ aggregated into one figure.**
 `committed new tokens per second = timed ids ÷ wall time of generation`
 
 The first generated id is prefill's, produced untimed; the trial records
-the ids produced inside the clock as `timed_ids` (one fewer). Every arm
+the ids produced inside the clock as `timed_ids` (one fewer: at most 63 of
+the 64 requested). Every trial records the requested, emitted,
+prefill-produced and timed counts separately, and whether generation ended
+at a stop id or at the limit; an early stop counts only the ids actually
+emitted inside the clock. Gate 2 requires the four counts, the ending and
+the ids to agree. The report gives the full generation length beside every
+rate. Every arm
 produces the same ids, so the ratio between arms is the inverse ratio of
 their wall times. The trial's own bookkeeping (two counter reads and a
 clock read per unit of work) is inside the clock; it is a few hundred
@@ -217,7 +223,12 @@ quiet-machine and handshake rules apply unchanged.
   0 ms. Every later trial of that workload, at any delay and arm, must
   reproduce its ids (gate 1). References are not timed results.
 - **The bracket**: `sequential`, 0 ms, `prose_free` (the shortest prompt),
-  16 ids. Its time per timed id is the bracket measure.
+  16 ids. Its time per timed id is the bracket measure. **Provisional:**
+  the functional diagnostic reports every unit's bracket drift against the
+  1% gate. Before freeze, that observation decides whether 16 ids is
+  stable enough. The gate is not loosened; if the bracket is too noisy,
+  its length changes in a reviewed revision before the admissible run,
+  never after performance results.
 - **Units.** One unit is one workload at one delay: the four arms in a
   seeded order, opened and closed by a short `sequential` 0 ms bracket.
   That is 4 workloads × 3 delays = **12 units per repeat, two repeats**.
