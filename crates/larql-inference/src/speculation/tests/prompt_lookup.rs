@@ -1,6 +1,6 @@
 //! Prompt-lookup proposer and acceptance.
 
-use super::super::prompt_lookup::{accepted_prefix, propose};
+use crate::speculation::{accepted_prefix, propose};
 
 #[test]
 fn proposes_from_the_earliest_prompt_occurrence() {
