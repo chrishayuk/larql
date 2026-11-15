@@ -61,6 +61,15 @@ pub struct Policy {
     /// inside it. Required, and must be outside the workdir and the container; it should be a directory the
     /// client cannot write.
     pub staging_dir: PathBuf,
+    /// Refuse, before running it, any capture whose response size the service cannot bound from the plan
+    /// first (a site the plan gives no width, such as a hyper-connection residual or a routed FFN's down
+    /// projection input). Default true: then no capture is ever executed and afterwards refused on size.
+    #[serde(default = "default_true")]
+    pub require_capture_bound: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// The evaluation budget.

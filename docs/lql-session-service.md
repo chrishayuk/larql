@@ -54,6 +54,7 @@ A JSON file, read once at start. Unknown fields are refused, so a misspelt limit
 | `operations` | The allow-list. `update_weights` (and any other) is allowed only if listed. `hello` and `budget` are always answered. |
 | `budget.edited_executions` | How many executions of an edited model are answered. |
 | `limits` | Optional; each field defaults: `max_response_bytes` 256 MiB (array bytes per response), `max_request_bytes` 64 MiB (one request line), `max_generate_tokens` 256, `max_capture_positions` 4096, `max_capture_layers` 64, `max_sequence_tokens` 4096 (prompt plus continuation), `max_patch_bytes` 64 MiB, `max_infer_top` 1000, `max_applied_patches` 16. |
+| `require_capture_bound` | Default `true`: a capture whose response size the service cannot bound from the plan before running it (a site the plan gives no width, such as a hyper-connection residual or a routed FFN's down projection input) is refused up front, uncharged, with the site named. Then no capture ever runs and is afterwards refused on size. `false` lets such a capture run, admitted and charged, under the post-run size check. On a dense single-stream program (Gemma 3 4B) every site is bounded. |
 | `representation_source` | `stored` (default), `auto` or `transient`, as `larql lql --representation-source`. |
 | `staging_dir` | Required. Where the service makes its private staging directory (mode 0700). Must be outside the workdir and the container, must not contain the workdir, and should be a directory the client cannot write. |
 
@@ -148,8 +149,8 @@ in-process Python method call; no LQL text is accepted or built.
 - **Limits.** Generation length, capture positions and layers, sequence length, `top` and the patches
   applied at once are refused before anything executes. A capture's array bytes are bounded before it runs
   (layers × positions × the site's width from the plan × 4, plus the header) and refused up front; where the
-  plan gives no width (a hyper-connection residual, a routed FFN's down input) only the check after running
-  applies. A tensor read is refused before it is read when the listing shows it would be too large. Every
+  plan gives no width (a hyper-connection residual, a routed FFN's down input) the capture is refused up front
+  under `require_capture_bound` (the default), or left to the check after running when that is false. A tensor read is refused before it is read when the listing shows it would be too large. Every
   response's array bytes are checked again before it is sent.
 - **The audit log.** Every request gets one record, appended (`O_APPEND`) and synced before its response is
   sent: `seq`, `time_unix_ms`, `id`, `op`, the arguments (operand arrays, and strings over 1 KiB, replaced by

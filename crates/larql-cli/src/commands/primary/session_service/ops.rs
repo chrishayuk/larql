@@ -27,6 +27,41 @@ const F32_BYTES: u64 = 4;
 /// At most this many bytes of `.npy` header precede a capture's body (a 1.0 header for up to three dims).
 const NPY_HEADER_BOUND: u64 = 256;
 
+/// Refuse a capture whose array bytes, bounded from the plan before it runs, exceed `limit`. When the plan
+/// gives the site no width, the capture is refused if the policy requires a bound (the default), and otherwise
+/// left to the check made on the array after it runs.
+pub(super) fn capture_bound(
+    site: CaptureSite,
+    width: Option<usize>,
+    layers: u64,
+    positions: u64,
+    require: bool,
+    limit: u64,
+) -> Result<(), Failure> {
+    let Some(width) = width else {
+        return if require {
+            Err(Failure::refused(format!(
+                "the service cannot bound the size of a capture at the site {} before running it (the plan \
+                 gives this site no width here), and the policy's require_capture_bound is true",
+                site.name()
+            )))
+        } else {
+            Ok(())
+        };
+    };
+    let bound = layers
+        .saturating_mul(positions)
+        .saturating_mul(width as u64)
+        .saturating_mul(F32_BYTES)
+        .saturating_add(NPY_HEADER_BOUND);
+    over(
+        "the capture's array bytes, at most",
+        bound,
+        limit,
+        "max_response_bytes",
+    )
+}
+
 fn no_repeats(what: &str, list: &[usize]) -> Result<(), Failure> {
     let mut seen = std::collections::BTreeSet::new();
     match list.iter().find(|item| !seen.insert(**item)) {
@@ -524,19 +559,19 @@ impl Service {
             self.limits.max_capture_positions,
             "max_capture_positions",
         )?;
-        if let Some(width) = geometry.width {
-            let bound = (layer_list.len().max(1) as u64)
-                .saturating_mul(position_count)
-                .saturating_mul(width as u64)
-                .saturating_mul(F32_BYTES)
-                .saturating_add(NPY_HEADER_BOUND);
-            over(
-                "the capture's array bytes, at most",
-                bound,
-                self.limits.max_response_bytes,
-                "max_response_bytes",
-            )?;
-        }
+        #[cfg(test)]
+        let geometry = larql_lql::operations::CaptureGeometry {
+            width: geometry.width.filter(|_| !self.forget_capture_width),
+            ..geometry
+        };
+        capture_bound(
+            site,
+            geometry.width,
+            layer_list.len().max(1) as u64,
+            position_count,
+            self.require_capture_bound,
+            self.limits.max_response_bytes,
+        )?;
         Ok(())
     }
 

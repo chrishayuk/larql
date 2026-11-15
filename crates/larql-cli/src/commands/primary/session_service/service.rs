@@ -68,6 +68,11 @@ pub struct Service {
     container_index_sha256: String,
     /// Set when the audit log could not be written: the service stops answering.
     fatal: Option<String>,
+    /// The policy's `require_capture_bound`.
+    pub(super) require_capture_bound: bool,
+    /// Test hook: treat every site as one the plan gives no width.
+    #[cfg(test)]
+    pub(super) forget_capture_width: bool,
 }
 
 fn inside(path: &Path, dir: &Path) -> bool {
@@ -176,6 +181,9 @@ impl Service {
             container,
             container_index_sha256,
             fatal: None,
+            require_capture_bound: policy.require_capture_bound,
+            #[cfg(test)]
+            forget_capture_width: false,
         };
         let env: serde_json::Map<String, Value> = std::env::vars()
             .filter(|(k, _)| k.starts_with(RECORDED_ENV_PREFIX))
@@ -193,6 +201,7 @@ impl Service {
             "operations": service.allowed_names(),
             "budget_limit": service.budget_limit,
             "limits": service.limits,
+            "require_capture_bound": service.require_capture_bound,
             "resumed": resumed.next_seq > 1,
             "env": env,
         });
@@ -343,6 +352,7 @@ impl Service {
             "container_index_sha256": self.container_index_sha256,
             "operations": self.allowed_names(),
             "limits": self.limits,
+            "require_capture_bound": self.require_capture_bound,
             "budget": budget_value(self.budget_limit, self.budget_used),
         })
     }
