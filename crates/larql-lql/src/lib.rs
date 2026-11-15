@@ -5,6 +5,7 @@ pub mod error;
 pub mod executor;
 pub mod help;
 pub(crate) mod lexer;
+pub mod live_scope;
 pub mod parser;
 pub mod relations;
 pub mod repl;

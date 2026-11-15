@@ -135,6 +135,10 @@ pub struct LiveWeightView {
     overrides: OperandOverrides,
 }
 
+/// Which ops something was built for: their digests, in the order they are in effect. An op's digest covers
+/// everything it computes with, so two op sets with the same identity materialise the same bytes.
+pub(super) type OpSetIdentity = Vec<String>;
+
 impl LiveWeightView {
     /// Every patched tensor, in the order each was first edited.
     pub fn tensors(&self) -> &[LiveTensor] {
@@ -148,8 +152,16 @@ pub(super) enum LiveWeightState {
     /// The op set changed since anything was built for it (or nothing was ever built).
     #[default]
     Stale,
-    Ready(LiveWeightView),
-    Refused(LiveWeightRefusal),
+    /// The view of exactly the ops `built_for` names.
+    Ready {
+        built_for: OpSetIdentity,
+        view: LiveWeightView,
+    },
+    /// Why exactly the ops `built_for` names cannot execute.
+    Refused {
+        built_for: OpSetIdentity,
+        refusal: LiveWeightRefusal,
+    },
 }
 
 impl KnowledgeOverlay {
@@ -160,11 +172,12 @@ impl KnowledgeOverlay {
         binding: &ExecutionBinding<'_>,
     ) -> Result<Option<&LiveWeightView>, LiveWeightRefusal> {
         self.live = if self.has_weight_ops() {
+            let built_for = self.weight_op_identity();
             let ops: Vec<WeightOpRef<'_>> =
                 self.weight_ops().into_iter().map(|(_, op)| op).collect();
             match build_view(&ops, binding) {
-                Ok(view) => LiveWeightState::Ready(view),
-                Err(refusal) => LiveWeightState::Refused(refusal),
+                Ok(view) => LiveWeightState::Ready { built_for, view },
+                Err(refusal) => LiveWeightState::Refused { built_for, refusal },
             }
         } else {
             LiveWeightState::Stale
@@ -181,11 +194,26 @@ impl KnowledgeOverlay {
         if self.has_knowledge_state() {
             return Err(LiveWeightRefusal::KnowledgePending);
         }
+        // What was built is served only for the ops it was built for. A mutator that changed the op set and
+        // did not mark the view stale is caught here, by comparing identities, not trusted to have remembered.
+        let current = self.weight_op_identity();
         match &self.live {
-            LiveWeightState::Ready(view) => Ok(Some(view)),
-            LiveWeightState::Refused(refusal) => Err(refusal.clone()),
-            LiveWeightState::Stale => Err(LiveWeightRefusal::Stale),
+            LiveWeightState::Ready { built_for, view } if *built_for == current => Ok(Some(view)),
+            LiveWeightState::Refused { built_for, refusal } if *built_for == current => {
+                Err(refusal.clone())
+            }
+            LiveWeightState::Ready { .. }
+            | LiveWeightState::Refused { .. }
+            | LiveWeightState::Stale => Err(LiveWeightRefusal::Stale),
         }
+    }
+
+    /// The identity of the stored-weight ops in effect now.
+    fn weight_op_identity(&self) -> OpSetIdentity {
+        self.weight_ops()
+            .into_iter()
+            .map(|(_, op)| op.digest().to_string())
+            .collect()
     }
 
     /// The replacements an execution runs over for the stored-weight ops in effect: `None` with no such op,
@@ -198,7 +226,8 @@ impl KnowledgeOverlay {
         Ok(self.live_weights()?.map(|view| view.overrides.clone()))
     }
 
-    /// Mark the live view stale. Every mutator of the op set calls this.
+    /// Mark the live view stale. Every mutator of the op set calls this; [`Self::live_weights`] does not
+    /// depend on it, since it also holds what was built to the identity of the ops now in effect.
     pub(super) fn invalidate_live_weights(&mut self) {
         self.live = LiveWeightState::Stale;
     }

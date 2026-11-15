@@ -245,7 +245,7 @@ source**, and `USE` states it in its reply (`Execution: representation source �
 
 | Source | What `INFER` computes with |
 |---|---|
-| `stored` (default) | The container's stored weights. Nothing is manufactured at load |
+| `stored` (default) | The container's stored weights, and for a tensor a pending stored-weight edit covers, the edited bytes (§3.5.1). Nothing is manufactured at load |
 | `auto` | Stored weights, except that the CPU loader may quantise at load any matrix whose stored image does not fit the host's cache. Faster on large models; **not the stored arithmetic**, and which matrices are affected depends on the host |
 | `transient` | Representations quantised at load, ignoring any compiled pack |
 
@@ -842,9 +842,11 @@ it) until it is removed, `INFER`, `INFER … GENERATE` and `TRACE` in that sessi
 tensor. Its whole BF16 bytes are produced once, when the set of pending edits changes, by the path
 `COMPILE` writes them with; they are held in memory and loaded in place of the stored tensor. The
 session and a fresh binding of the container it compiles therefore execute the same bytes for every
-edited tensor. `REMOVE PATCH` restores the stored weights. The reply of each staging statement, of
-`APPLY PATCH` and of `SHOW PATCHES` names the tensors executed this way, each with the SHA-256 of its
-bytes. The same holds for the structured edits of sections 3.5.2 and 3.5.3.
+edited tensor. `REMOVE PATCH` withdraws the edits a patch carried and `DISCARD WEIGHT EDITS` (section
+3.5.4) the ones staged directly; what is left executes, and with nothing left the stored weights do. The
+reply of each staging statement, of `APPLY PATCH`, `REMOVE PATCH`, `DISCARD WEIGHT EDITS` and
+`SHOW PATCHES` names the tensors executed this way, each with the SHA-256 of its bytes, or says that
+none is. The same holds for the structured edits of sections 3.5.2 and 3.5.3.
 
 `DESCRIBE`, `WALK`, `SELECT` and `DIFF … CURRENT` read the stored weights: a pending weight edit is not
 part of what they report.
@@ -874,9 +876,9 @@ refused while a weight edit is pending, because a compose install is computed on
   `COMPILE` (`the source already carries a weight-patch ledger`). Stage every op on the unedited base and
   compile once.
 - **Staged ops stay staged.** `COMPILE` leaves the session bound to the source with its ops still pending:
-  a second `COMPILE` writes the same edit to a second path, and `INFER` after `COMPILE` still runs the
-  unedited weights. `USE "<out>"` binds the compiled container. A second `USE` of anything drops every
-  staged op.
+  a second `COMPILE` writes the same edit to a second path, and `INFER` after `COMPILE` computes with the
+  edit from memory exactly as it did before (see "Execution in the session" above). `USE "<out>"` binds
+  the compiled container, which stores the edit. A second `USE` of anything drops every staged op.
 - **Conflicts.** Two edits to one element, whether staged directly or carried by applied patches, are
   refused. Edits are not composed.
 - **Not combined with knowledge edits.** `COMPILE` refuses to write stored-weight edits and
@@ -1002,6 +1004,9 @@ DISCARD WEIGHT EDITS;
 Drops every stored-weight op staged directly in the session (`UPDATE WEIGHTS`, `REMOVE DIRECTION`,
 `ADD LOW RANK`), so a mis-staged edit can be withdrawn without re-binding the container. Nothing is written.
 
+- **It takes effect at once.** `INFER` and `TRACE` stop computing with the discarded ops (section 3.5.1,
+  "Execution in the session"). The reply lists the tensors still executed from edited bytes, which are those of
+  an applied patch, or says that none is and the stored weights execute.
 - **An open recording forgets them too.** The copies a `BEGIN PATCH` recording holds are removed, so `SAVE PATCH`
   does not write a discarded edit.
 - **An applied patch's ops stay with the patch.** `REMOVE PATCH` removes those; the reply says how many remain.

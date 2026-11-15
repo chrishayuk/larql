@@ -26,7 +26,7 @@ mod low_rank;
 mod overrides;
 mod session;
 mod weights;
-pub(crate) use live::live_weight_lines;
+pub(crate) use live::{live_weight_lines, nothing_in_effect_line};
 pub(crate) use overrides::*;
 pub(crate) use session::*;
 

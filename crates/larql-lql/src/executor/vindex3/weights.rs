@@ -199,6 +199,12 @@ impl Session {
                 "  {from_patches} stored-weight op(s) from applied patches remain pending; REMOVE PATCH removes them"
             ));
         }
+        // What executes now is what is left: rebuilt here, and said.
+        let live = self.refresh_live_weights();
+        if discarded > 0 && live.is_empty() {
+            out.push(super::nothing_in_effect_line());
+        }
+        out.extend(live);
         Ok(out)
     }
 

@@ -5,6 +5,11 @@
 //! every matrix of which widens, so they reach the stored-BF16 residency only at the loader. This one builds a
 //! model whose FFN matrices are too large to widen and executes it end to end: the patched tensor must be
 //! pinned to the stored-BF16 residency, exactly as its compiled twin is, and compute the same bits through it.
+//!
+//! "Too large" is the host's: the policy compares a matrix's f32 image with the L2 size it reads (a constant
+//! off macOS, `hw.perflevel0.l2cachesize` on it). The matrix here is sized from that same reading, so the pin
+//! does not depend on which machine runs the test. Under the `stored` source there is no upper limit: where
+//! the policy would rather quantise a still larger matrix, `stored` holds its BF16 bytes instead.
 
 use std::path::Path;
 
@@ -17,6 +22,7 @@ use larql_vindex::format::vindex3::opplan::exec::operands::OperandSource;
 use larql_vindex::format::vindex3::opplan::exec::prepared::{select_realizations, ExecutionSlice};
 use larql_vindex::format::vindex3::opplan::exec::production::ProductionBackend;
 use larql_vindex::format::vindex3::opplan::exec::realization::RealizationRecord;
+use larql_vindex::format::vindex3::opplan::exec::residency_record::SelectionInputs;
 use larql_vindex::format::vindex3::weight_patch::{record_op, WeightEdit, WeightOp};
 
 use crate::fixture::Source;
@@ -24,14 +30,22 @@ use crate::live_support::*;
 
 /// One layer is enough: the point is one matrix the policy does not widen.
 const LAYERS: usize = 1;
-/// `[64, 65536]`: 16 MiB as f32, the default performance-cluster L2 and the largest any Apple performance
-/// cluster reports, so the policy keeps it as stored BF16 (8 MiB, below the size at which it would stream).
-const INTERMEDIATE: usize = 1 << 16;
+/// Bytes of one f32: what the size policy multiplies a matrix's elements by.
+const F32_BYTES: usize = 4;
 /// The single layer's down projection.
 const BIG_TENSOR: &str = "0.mlp.down_proj.weight";
 const BF16_DTYPE: &str = "BF16";
-/// Elements of row [`EDIT_ROW`] the patch edits.
-const EDIT_COLUMNS: [usize; 3] = [7, 4096, 65_000];
+/// The first column the patch edits; the others are the middle and the last of the row.
+const FIRST_EDIT_COLUMN: usize = 7;
+
+/// The narrowest power-of-two FFN width whose `[hidden, width]` matrices the size policy does not widen on
+/// this host: the f32 image is at least the L2 size the policy itself reads. 65,536 on a 16 MiB L2.
+fn width_too_large_to_widen() -> usize {
+    let l2_bytes = SelectionInputs::observe().l2_bytes;
+    l2_bytes
+        .div_ceil(F32_BYTES * DENSE_HIDDEN)
+        .next_power_of_two()
+}
 
 fn bf16_bytes(values: &[f32]) -> Vec<u8> {
     values
@@ -40,13 +54,13 @@ fn bf16_bytes(values: &[f32]) -> Vec<u8> {
         .collect()
 }
 
-fn write_wide_ffn_checkpoint(dir: &Path) {
+fn write_wide_ffn_checkpoint(dir: &Path, intermediate: usize) {
     std::fs::write(
         dir.join("config.json"),
         serde_json::json!({
             "architectures": ["LlamaForCausalLM"], "torch_dtype": "bfloat16", "model_type": "llama",
             "tie_word_embeddings": false, "hidden_size": DENSE_HIDDEN, "num_hidden_layers": LAYERS,
-            "intermediate_size": INTERMEDIATE, "num_attention_heads": DENSE_Q_HEADS,
+            "intermediate_size": intermediate, "num_attention_heads": DENSE_Q_HEADS,
             "num_key_value_heads": DENSE_KV_HEADS, "head_dim": DENSE_HEAD_DIM, "vocab_size": DENSE_VOCAB,
             "rms_norm_eps": 1e-5, "rope_theta": 10000.0
         })
@@ -83,9 +97,9 @@ fn write_wide_ffn_checkpoint(dir: &Path) {
         ("self_attn.k_proj.weight", kv, DENSE_HIDDEN, 101),
         ("self_attn.v_proj.weight", kv, DENSE_HIDDEN, 102),
         ("self_attn.o_proj.weight", DENSE_HIDDEN, q, 103),
-        ("mlp.gate_proj.weight", INTERMEDIATE, DENSE_HIDDEN, 106),
-        ("mlp.up_proj.weight", INTERMEDIATE, DENSE_HIDDEN, 107),
-        ("mlp.down_proj.weight", DENSE_HIDDEN, INTERMEDIATE, 108),
+        ("mlp.gate_proj.weight", intermediate, DENSE_HIDDEN, 106),
+        ("mlp.up_proj.weight", intermediate, DENSE_HIDDEN, 107),
+        ("mlp.down_proj.weight", DENSE_HIDDEN, intermediate, 108),
     ] {
         push(
             &format!("{p}.{suffix}"),
@@ -123,10 +137,16 @@ fn a_patched_tensor_too_large_to_widen_runs_the_fused_bf16_kernel_as_its_compile
     let checkpoint = dir.path().join("checkpoint");
     std::fs::create_dir(&checkpoint).unwrap();
     let container = dir.path().join("wide.vindex3");
-    encode_fixture_container(write_wide_ffn_checkpoint, &checkpoint, &container, MODEL);
+    let intermediate = width_too_large_to_widen();
+    encode_fixture_container(
+        |dir: &Path| write_wide_ffn_checkpoint(dir, intermediate),
+        &checkpoint,
+        &container,
+        MODEL,
+    );
     let src = Source { dir, container };
 
-    let edits: Vec<WeightEdit> = EDIT_COLUMNS
+    let edits: Vec<WeightEdit> = [FIRST_EDIT_COLUMN, intermediate / 2, intermediate - 1]
         .iter()
         .map(|&col| WeightEdit {
             row: EDIT_ROW,

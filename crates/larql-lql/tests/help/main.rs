@@ -8,6 +8,7 @@
 
 mod banner;
 mod catalogue;
+mod live_effect;
 mod lookup;
 mod parse_errors;
 mod statement;

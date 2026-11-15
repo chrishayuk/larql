@@ -317,6 +317,94 @@ fn a_view_not_rebuilt_after_the_ops_changed_refuses() {
     assert!(overlay.live_weight_overrides().unwrap().is_some());
 }
 
+/// Discarding the session's ops changes the set too. A view built with them is not served for what is left:
+/// it is held to the identity of the ops in effect, whichever mutator changed them.
+#[test]
+fn a_view_built_before_a_discard_is_not_served_after_it() {
+    let src = source_with_pack();
+    let bound = bind(&src.container);
+    let mut overlay = KnowledgeOverlay::new();
+    overlay
+        .try_apply_patch(patch(
+            "b.vlp",
+            vec![op(&src.container, Kind::Delta, &COLUMNS_B)],
+        ))
+        .unwrap();
+    stage(&mut overlay, delta(&src));
+    overlay.refresh_live_weights(&bound.binding()).unwrap();
+    let digest = |overlay: &KnowledgeOverlay| {
+        let view = overlay.live_weights().unwrap().unwrap();
+        view.tensors()
+            .iter()
+            .map(|t| t.sha256.clone())
+            .collect::<Vec<_>>()
+    };
+    let with_both = digest(&overlay);
+
+    assert_eq!(overlay.discard_session_weight_ops(), 1);
+    assert_eq!(
+        overlay.live_weight_overrides().unwrap_err(),
+        LiveWeightRefusal::Stale,
+        "the view built with the discarded op is not what is in effect"
+    );
+    overlay.refresh_live_weights(&bound.binding()).unwrap();
+    assert_ne!(
+        digest(&overlay),
+        with_both,
+        "what executes now is the patch's op alone"
+    );
+
+    // Nothing left to discard changes nothing.
+    assert_eq!(overlay.discard_session_weight_ops(), 0);
+    overlay.refresh_live_weights(&bound.binding()).unwrap();
+    assert!(overlay.live_weight_overrides().unwrap().is_some());
+}
+
+/// The identity check by itself. The applied-patch list is a public field, so the op set can change without
+/// any mutator of the overlay running; nothing marks the view stale then, and it is still not served.
+#[test]
+fn a_view_is_held_to_the_ops_in_effect_even_when_nothing_marked_it_stale() {
+    let src = source_with_pack();
+    let bound = bind(&src.container);
+    let mut overlay = KnowledgeOverlay::new();
+    overlay
+        .try_apply_patch(patch(
+            "b.vlp",
+            vec![op(&src.container, Kind::Delta, &COLUMNS_B)],
+        ))
+        .unwrap();
+    stage(&mut overlay, delta(&src));
+    overlay.refresh_live_weights(&bound.binding()).unwrap();
+
+    // The patch leaves the list behind the overlay's back: one op is still in effect, not the two built for.
+    let removed = overlay.patches.pop().expect("the applied patch");
+    assert!(overlay.has_weight_ops());
+    assert_eq!(
+        overlay.live_weight_overrides().unwrap_err(),
+        LiveWeightRefusal::Stale
+    );
+    // Put back, the set is the one the view was built for, and it is served again without a rebuild.
+    overlay.patches.push(removed);
+    assert!(overlay.live_weight_overrides().unwrap().is_some());
+
+    // The same holds for a refusal: it is the refusal of the ops it was built for, and of no others.
+    let auto = bind_as(&src.container, None, RepresentationSource::Auto);
+    assert!(matches!(
+        overlay.refresh_live_weights(&auto.binding()),
+        Err(LiveWeightRefusal::SourceNotStored { .. })
+    ));
+    let removed = overlay.patches.pop().expect("the applied patch");
+    assert_eq!(
+        overlay.live_weight_overrides().unwrap_err(),
+        LiveWeightRefusal::Stale
+    );
+    overlay.patches.push(removed);
+    assert!(matches!(
+        overlay.live_weight_overrides(),
+        Err(LiveWeightRefusal::SourceNotStored { .. })
+    ));
+}
+
 /// The witness an execution ends with: a replacement nothing read was not executed.
 #[test]
 fn a_replacement_no_loader_read_fails_the_execution() {

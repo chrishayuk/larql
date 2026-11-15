@@ -448,7 +448,9 @@ impl KnowledgeOverlay {
     /// Drop every stored-weight op staged directly in the session and return how many there were. Ops carried
     /// by applied patches are untouched: they are removed with their patch.
     pub fn discard_session_weight_ops(&mut self) -> usize {
-        std::mem::take(&mut self.weight_session).len()
+        let discarded = std::mem::take(&mut self.weight_session).len();
+        self.invalidate_live_weights();
+        discarded
     }
 
     fn stage(&mut self, op: WeightOp) -> Result<(), WeightPatchError> {

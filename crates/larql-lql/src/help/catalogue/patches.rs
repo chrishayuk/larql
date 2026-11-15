@@ -2,6 +2,7 @@
 
 use crate::help::entry::{GroupHelp, Need, StatementHelp};
 use crate::help::topic::HelpGroup;
+use crate::live_scope::executed_by;
 
 pub(super) static GROUP: GroupHelp = GroupHelp {
     name: "PATCHES",
@@ -81,8 +82,10 @@ pub(super) static APPLY_PATCH: StatementHelp = StatementHelp {
     examples: &["APPLY PATCH \"edits.vlp\";"],
     needs: &[Need::Backend],
     effect: &[
-        "Knowledge operations take effect at once in the session. Stored-weight ops are staged like",
-        "the statements that made them: they take effect only in a container written by COMPILE.",
+        "At once, for both kinds. Knowledge operations take effect in the session. Stored-weight ops",
+        concat!("are staged like the statements that made them, and ", executed_by!(), " compute with them from"),
+        "the next statement, or are refused with the reason (HELP UPDATE WEIGHTS;). REMOVE PATCH",
+        "withdraws them, and the stored weights run again. COMPILE writes them into a container.",
     ],
     operands: &[],
     refusals: &[
@@ -103,7 +106,9 @@ pub(super) static SHOW_PATCHES: StatementHelp = StatementHelp {
     syntax: &["SHOW PATCHES;"],
     does: &[
         "Lists the applied patches and, on a VINDEX3 container, the stored-weight ops pending",
-        "COMPILE. Use it to see what a COMPILE would write.",
+        "COMPILE. Use it to see what a COMPILE would write, and what the session executes meanwhile:",
+        concat!("each tensor ", executed_by!(), " compute with from patched bytes, with its SHA-256, or the reason"),
+        "they are refused.",
     ],
     examples: &["SHOW PATCHES;"],
     needs: &[Need::Backend],

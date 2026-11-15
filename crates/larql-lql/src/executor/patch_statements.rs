@@ -350,10 +350,7 @@ impl Session {
         let mut out = vec![format!("Removed patch #{}", i + 1)];
         let live = self.refresh_live_weights();
         if carried_weight_ops && live.is_empty() {
-            out.push(
-                "  No stored-weight op is in effect: INFER and TRACE execute the container's stored weights."
-                    .into(),
-            );
+            out.push(crate::executor::vindex3::nothing_in_effect_line());
         }
         out.extend(live);
         Ok(out)

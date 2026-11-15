@@ -2,14 +2,16 @@
 
 use crate::help::entry::{GroupHelp, Need, StatementHelp};
 use crate::help::topic::HelpGroup;
+use crate::live_scope::executed_by;
 
 pub(super) static GROUP: GroupHelp = GroupHelp {
     name: "COMPILING",
     aliases: &["WRITE", "OUTPUT", "CONTAINERS"],
     title: "Compile",
     intro: &[
-        "COMPILE is the only statement that turns staged stored-weight ops into weights a model",
-        "runs with. It writes a new container and never modifies the bound one.",
+        "COMPILE is the only statement that writes staged stored-weight ops into a container. Until",
+        concat!("then ", executed_by!(), " in the session that staged them compute with them from memory, and"),
+        "nothing else does. It writes a new container and never modifies the bound one.",
         "The output path must not exist yet: nothing is ever replaced.",
     ],
 };
@@ -49,7 +51,7 @@ pub(super) static COMPILE: StatementHelp = StatementHelp {
     effect: &[
         "<out> is complete or absent: it is assembled beside the destination, inspected, and renamed",
         "into place. The session stays bound to the source and its ops stay staged, so INFER after",
-        "COMPILE still runs the unedited weights. Run USE \"<out>\" to run the edited ones.",
+        "COMPILE still computes with them in memory. USE \"<out>\" binds the container that stores them.",
         "The ledger's schema follows the ops compiled: weight-patches/v2 for UPDATE WEIGHTS only,",
         "weight-patches/v3 when a REMOVE DIRECTION is present and no ADD LOW RANK,",
         "weight-patches/v4 when any ADD LOW RANK is present.",

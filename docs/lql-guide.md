@@ -390,12 +390,20 @@ On a VINDEX3 container three statements edit the stored weights themselves, not 
 USE  →  stage one or more ops  →  [BEGIN PATCH … SAVE PATCH]  →  COMPILE  →  VERIFY
 ```
 
-Four facts shape everything below.
+Five facts shape everything below.
 
-- **Staging changes nothing you can run.** A staged op is checked and remembered; no file is written and the
-  bound container is never modified. `INFER`, `DIFF … CURRENT` and every other statement in the session still
-  see the stored weights. The edit exists only in the container `COMPILE CURRENT INTO VINDEX` writes: `USE`
-  that container to run it.
+- **Staging writes nothing, and the session runs the edit at once.** A staged op is checked and remembered;
+  no file is written and the bound container is never modified. From the next statement, `INFER` and `TRACE`
+  in that session compute with the edited tensor: its bytes are produced by the path `COMPILE` writes them
+  with and held in memory, and the reply lists each such tensor with the SHA-256 of its bytes. `DESCRIBE`,
+  `WALK`, `SELECT` and `DIFF … CURRENT` still read the stored weights. `COMPILE CURRENT INTO VINDEX` writes a
+  container that stores the edit; `DISCARD WEIGHT EDITS` and `REMOVE PATCH` withdraw it, and the stored
+  weights run again.
+- **An edit the session cannot run exactly is refused, not approximated.** While such an op is pending,
+  `INFER` and `TRACE` are refused with the reason and do not fall back to the stored weights. That happens
+  when the session's representation source is not `stored`, when a knowledge edit is pending as well, when
+  the tensor is one execution reads past the edited bytes (an expert bank, a routed layer, a mixer other
+  than softmax attention), or when `COMPILE` would refuse the op (step 7 shows one).
 - **State lives in the process.** `larql lql 'A; B; C;'` runs its statements in one process and one session,
   so `USE`, the staged ops and applied patches carry from `A` to `C`. A second `larql lql` starts unbound
   with nothing staged. Only files carry over: a `.vlp` patch and a compiled container.
@@ -405,8 +413,17 @@ Four facts shape everything below.
   stored-weight compile refuses an existing directory even when it is empty.
 
 Every example below was run with `larql lql` on a two-layer toy container with no tokenizer (the conformance
-fixture `verifier/conformance/structured_patch/base`, copied to `model.vindex3`), and the replies are the
+fixture `verifier/conformance/structured_patch/base`, copied to `model.vindex3`, with the operand files
+`u.json` and `a_b.json` of `verifier/conformance/weight_patches_v4/mixed/operands/`), and the replies are the
 ones it printed. The `USE` banner is left out after the first example.
+
+The toy container has no tokenizer, so `INFER` cannot run on it (step 9). What the replies below say about
+`INFER` and `TRACE` is therefore not shown here by running them. It rests on the tests that do run them, on
+a two-layer container of the same shape with a tokenizer added:
+`crates/larql-lql/tests/weight_patch_lql/live.rs` (what `INFER`, `INFER … GENERATE` and `TRACE` print with an
+op pending, after it is withdrawn, and against a fresh binding of the compiled container) and
+`crates/larql-vindex/tests/weight_patch/live_exec.rs` (the same comparisons by token id, on every logit, bit
+for bit).
 
 #### 1. Bind, and find the tensor names
 
@@ -447,9 +464,14 @@ Staged: 2 element(s) of 0.mlp.down_proj.weight, row 5, delta 0.0625 (BF16, neare
   [5, 13]: -0.0476074 -> 0.0148926
   op digest 45d6eeb173923883
   2 weight element(s) pending in this session
-  Takes effect in a container written by COMPILE CURRENT INTO VINDEX; INFER in this session does not see it.
+  In effect for INFER and TRACE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+    0.mlp.down_proj.weight [64, 256]  sha256 74c3f8e2d76b0d5b7bf5d6fb008a63b1fc9526b27a8c09cfe8914354b92d12d0
+  Nothing on disk has changed: COMPILE CURRENT INTO VINDEX writes a container that stores exactly these bytes. DESCRIBE, WALK, SELECT and DIFF read the stored weights.
   (no patches applied)
   Stored-weight edits: 2 element(s) in 1 op(s), pending COMPILE
+  In effect for INFER and TRACE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+    0.mlp.down_proj.weight [64, 256]  sha256 74c3f8e2d76b0d5b7bf5d6fb008a63b1fc9526b27a8c09cfe8914354b92d12d0
+  Nothing on disk has changed: COMPILE CURRENT INTO VINDEX writes a container that stores exactly these bytes. DESCRIBE, WALK, SELECT and DIFF read the stored weights.
 Compiled: delta.vindex3 (VINDEX3, clean container; weight patch of 2 element(s) of 0.mlp.down_proj.weight)
   re-derived: target.decoder_stack@Q8_0
   edited source (canonical) payload 22c8dfe3b3429bcc
@@ -457,8 +479,11 @@ Compiled: delta.vindex3 (VINDEX3, clean container; weight patch of 2 element(s) 
 ```
 
 Each element becomes the bfloat16 nearest to stored value + delta (ties to even), rounded once. `COL = <n>`
-names one column and `COL IN (…)` several. `SHOW PATCHES` shows what a `COMPILE` would write. The quantised
-representation (`@Q8_0`) is re-derived from the edited weights.
+names one column and `COL IN (…)` several. The three indented lines after the staging reply are the session's
+live view: the tensor `INFER` and `TRACE` now compute with, and the SHA-256 of its whole patched bytes, which
+is the digest that tensor has in `delta.vindex3`. `SHOW PATCHES` shows what a `COMPILE` would write and prints
+the live view again. The quantised representation (`@Q8_0`) is re-derived from the edited weights. The session
+executes the canonical weights, not that pack. The later examples leave the three live lines out as `…`.
 
 #### 3. `REMOVE DIRECTION`: project a direction out of chosen columns
 
@@ -477,7 +502,10 @@ Patch session started: removal.vlp
 Staged: remove direction (64 component(s)) from 1.mlp.down_proj.weight, column(s) [33, 34], scale 0.5 under f64-seq-rne1/v1; 2 element(s) would change
   op digest ada59dc5924ba662
   results are BF16 as the profile defines them; no f32 delta is involved
-  1 structured op(s) pending in this session; takes effect at COMPILE CURRENT INTO VINDEX
+  1 structured op(s) pending COMPILE in this session
+  In effect for INFER and TRACE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+    1.mlp.down_proj.weight [64, 256]  sha256 f6ffb0885d65d312a7ecfc3e27b5b3be5879912e1f2cb022c693784ca2135408
+  …
 Saved: removal.vlp (0 inserts, 1 updates, 0 deletes, 1 weight edit(s) bound to the source container)
 Compiled: removed.vindex3 (VINDEX3, clean container; weight patch of 2 element(s) of 1.mlp.down_proj.weight)
   re-derived: target.decoder_stack@Q8_0
@@ -503,7 +531,10 @@ COMPILE CURRENT INTO VINDEX "lowrank.vindex3";'
 Staged: add rank-1 update to 1.mlp.down_proj.weight, 2 column(s) 8..=9 under f64-seq-rne1/v1; 128 element(s) would change
   op digest 3ae85f53b8765b65
   results are BF16 as the profile defines them; an element whose terms all have a zero factor keeps its bits
-  1 structured op(s) pending in this session; takes effect at COMPILE CURRENT INTO VINDEX
+  1 structured op(s) pending COMPILE in this session
+  In effect for INFER and TRACE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+    1.mlp.down_proj.weight [64, 256]  sha256 5fbf52eff4d7cc89ad8f47887c25d6e9c6285b4cc58b806d86605dc20270fb54
+  …
 Compiled: lowrank.vindex3 (VINDEX3, clean container; weight patch of 128 element(s) of 1.mlp.down_proj.weight)
   re-derived: target.decoder_stack@Q8_0
   edited source (canonical) payload 2b1fa2caf8ef0f34
@@ -537,11 +568,18 @@ Staged: remove direction (64 component(s)) from 1.mlp.down_proj.weight, …
 Staged: 2 element(s) of 0.mlp.down_proj.weight, row 5, delta 0.0625 (BF16, nearest-even of the exact sum)
   …
   recorded into patch "edit.vlp" (3 ops pending)
+  In effect for INFER and TRACE in this session: 2 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+    1.mlp.down_proj.weight [64, 256]  sha256 0e8aa74721d59ff096a196f37bd8bd058f4b8401258f0d66446ff12487b8627b
+    0.mlp.down_proj.weight [64, 256]  sha256 74c3f8e2d76b0d5b7bf5d6fb008a63b1fc9526b27a8c09cfe8914354b92d12d0
   …
 Saved: edit.vlp (0 inserts, 3 updates, 0 deletes, 4 weight edit(s) bound to the source container)
 ```
 
-That process has ended, and nothing was compiled. A new process applies the patch and compiles it:
+The live view lists a tensor once, with every op on it applied: `1.mlp.down_proj.weight` carries the low-rank
+update and the removal, so its digest is neither the one step 3 printed nor the one step 4 did.
+
+That process has ended, and nothing was compiled. A new process applies the patch, which puts the same two
+tensors in effect, and compiles it:
 
 ```
 $ larql lql 'USE "model.vindex3";
@@ -549,9 +587,14 @@ APPLY PATCH "edit.vlp";
 SHOW PATCHES;
 COMPILE CURRENT INTO VINDEX "edited.vindex3";'
 Applied: edit.vlp (3 operations: 0 inserts, 3 updates, 0 deletes; 2 stored-weight edit(s), bound to this container and pending COMPILE; 2 structured weight op(s), bound to this container and pending COMPILE)
+  In effect for INFER and TRACE in this session: 2 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+    1.mlp.down_proj.weight [64, 256]  sha256 0e8aa74721d59ff096a196f37bd8bd058f4b8401258f0d66446ff12487b8627b
+    0.mlp.down_proj.weight [64, 256]  sha256 74c3f8e2d76b0d5b7bf5d6fb008a63b1fc9526b27a8c09cfe8914354b92d12d0
+  …
   1. edit.vlp                                 3 ops (0 ins, 3 upd, 0 del)
   Total: 3 from files, 0 in session
   Stored-weight edits: 2 element(s) in 3 op(s), pending COMPILE
+  …
 Compiled: edited.vindex3 (VINDEX3, clean container; weight patch of 132 element(s) of 1.mlp.down_proj.weight, 0.mlp.down_proj.weight)
   re-derived: target.decoder_stack@Q8_0
   edited source (canonical) payload bd899be7f3522094
@@ -586,10 +629,25 @@ Diff (physical): model.vindex3 vs edited.vindex3
   segment target.decoder_stack@Q8_0: ce9d8624980e → 5fdfe7049a7b
 ```
 
+`DIFF` reads stored weights. With the patch applied and not compiled, `CURRENT` is still the base, and the
+reply says so:
+
+```
+$ larql lql 'USE "model.vindex3";
+APPLY PATCH "edit.vlp";
+DIFF CURRENT "model.vindex3";'
+Applied: edit.vlp (3 operations: …)
+  …
+Diff (logical): CURRENT vs model.vindex3
+  no semantic differences — the models are equivalent
+  note: 3 stored-weight op(s) are pending COMPILE and are not part of CURRENT here (INFER in this session executes them; DIFF does not see them); compile them and DIFF the container to compare the edited weights
+```
+
 #### 6. Changing your mind
 
 `DISCARD WEIGHT EDITS` drops the ops staged directly in the session. `REMOVE PATCH` drops an applied patch
-and its ops. A second `USE` drops everything, without a warning.
+and its ops. Each takes effect at once: the reply says what `INFER` and `TRACE` compute with afterwards. A
+second `USE` drops everything, without a warning.
 
 ```
 $ larql lql 'USE "model.vindex3";
@@ -600,11 +658,23 @@ REMOVE PATCH "edit.vlp";
 SHOW PATCHES;'
 Staged: 1 element(s) of 0.mlp.down_proj.weight, row 5, delta 0.0625 (BF16, nearest-even of the exact sum)
   …
+  In effect for INFER and TRACE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+    0.mlp.down_proj.weight [64, 256]  sha256 d96553fd4081236158e02b744cfbe485545fb0c1ace7655b0ffd6ac798dc2177
+  …
 Discarded: 1 stored-weight op(s) staged in this session
+  No stored-weight op is in effect: INFER and TRACE execute the container's stored weights.
 Applied: edit.vlp (3 operations: …)
+  In effect for INFER and TRACE in this session: 2 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+    1.mlp.down_proj.weight [64, 256]  sha256 0e8aa74721d59ff096a196f37bd8bd058f4b8401258f0d66446ff12487b8627b
+    0.mlp.down_proj.weight [64, 256]  sha256 74c3f8e2d76b0d5b7bf5d6fb008a63b1fc9526b27a8c09cfe8914354b92d12d0
+  …
 Removed patch #1
+  No stored-weight op is in effect: INFER and TRACE execute the container's stored weights.
   (no patches applied)
 ```
+
+After the discard nothing of the one-element edit is left: the patch's `0.mlp.down_proj.weight` has the
+digest step 5 printed, not one that also carries the discarded op.
 
 Without the `DISCARD` the `APPLY PATCH` is refused, because the patch edits element (5, 12) too:
 
@@ -619,8 +689,8 @@ Error: Execution error: failed to apply patch: parse error: weight patch refused
 
 #### 7. A compiled container cannot be edited again
 
-`UPDATE WEIGHTS` is refused when it is staged. `REMOVE DIRECTION` and `ADD LOW RANK` stage, and the
-`COMPILE` is refused:
+`UPDATE WEIGHTS` is refused when it is staged. `REMOVE DIRECTION` and `ADD LOW RANK` stage, and both
+execution and the `COMPILE` are refused:
 
 ```
 $ larql lql 'USE "edited.vindex3";
@@ -632,8 +702,13 @@ ADD LOW RANK "a_b.json" TO "1.mlp.down_proj.weight" COLUMNS (20, 21) NUMERICS "f
 COMPILE CURRENT INTO VINDEX "twice.vindex3";'
 Staged: add rank-1 update to 1.mlp.down_proj.weight, 2 column(s) 20..=21 under f64-seq-rne1/v1; 128 element(s) would change
   …
+  NOT executable in this session, so INFER and TRACE are refused while it is pending: COMPILE would refuse these ops: the source already carries a weight-patch ledger; patching a patched container is not supported
+  Nothing on disk has changed.
 Error: Execution error: COMPILE refused: the source already carries a weight-patch ledger; patching a patched container is not supported
 ```
+
+The staging reply already says the op cannot be executed, and why: what `COMPILE` would refuse the session
+does not run, and it does not run the stored weights in its place either.
 
 To change an edit, go back to the base: apply the saved patch or re-stage the ops there, add the new op,
 and compile to a new path.
@@ -704,17 +779,23 @@ error. How a verifier is found is in [the contract protocol](verification/contra
   Error: Execution error: INFER needs a tokenizer and this container carries no tokenizer.json — token-id capability only
   ```
 
-  So this guide shows that `INFER` in the staging session does not see a staged op from the engine's own
-  reply (`INFER in this session does not see it`) and from the code, not from a run of `INFER`.
+  The refusal is the same with an op pending: the tokenizer is asked for first.
+
+  ```
+  $ larql lql 'USE "model.vindex3";
+  UPDATE WEIGHTS SET DELTA = 0.0625 WHERE TENSOR = "0.mlp.down_proj.weight" AND ROW = 5 AND COL = 12;
+  INFER "The capital of France is" TOP 3;'
+  Staged: 1 element(s) of 0.mlp.down_proj.weight, row 5, delta 0.0625 (BF16, nearest-even of the exact sum)
+    …
+  Error: Execution error: INFER needs a tokenizer and this container carries no tokenizer.json — token-id capability only
+  ```
+
+  So nothing in this guide runs `INFER` on an edited session. That a staged op is executed is shown here only
+  by the engine's reply (`In effect for INFER and TRACE in this session`), and is established by the tests
+  named at the top of this section.
 
 `HELP <statement>;` gives each statement's refusals in full, and the spec (§3.5.1 to §3.5.4, §3.9) the
 limits and what is and is not verified.
-
-While an edit is pending, `INFER` and `TRACE` in that session compute with the edited weights: the edited
-tensor's bytes are produced by the compile path and held in memory, and nothing on disk changes.
-`REMOVE PATCH` restores the stored weights. If the edit cannot be executed exactly (for example the session's
-representation source is not `stored`), `INFER` is refused with the reason and does not fall back to the
-stored weights. `DESCRIBE`, `WALK`, `SELECT` and `DIFF` keep reading the stored weights (spec §3.5.1).
 
 ## Statement Reference
 

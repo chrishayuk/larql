@@ -67,6 +67,197 @@ fn a_directly_staged_op_executes_too() {
 }
 
 #[test]
+fn discarding_staged_ops_stops_them_executing() {
+    for kind in KINDS {
+        let fx = inferable();
+        let mut s = session_on(&fx.container);
+        let base = printed(&mut s);
+        run(&mut s, &statement(&fx, kind, COLUMNS_A, "direct.json"));
+        assert_ne!(
+            printed(&mut s).infer,
+            base.infer,
+            "{kind:?}: the staged op executes"
+        );
+
+        let discarded = run(&mut s, "DISCARD WEIGHT EDITS;");
+        assert!(
+            has(&discarded, "No stored-weight op is in effect"),
+            "{kind:?}: {discarded:?}"
+        );
+        assert_eq!(
+            printed(&mut s),
+            base,
+            "{kind:?}: after the discard, the base exactly"
+        );
+    }
+}
+
+#[test]
+fn a_discard_leaves_an_applied_patch_executing_and_nothing_of_the_discarded_op() {
+    // The case a view left standing would get wrong: one op from a patch, one staged, the staged one discarded.
+    for kind in KINDS {
+        let fx = inferable();
+        let b = save_vlp(&fx, kind, COLUMNS_B, "b");
+        let mut only_b = session_on(&fx.container);
+        apply(&mut only_b, &b);
+        let want = printed(&mut only_b);
+
+        let mut s = session_on(&fx.container);
+        apply(&mut s, &b);
+        run(&mut s, &statement(&fx, kind, COLUMNS_A, "direct.json"));
+        let both = printed(&mut s);
+        assert_ne!(
+            both.infer, want.infer,
+            "{kind:?}: the staged op adds to the patch"
+        );
+
+        let discarded = run(&mut s, "DISCARD WEIGHT EDITS;");
+        assert!(
+            has(&discarded, "In effect for INFER and TRACE in this session"),
+            "{kind:?}: the patch's op is still in effect: {discarded:?}"
+        );
+        assert_eq!(
+            printed(&mut s),
+            want,
+            "{kind:?}: what executes is the patch alone"
+        );
+    }
+}
+
+/// One session through a discard and everything after it, each state held to a reference built independently
+/// in a session of its own: B alone, B with A staged, and the base.
+///
+/// ```text
+/// USE; APPLY PATCH b; stage A; DISCARD WEIGHT EDITS   -> B alone, and not B with A
+/// REMOVE PATCH b                                      -> the base
+/// APPLY PATCH b                                       -> B alone again
+/// stage A                                             -> B with A again
+/// ```
+#[test]
+fn a_session_through_a_discard_matches_independent_references_at_every_step() {
+    for kind in KINDS {
+        let fx = inferable();
+        let b = save_vlp(&fx, kind, COLUMNS_B, "b");
+        let on_disk = fingerprint(&fx.container);
+        let stage_a = statement(&fx, kind, COLUMNS_A, "direct.json");
+
+        // The references, each from a session that did only what its name says.
+        let mut untouched = session_on(&fx.container);
+        let base = printed(&mut untouched);
+        let mut reference = session_on(&fx.container);
+        apply(&mut reference, &b);
+        let only_b = printed(&mut reference);
+        let mut reference = session_on(&fx.container);
+        apply(&mut reference, &b);
+        run(&mut reference, &stage_a);
+        let both = printed(&mut reference);
+        // Three different programs: every equality below is then a claim about which one ran.
+        assert_ne!(only_b.infer, base.infer, "{kind:?}: B changes the base");
+        assert_ne!(both.infer, only_b.infer, "{kind:?}: A adds to B");
+        assert_ne!(both.infer, base.infer, "{kind:?}");
+
+        let mut s = session_on(&fx.container);
+        apply(&mut s, &b);
+        run(&mut s, &stage_a);
+        assert_eq!(
+            printed(&mut s),
+            both,
+            "{kind:?}: before the discard, both ops execute"
+        );
+
+        // 1. The discard: B alone. Equal to `only_b` fails if A still executes, and if the stored weights do.
+        let discarded = run(&mut s, "DISCARD WEIGHT EDITS;");
+        assert!(
+            has(&discarded, "Discarded: 1 stored-weight op(s)"),
+            "{kind:?}: {discarded:?}"
+        );
+        let after_discard = printed(&mut s);
+        assert_eq!(
+            after_discard, only_b,
+            "{kind:?}: after the discard, B alone"
+        );
+        assert_ne!(
+            after_discard.infer, both.infer,
+            "{kind:?}: nothing of A executes"
+        );
+        assert_ne!(
+            after_discard.infer, base.infer,
+            "{kind:?}: and B still does"
+        );
+
+        // 2. Removing B: the base exactly.
+        remove(&mut s, &b);
+        assert_eq!(
+            printed(&mut s),
+            base,
+            "{kind:?}: after the removal, the base"
+        );
+
+        // 3. B again: nothing left behind by the discard or the removal, and nothing lost.
+        apply(&mut s, &b);
+        assert_eq!(
+            printed(&mut s),
+            only_b,
+            "{kind:?}: B applied again is B alone"
+        );
+
+        // 4. A again: its elements and columns were freed, and it executes beside B as it did.
+        run(&mut s, &stage_a);
+        assert_eq!(
+            printed(&mut s),
+            both,
+            "{kind:?}: A staged again executes beside B"
+        );
+
+        // 5. A session that applied nothing saw none of it, and neither did the disk.
+        assert_eq!(
+            printed(&mut untouched),
+            base,
+            "{kind:?}: the other session is untouched"
+        );
+        assert_eq!(
+            fingerprint(&fx.container),
+            on_disk,
+            "{kind:?}: nothing on disk changed"
+        );
+    }
+}
+
+/// A second `USE` binds afresh: the ops staged and the patches applied before it are gone with the old
+/// binding, and what executes is the stored weights of whatever is bound now.
+#[test]
+fn a_second_use_drops_every_pending_op_and_the_stored_weights_execute() {
+    for kind in KINDS {
+        let fx = inferable();
+        let b = save_vlp(&fx, kind, COLUMNS_B, "b");
+        let rebind = format!("USE \"{}\";", q(&fx.container));
+        let mut s = session_on(&fx.container);
+        let base = printed(&mut s);
+        apply(&mut s, &b);
+        run(&mut s, &statement(&fx, kind, COLUMNS_A, "direct.json"));
+        assert_ne!(
+            printed(&mut s).infer,
+            base.infer,
+            "{kind:?}: both ops execute"
+        );
+
+        run(&mut s, &rebind);
+        assert!(
+            pending_line(&mut s).is_none(),
+            "{kind:?}: nothing is pending"
+        );
+        assert_eq!(
+            printed(&mut s),
+            base,
+            "{kind:?}: after the second USE, the base"
+        );
+        // And the new binding takes the same ops again, as a fresh session does.
+        apply(&mut s, &b);
+        assert_ne!(printed(&mut s).infer, base.infer, "{kind:?}");
+    }
+}
+
+#[test]
 fn switching_patches_leaves_nothing_of_the_first_behind() {
     for kind in KINDS {
         let fx = inferable();

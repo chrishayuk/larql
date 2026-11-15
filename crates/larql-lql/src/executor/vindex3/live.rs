@@ -1,20 +1,22 @@
 //! Stored-weight ops in a running session: keeping their live view current, and saying what it is.
 //!
-//! `APPLY PATCH`, `REMOVE PATCH`, `UPDATE WEIGHTS`, `REMOVE DIRECTION` and `ADD LOW RANK` change the set of
-//! stored-weight ops in effect. Each ends by rebuilding the overlay's live view ([`Session::refresh_live_weights`]),
-//! which materialises every patched tensor once, through COMPILE's own byte path, and holds the result until the
-//! set changes again. `INFER` and `TRACE` then execute those bytes, or are refused with the view's reason; they
-//! never execute the container's stored weights while an op is pending.
+//! `APPLY PATCH`, `REMOVE PATCH`, `UPDATE WEIGHTS`, `REMOVE DIRECTION`, `ADD LOW RANK` and
+//! `DISCARD WEIGHT EDITS` change the set of stored-weight ops in effect. Each ends by rebuilding the overlay's
+//! live view ([`Session::refresh_live_weights`]), which materialises every patched tensor once, through
+//! COMPILE's own byte path, and holds the result until the set changes again. `INFER` and `TRACE` then execute
+//! those bytes, or are refused with the view's reason; they never execute the container's stored weights while
+//! an op is pending. The words the replies share with the help pages are [`crate::live_scope`]'s.
 
 use larql_vindex::format::vindex3::knowledge::{ExecutionBinding, KnowledgeOverlay};
 use larql_vindex::format::vindex3::opplan::exec::backend::PlanBackend;
 
 use crate::executor::{Backend, Session};
+use crate::live_scope::{EXECUTED_BY, IN_EFFECT, NOTHING_IN_EFFECT, NOT_EXECUTABLE, READS_STORED};
 
-/// What the status lines say executes the patched bytes.
-const EXECUTED_BY: &str = "INFER and TRACE";
-/// What they say still reads the container.
-const READS_STORED: &str = "DESCRIBE, WALK, SELECT and DIFF";
+/// What a statement says when it withdrew the last stored-weight op in effect.
+pub(crate) fn nothing_in_effect_line() -> String {
+    format!("  {NOTHING_IN_EFFECT}: {EXECUTED_BY} execute the container's stored weights.")
+}
 
 /// The session's stored-weight ops as execution sees them, for the reply of any statement that reports them.
 /// Empty when no such op is in effect.
@@ -23,8 +25,8 @@ pub(crate) fn live_weight_lines(overlay: &KnowledgeOverlay) -> Vec<String> {
         Ok(None) => Vec::new(),
         Ok(Some(view)) => {
             let mut out = vec![format!(
-                "  In effect for {EXECUTED_BY} in this session: {} tensor(s) execute from patched bytes held in \
-                 memory, not from the container's stored bytes.",
+                "  {IN_EFFECT}: {} tensor(s) execute from patched bytes held in memory, not from the \
+                 container's stored bytes.",
                 view.tensors().len()
             )];
             for tensor in view.tensors() {
@@ -41,7 +43,7 @@ pub(crate) fn live_weight_lines(overlay: &KnowledgeOverlay) -> Vec<String> {
         }
         Err(refusal) => vec![
             format!(
-                "  NOT executable in this session, so {EXECUTED_BY} are refused while it is pending: {refusal}"
+                "  {NOT_EXECUTABLE}, so {EXECUTED_BY} are refused while it is pending: {refusal}"
             ),
             "  Nothing on disk has changed.".into(),
         ],
