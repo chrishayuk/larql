@@ -29,7 +29,7 @@ What exists on main (`4a1279a9`), who owns each step, and what is missing.
 |---|---|---|---|
 | Proposing | `prompt_lookup::propose` (pure: longest trailing n-gram, 2 ≤ n ≤ 16, earliest occurrence, prompt only) | `crates/larql-cli/src/commands/primary/vindex3_cmd/lowered/prompt_lookup.rs` | **No**: a private module of the local Metal command (`mod prompt_lookup;`), unreachable from the remote path |
 | Acceptance | `prompt_lookup::accepted_prefix` (pure: leading agreement of the guess with the target's greedy ids) | same file | **No**, for the same reason |
-| Speculative loop | `speculative_decode` over `LoweredSession` | `.../lowered/run.rs:335` | **No**: written for the local Metal session; interleaves its own decode-chain look-ahead (`begin_decode`, `quiesce`) and reads device argmax ids |
+| Speculative loop | `speculative_decode` over `LoweredSession` | `.../lowered/run.rs:336` | **No**: written for the local Metal session; interleaves its own decode-chain look-ahead (`begin_decode`, `quiesce`) and reads device argmax ids |
 | Block verification | `RoutedBlockSession::verify(tokens) → logits per position` | `crates/larql-inference/src/vindex3/routed_block.rs:113` | **Yes**: one multi-row frame per contacted worker per routed layer (BLOCK-CHECK, BLOCK-TIME) |
 | Accepted-prefix commit and rejected-suffix rollback | `RoutedBlockSession::commit(count)`, through the continuation's own `truncate` | `routed_block.rs:156` | **Yes**: tests show committing any prefix equals decoding only that prefix, and that chained verify plus partial commit leave no trace of rejected positions (`tests/routed_block.rs:199, 268`) |
 | Session position | `RoutedBlockSession::position()` (committed only) | `routed_block.rs:103` | Yes |
