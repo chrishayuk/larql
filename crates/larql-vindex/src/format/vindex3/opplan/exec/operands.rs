@@ -23,6 +23,7 @@ use crate::format::vindex3::represent::physical::{PhysicalStore, WeightRegion};
 mod instance;
 mod load;
 mod open;
+mod overrides;
 
 #[cfg(target_os = "macos")]
 pub use instance::{volume_uuid_from_descriptor, volume_uuid_from_mount};
@@ -30,6 +31,7 @@ pub use instance::{
     FileIdentity, SegmentInstance, StoreInstance, VOLUME_UUID_FROM_DESCRIPTOR,
     VOLUME_UUID_FROM_MOUNT,
 };
+pub use overrides::{OperandEdit, OperandOverrides};
 
 /// Safetensors dtype labels this reference executor can widen to f32.
 const DTYPE_F32: &str = "F32";
@@ -377,182 +379,10 @@ pub(crate) fn widen(dtype: &str, bytes: &[u8], name: &str) -> Result<Vec<f32>, V
     }
 }
 
-/// One logical f32 edit to a stored operand (V3-LQL-3B compose): a row
-/// or a column replaced by new values. Addressed semantically — the
-/// operand's identity plus a slot index — never by byte offsets, so an
-/// edit survives repacking or an alternative physical representation.
-#[derive(Debug, Clone, PartialEq)]
-pub enum OperandEdit {
-    Row { index: usize, values: Vec<f32> },
-    Column { index: usize, values: Vec<f32> },
-}
-
-/// Logical edits and immutable packed replacements, keyed by operand identity
-/// (object + tensor). Applied inside [`OperandSource::load`] — after
-/// widening to f32, before any backend requantization — so **every
-/// weight format observes the same effective values** (`load_weight`
-/// quantizes from the widened f32 buffer).
-#[derive(Debug)]
-pub struct OperandOverrides {
-    edits: BTreeMap<(String, String), Vec<OperandEdit>>,
-    /// Immutable candidate packs; decoded only when this operand is loaded.
-    replacements: BTreeMap<(String, String), (Vec<usize>, WeightRegion)>,
-    /// Process-unique identity, so two override sets are never
-    /// mistaken for each other.
-    id: u64,
-    /// Bumped on every mutation. Together with `id` this is what lets a
-    /// derived artefact — a [`PreparedOperands`](super::prepared::PreparedOperands)
-    /// image — say whether it still describes these edits.
-    generation: u64,
-}
-
 /// Hands out process-unique identities for override sets and stores.
 fn next_identity() -> u64 {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-}
-
-impl Default for OperandOverrides {
-    fn default() -> Self {
-        Self {
-            edits: BTreeMap::new(),
-            replacements: BTreeMap::new(),
-            id: next_identity(),
-            generation: 0,
-        }
-    }
-}
-
-impl Clone for OperandOverrides {
-    /// A clone takes a **fresh** identity. The two sets are equal now
-    /// but diverge independently, and an artefact prepared from one
-    /// must not silently pass as current for the other. Conservative by
-    /// construction: the cost of a false "stale" is one re-preparation;
-    /// the cost of a false "current" is executing the wrong model.
-    fn clone(&self) -> Self {
-        Self {
-            edits: self.edits.clone(),
-            replacements: self.replacements.clone(),
-            id: next_identity(),
-            generation: self.generation,
-        }
-    }
-}
-
-impl OperandOverrides {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// This set's identity and mutation count — what a derived image
-    /// stamps itself with.
-    pub fn version(&self) -> (u64, u64) {
-        (self.id, self.generation)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.edits.is_empty() && self.replacements.is_empty()
-    }
-
-    /// Record one edit for an operand; edits apply in insertion order.
-    pub fn push(&mut self, operand: &OperandRef, edit: OperandEdit) {
-        self.generation += 1;
-        self.edits
-            .entry((operand.object.clone(), operand.tensor.clone()))
-            .or_default()
-            .push(edit);
-    }
-
-    pub fn is_overridden(&self, operand: &OperandRef) -> bool {
-        self.edits
-            .contains_key(&(operand.object.clone(), operand.tensor.clone()))
-    }
-
-    fn packed_replacement(&self, operand: &OperandRef) -> Option<&WeightRegion> {
-        self.replacements
-            .get(&(operand.object.clone(), operand.tensor.clone()))
-            .map(|(_, region)| region)
-    }
-
-    /// Install a completed immutable NVFP4 pack for sequential offline capture.
-    /// Subsequent logical edits still apply after this replacement.
-    pub(crate) fn replace_nvfp4(&mut self, operand: &OperandRef, region: WeightRegion) {
-        self.generation += 1;
-        self.replacements.insert(
-            (operand.object.clone(), operand.tensor.clone()),
-            (operand.shape.clone(), region),
-        );
-    }
-
-    fn replacement(&self, operand: &OperandRef) -> Result<Option<Vec<f32>>, VindexError> {
-        let Some((shape, region)) = self
-            .replacements
-            .get(&(operand.object.clone(), operand.tensor.clone()))
-        else {
-            return Ok(None);
-        };
-        if shape != &operand.shape {
-            return Err(VindexError::Parse(
-                "candidate replacement shape mismatch".into(),
-            ));
-        }
-        use crate::format::vindex3::represent::codec::{codecs::nvfp4::NVFP4, RepresentationCodec};
-        Ok(Some(NVFP4.decode_packed(
-            region.bytes(),
-            shape,
-            NVFP4.terminal_extent(),
-            &operand.tensor,
-        )?))
-    }
-
-    /// Apply this operand's edits onto its widened f32 values.
-    /// Row-major 2-D shape; an edit that does not fit the operand's
-    /// declared shape is an error naming the operand — never a silent
-    /// partial write.
-    pub fn apply(&self, operand: &OperandRef, values: &mut [f32]) -> Result<(), VindexError> {
-        let key = (operand.object.clone(), operand.tensor.clone());
-        let Some(edits) = self.edits.get(&key) else {
-            return Ok(());
-        };
-        let (rows, cols) = match operand.shape[..] {
-            [rows, cols] => (rows, cols),
-            _ => {
-                return Err(VindexError::Parse(format!(
-                    "operand `{}/{}` is not 2-D; overlay edits address rows/columns",
-                    operand.object, operand.tensor
-                )))
-            }
-        };
-        for edit in edits {
-            match edit {
-                OperandEdit::Row { index, values: row } => {
-                    if *index >= rows || row.len() != cols {
-                        return Err(VindexError::Parse(format!(
-                            "row edit {index} (len {}) does not fit `{}/{}` [{rows}, {cols}]",
-                            row.len(),
-                            operand.object,
-                            operand.tensor
-                        )));
-                    }
-                    values[index * cols..(index + 1) * cols].copy_from_slice(row);
-                }
-                OperandEdit::Column { index, values: col } => {
-                    if *index >= cols || col.len() != rows {
-                        return Err(VindexError::Parse(format!(
-                            "column edit {index} (len {}) does not fit `{}/{}` [{rows}, {cols}]",
-                            col.len(),
-                            operand.object,
-                            operand.tensor
-                        )));
-                    }
-                    for (r, v) in col.iter().enumerate() {
-                        values[r * cols + *index] = *v;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 /// The executor's operand resolver: base representation + overlay
@@ -629,12 +459,11 @@ impl<'a> OperandSource<'a> {
 
     /// Load one operand as f32, with any overlay edits applied.
     pub fn load(&self, operand: &OperandRef) -> Result<Vec<f32>, VindexError> {
-        let mut values = match self
-            .overrides
-            .map(|o| o.replacement(operand))
-            .transpose()?
-            .flatten()
-        {
+        let replaced = match self.overrides {
+            Some(overrides) => overrides.replacement_values(self.base, operand)?,
+            None => None,
+        };
+        let mut values = match replaced {
             Some(values) => values,
             None => self.base.load(operand)?,
         };
@@ -652,33 +481,35 @@ impl<'a> OperandSource<'a> {
         self.overrides.is_some_and(|o| o.is_overridden(operand))
     }
 
-    /// The effective stored length, including immutable candidate packs.
+    /// Whether this operand's stored bytes are replaced by a weight patch's BF16 bytes. Such an operand keeps
+    /// a stored representation and is selected and loaded through it, but the bytes it executes are not the
+    /// container's: [`Self::load_raw`] hands back the replacement, never the segment.
+    pub fn is_patched(&self, operand: &OperandRef) -> bool {
+        self.overrides.is_some_and(|o| o.is_patched(operand))
+    }
+
+    /// The effective stored length, including whole-operand replacements.
     /// Logical row/column edits alone do not change stored length.
     pub fn stored_len(&self, operand: &OperandRef) -> Option<u64> {
         self.overrides
-            .and_then(|o| o.packed_replacement(operand))
-            .map(|r| r.len())
+            .and_then(|o| o.replacement_facts(operand))
+            .map(|(_, len)| len)
             .or_else(|| self.base.stored_len(operand))
     }
 
-    /// The effective stored representation, including an immutable candidate
-    /// pack. Logical edits separately force a decoded realization.
+    /// The effective stored representation, including a whole-operand
+    /// replacement's. Logical edits separately force a decoded realization.
     pub fn stored_dtype(&self, operand: &OperandRef) -> Option<&str> {
-        if self
-            .overrides
-            .and_then(|o| o.packed_replacement(operand))
-            .is_some()
-        {
-            Some("NVFP4")
-        } else {
-            self.base.stored_dtype(operand)
+        match self.overrides.and_then(|o| o.replacement_facts(operand)) {
+            Some((label, _)) => Some(label),
+            None => self.base.stored_dtype(operand),
         }
     }
 
     /// Load one operand's stored bytes unwidened. Overlay edits are
     /// f32-space facts and cannot be represented in raw stored bytes,
     /// so an overridden operand refuses here rather than serving stale
-    /// base bytes.
+    /// base bytes. A replaced operand hands back its replacing bytes.
     pub fn load_raw(&self, operand: &OperandRef) -> Result<RawOperand, VindexError> {
         if let Some(overrides) = self.overrides {
             if overrides.is_overridden(operand) {
@@ -688,21 +519,8 @@ impl<'a> OperandSource<'a> {
                     operand.object, operand.tensor
                 )));
             }
-        }
-        if let Some(overrides) = self.overrides {
-            if let Some((shape, region)) = overrides
-                .replacements
-                .get(&(operand.object.clone(), operand.tensor.clone()))
-            {
-                if shape != &operand.shape {
-                    return Err(VindexError::Parse(
-                        "candidate replacement shape mismatch".into(),
-                    ));
-                }
-                return Ok(RawOperand {
-                    dtype: "NVFP4".into(),
-                    bytes: region.bytes().to_vec(),
-                });
+            if let Some(raw) = overrides.replacement_raw(operand)? {
+                return Ok(raw);
             }
         }
         self.base.load_raw(operand)

@@ -105,7 +105,7 @@ impl Session {
                 .operations
                 .push(larql_vindex::PatchOp::LowRankColumnsWeight(op));
         }
-        Ok(vec![
+        let mut out = vec![
             format!(
                 "Staged: add rank-{} update to {tensor}, {} column(s) {}..={} under {numerics}; \
                  {} element(s) would change",
@@ -121,9 +121,9 @@ impl Session {
             } else {
                 "  results are BF16 as the profile defines them; an element whose terms all have a zero factor keeps its bits".into()
             },
-            format!(
-                "  {pending} structured op(s) pending in this session; takes effect at COMPILE CURRENT INTO VINDEX"
-            ),
-        ])
+            format!("  {pending} structured op(s) pending COMPILE in this session"),
+        ];
+        out.extend(self.refresh_live_weights());
+        Ok(out)
     }
 }

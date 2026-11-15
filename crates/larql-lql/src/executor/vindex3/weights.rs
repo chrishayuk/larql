@@ -5,8 +5,10 @@
 //! written into a new container by `COMPILE CURRENT INTO VINDEX`, together
 //! with every other pending edit (of any tensor of the same canonical
 //! representation) as one patch. Staging
-//! writes nothing and leaves the container untouched; nothing in this session
-//! sees the edit until it is compiled.
+//! writes nothing and leaves the container untouched. From then until it is
+//! removed, `INFER` and `TRACE` in this session execute the edited tensor from
+//! bytes materialised by the compile path (`super::live`), or refuse; the
+//! browse statements and `DIFF` keep reading the stored weights.
 //!
 //! The edit lives in one of two places, both kept by the overlay: directly in
 //! the session, or inside an applied patch (`APPLY PATCH` of a `.vlp` that
@@ -118,11 +120,7 @@ impl Session {
             Some(_) => out.push("  recorded into the anonymous patch".into()),
             None => {}
         }
-        out.push(
-            "  Takes effect in a container written by COMPILE CURRENT INTO VINDEX; \
-             INFER in this session does not see it."
-                .into(),
-        );
+        out.extend(self.refresh_live_weights());
         Ok(out)
     }
 
@@ -201,6 +199,12 @@ impl Session {
                 "  {from_patches} stored-weight op(s) from applied patches remain pending; REMOVE PATCH removes them"
             ));
         }
+        // What executes now is what is left: rebuilt here, and said.
+        let live = self.refresh_live_weights();
+        if discarded > 0 && live.is_empty() {
+            out.push(super::nothing_in_effect_line());
+        }
+        out.extend(live);
         Ok(out)
     }
 
@@ -295,8 +299,9 @@ impl Session {
         out.push(format!("  op digest {}", &digest[..16]));
         out.push("  results are BF16 as the profile defines them; no f32 delta is involved".into());
         out.push(format!(
-            "  {pending} structured op(s) pending in this session; takes effect at COMPILE CURRENT INTO VINDEX"
+            "  {pending} structured op(s) pending COMPILE in this session"
         ));
+        out.extend(self.refresh_live_weights());
         Ok(out)
     }
 }

@@ -9,9 +9,18 @@ fn staging_writes_nothing_and_compile_writes_a_clean_container() {
     let mut s = session_on(&fx.container);
     let staged = run(&mut s, &update(&COLS, DELTA));
     assert!(staged[0].starts_with("Staged: 4 element(s)"), "{staged:?}");
-    assert!(staged
-        .iter()
-        .any(|l| l.contains("INFER in this session does not see it")));
+    assert!(
+        staged
+            .iter()
+            .any(|l| l.contains("In effect for INFER and TRACE in this session")),
+        "{staged:?}"
+    );
+    assert!(
+        staged
+            .iter()
+            .any(|l| l.contains("Nothing on disk has changed")),
+        "{staged:?}"
+    );
     assert_eq!(
         fingerprint(&fx.container),
         before,
