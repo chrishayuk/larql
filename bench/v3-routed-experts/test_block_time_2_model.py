@@ -75,20 +75,35 @@ class Schedule(unittest.TestCase):
             expected = (5.0, 20.0) if first["order"] == b2.LOW_FIRST else (20.0, 5.0)
             self.assertEqual((first["rtt_ms"], second["rtt_ms"]), expected)
 
-    def test_the_pair_order_is_a_fixed_seeded_shuffle(self):
-        self.assertEqual(b2.schedule(), b2.schedule())
-        arms = [u["arm"] for u in b2.pair_units()]
-        # Not the unshuffled arm-major order, and every arm is present.
-        self.assertNotEqual(arms, [arm for arm in b2.ARMS for _ in range(b2.PAIRS_PER_ARM)])
-        self.assertEqual(Counter(arms), {arm: b2.PAIRS_PER_ARM for arm in b2.ARMS})
+    def test_every_round_has_exactly_one_pair_of_each_arm(self):
+        units = b2.pair_units()
+        self.assertEqual(len(units), b2.ROUNDS * len(b2.ARMS))
+        for round_index in range(b2.ROUNDS):
+            block = units[round_index * len(b2.ARMS):(round_index + 1) * len(b2.ARMS)]
+            self.assertEqual({u["round"] for u in block}, {round_index})
+            self.assertEqual(sorted(u["arm"] for u in block), sorted(b2.ARMS))
 
-    def test_the_seed_and_the_pair_order_it_gives_are_the_registered_ones(self):
-        # Changing either is a new revision; this pins the order reviewed.
+    def test_delay_order_follows_the_round_a_b_b_a(self):
+        for unit in b2.pair_units():
+            self.assertEqual(unit["order"], ["5->20", "20->5", "20->5", "5->20"][unit["round"]])
+
+    def test_the_schedule_is_deterministic_and_shuffled_within_rounds(self):
+        self.assertEqual(b2.schedule(), b2.schedule())
+        rounds = [[u["arm"] for u in b2.pair_units() if u["round"] == r] for r in range(b2.ROUNDS)]
+        self.assertTrue(any(order != list(b2.ARMS) for order in rounds))
+        self.assertGreater(len({tuple(order) for order in rounds}), 1)
+
+    def test_the_seed_and_the_schedule_it_gives_are_the_registered_ones(self):
+        # Changing the seed, the round composition or the delay pattern is a
+        # new revision; this pins the schedule reviewed.
         self.assertEqual(b2.SHUFFLE_SEED, 20261115)
-        self.assertEqual([u["arm"] for u in b2.pair_units()], [
-            "block-4", "block-8", "block-4", "block-8", "block-1", "block-1", "block-2", "block-8",
-            "sequential", "sequential", "block-2", "block-1", "block-4", "block-8", "sequential",
-            "block-2", "block-1", "block-4", "sequential", "block-2"])
+        self.assertEqual(b2.ROUNDS, 4)
+        rounds = [[u["arm"] for u in b2.pair_units() if u["round"] == r] for r in range(b2.ROUNDS)]
+        self.assertEqual(rounds, [
+            ["block-8", "block-4", "block-1", "sequential", "block-2"],
+            ["sequential", "block-4", "block-8", "block-1", "block-2"],
+            ["block-8", "block-2", "block-4", "sequential", "block-1"],
+            ["block-4", "block-2", "sequential", "block-1", "block-8"]])
 
     def test_only_the_two_qualified_delays_and_the_zero_delay_bracket_are_run(self):
         for entry in b2.schedule():
@@ -122,6 +137,14 @@ class PairValidity(unittest.TestCase):
             return 0.002 * BASE_NS if entry["bracket"] == "after" else 0.0
         _, verdicts = run_schedule(extra=extra)
         self.assertTrue(all(v["valid"] for v in verdicts))
+
+    def test_the_gate_is_one_percent_on_either_side(self):
+        for share, valid in ((0.8 * b2.GATE, True), (1.25 * b2.GATE, False)):
+            def extra(entry, share=share):
+                return share * BASE_NS if entry["pair"] == 0 and entry["bracket"] == "after" else 0.0
+            _, verdicts = run_schedule(extra=extra)
+            self.assertEqual(verdicts[0]["valid"], valid, share)
+        self.assertEqual(b2.GATE, 0.01)
 
     def test_a_frame_defect_or_late_relay_in_any_member_voids_the_pair_by_name(self):
         def damage(entry, run):

@@ -18,34 +18,40 @@ SCHEMA = "larql.v3.block-time-2.v1"
 ARMS = tuple(bt.ARMS)
 LOW_MS, HIGH_MS = bt.DIFFERENTIAL_RTT_MS
 DELAY_SPAN_NS = (HIGH_MS - LOW_MS) * bt.NS_PER_MS
-PAIRS_PER_ARM = 4
+# Four rounds; every arm has exactly one pair in each round, so a slow drift
+# of the host is spread over every arm alike rather than over whichever arms
+# a global shuffle happened to put late.
+ROUNDS = 4
+PAIRS_PER_ARM = ROUNDS
 # An arm's slope is reported only with at least this many valid pairs.
 # A reporting minimum, not a confidence level.
 MINIMUM_VALID_PAIRS = 3
-# Within each arm, in the order its pairs occur: two pairs in each order.
+# Delay order by round, the same for every arm: two pairs in each order per
+# arm, and A-B-B-A over the rounds, so a linear drift weighs on both orders
+# alike.
 LOW_FIRST, HIGH_FIRST = "5->20", "20->5"
 ORDER_SEQUENCE = (LOW_FIRST, HIGH_FIRST, HIGH_FIRST, LOW_FIRST)
+# Shuffles the arms within each round, one draw per round from one generator.
 SHUFFLE_SEED = 20261115
 
 GATE = bt.GATE
 SLOPE_BAND = bt.SLOPE_BAND
 ROLE_BRACKET, ROLE_ARM = bt.ROLE_BRACKET, bt.ROLE_ARM
 
-if len(ORDER_SEQUENCE) != PAIRS_PER_ARM:
-    raise AssertionError("every pair of an arm needs a delay order")
+if len(ORDER_SEQUENCE) != ROUNDS:
+    raise AssertionError("every round needs a delay order")
 
 
 def pair_units():
-    """The twenty pairs, in the seeded order, each with its delay order."""
-    units = [(arm, index) for arm in ARMS for index in range(PAIRS_PER_ARM)]
-    random.Random(SHUFFLE_SEED).shuffle(units)
-    # The k-th pair of an arm *in run order* takes the k-th delay order, so
-    # the balance holds in time, not only in the arm's naming.
-    seen = {arm: 0 for arm in ARMS}
+    """The twenty pairs in run order: four rounds of one pair per arm, arms shuffled within each round."""
+    generator = random.Random(SHUFFLE_SEED)
     ordered = []
-    for arm, _ in units:
-        ordered.append({"arm": arm, "arm_pair": seen[arm], "order": ORDER_SEQUENCE[seen[arm]]})
-        seen[arm] += 1
+    for round_index in range(ROUNDS):
+        arms = list(ARMS)
+        generator.shuffle(arms)
+        for arm in arms:
+            ordered.append({"arm": arm, "round": round_index, "arm_pair": round_index,
+                            "order": ORDER_SEQUENCE[round_index]})
     return ordered
 
 
@@ -58,8 +64,8 @@ def schedule():
                 [(ROLE_ARM, unit["arm"], rtt_ms, None) for rtt_ms in delays] + \
                 [(ROLE_BRACKET, bt.SEQUENTIAL, 0.0, "after")]
         for role, arm, rtt_ms, side in shape:
-            trials.append({"label": f"trial-{len(trials):03d}", "pair": pair, "pair_arm": unit["arm"],
-                           "arm_pair": unit["arm_pair"], "order": unit["order"], "role": role,
+            trials.append({"label": f"trial-{len(trials):03d}", "pair": pair, "round": unit["round"],
+                           "pair_arm": unit["arm"], "arm_pair": unit["arm_pair"], "order": unit["order"], "role": role,
                            "bracket": side, "arm": arm, "rtt_ms": rtt_ms, "profiled": True})
     return trials
 
@@ -95,7 +101,8 @@ def judge_pairs(observations):
             member["pair_valid"] = not reasons
             member["valid"] = not reasons
             member["void_reasons"] = trial_defects(member)
-        verdicts.append({"pair": pair, "arm": members[0]["pair_arm"], "arm_pair": members[0]["arm_pair"],
+        verdicts.append({"pair": pair, "round": members[0]["round"], "arm": members[0]["pair_arm"],
+                         "arm_pair": members[0]["arm_pair"],
                          "order": members[0]["order"], "bracket_drift": drift,
                          "valid": not reasons, "void_reasons": reasons})
     return verdicts
