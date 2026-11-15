@@ -28,7 +28,6 @@ import block_time as b1
 import block_time_2 as d2
 import host_telemetry as ht
 import link_block_frames_model as bm
-import link_model as lm
 import link_pair as lp
 import verify_remote_model as vr
 from link_sweep import LINK_QOS_ENV, RELAY, read_relay_stats, relays
@@ -79,10 +78,17 @@ def timed_trial(root, model, out, env, entry, worker_urls):
                                   "started_monotonic": started_monotonic, "ended_monotonic": time.monotonic()}
 
 
-def observe(entry, trial, relay_records, references, floor_ns):
-    """Gate 1 (stops the run), then gates 2 and 3 and the relay gate as reasons."""
+def observe(entry, trial, relay_records, references):
+    """Gate 1 (stops the run), then gates 2 and 3 and the relay gate as reasons.
+
+    A trial that stops the run is not observed; its raw record stays in the
+    run directory beside the stop message.
+    """
     if trial.get("schema") != vr.TRIAL_SCHEMA:
         raise vr.Stop(f"{entry['label']}: not a {vr.TRIAL_SCHEMA} record")
+    wrong = vr.record_mismatches(entry, trial, sha(workload_path(entry["workload"])))
+    if wrong:
+        raise vr.Stop(f"{entry['label']}: the record is not the scheduled trial: {wrong}")
     reference = references.get(entry["workload"])
     if reference is not None:
         expected = reference[:entry["generate"]]
@@ -93,18 +99,17 @@ def observe(entry, trial, relay_records, references, floor_ns):
     observation = dict(entry, summary=summary, ledger_defects=vr.ledger_defects(trial),
                        frame_defects=vr.frame_defects(trial), host_load_average=os.getloadavg(), relay=None)
     if relay_records is not None:
-        floor = floor_ns if floor_ns is not None else summary["per_position_ns"]
-        observation["relay"] = lm.relay_gate(relay_records, vr.evaluated_positions(trial), floor)
+        observation["relay"] = vr.relay_check(relay_records, trial)
     return observation
 
 
 def warm_up(root, model, args, out, env, worker_urls):
-    """BLOCK-TIME's warm-up rule on the bracket trial; returns the last warm per-id time."""
+    """BLOCK-TIME's warm-up rule on the bracket trial."""
     warm = []
     for index in range(vr.MAX_WARMUPS):
         entry = vr.warm_entry(index)
         trial, relay_records, _ = timed_trial(root, model, out, env, entry, worker_urls)
-        warm.append(observe(entry, trial, relay_records, {}, None)["summary"]["per_position_ns"])
+        warm.append(observe(entry, trial, relay_records, {})["summary"]["per_position_ns"])
         if len(warm) > 1 and agreement(warm[-2], warm[-1]) <= vr.GATE:
             break
     else:
@@ -113,24 +118,26 @@ def warm_up(root, model, args, out, env, worker_urls):
         print(f"warm-up never settled within {vr.GATE}; continuing as declared: {warm}", flush=True)
     save(out / "warm.json", {"per_position_ns": warm, "settled": len(warm) < vr.MAX_WARMUPS
                              or agreement(warm[-2], warm[-1]) <= vr.GATE})
-    return warm[-1]
 
 
-def take_references(root, model, out, env, worker_urls, floor_ns):
-    """One sequential trial per workload at 0 ms: the ids every later trial must equal."""
-    references, observations = {}, []
+def take_references(root, model, out, env, worker_urls, references, observations):
+    """One sequential trial per workload at 0 ms: the ids every later trial must equal.
+
+    Fills `references` and `observations` as it goes and saves after each,
+    so a failure part way loses no reference already taken.
+    """
     for workload in vr.WORKLOADS:
         entry = vr.reference_entry(workload)
         trial, relay_records, clock = timed_trial(root, model, out, env, entry, worker_urls)
-        observation = observe(entry, trial, relay_records, references, floor_ns)
+        observation = observe(entry, trial, relay_records, references)
         observation.update(clock)
+        observations.append(observation)
+        save(out / "references_run.json", observations)
         if observation["ledger_defects"] or observation["frame_defects"]:
             raise vr.Stop(f"the {workload} reference is not usable: "
                           f"{observation['ledger_defects'] + observation['frame_defects']}")
         references[workload] = trial["ids"]
-        observations.append(observation)
-    save(out / "references.json", {"ids": references})
-    return references, observations
+        save(out / "references.json", {"ids": references})
 
 
 def execute(args, root, model, out, kind):
@@ -156,6 +163,7 @@ def execute(args, root, model, out, kind):
                     "rtt_ms": vr.BRACKET_RTT_MS},
         "shuffle_seed": vr.SHUFFLE_SEED, "units": vr.unit_order(), "schedule": order,
         "thresholds": {"gate": vr.GATE, "effect": vr.EFFECT},
+        "relay_gate": "total relay lateness over the trial at most the gate share of its timed generation",
         "frames_qualification": [{"path": str(path), "sha256": sha(path)} for path in args.frames_qualification],
         "binary_sha256": {name: sha(root / path) for name, path in
                           (("v3_verify_remote", TRIAL), ("larql-server", b1.SERVER), ("v3_link_shaper", RELAY))},
@@ -165,29 +173,29 @@ def execute(args, root, model, out, kind):
         "telemetry": {"process_interval_s": ht.PROCESS_INTERVAL_S, "state_interval_s": ht.STATE_INTERVAL_S,
                       "gates_anything": False},
         "clock": "monotonic wall time inside each trial process, from after prefill to the last generated id",
-        "pause": {"file": d2.PAUSE_FILE, "where": "between units only (recorded as before_pair = unit)",
+        "pause": {"file": d2.PAUSE_FILE,
+                  "where": "between units and before each control only (recorded as before_pair = unit or label)",
                   "poll_s": d2.PAUSE_POLL_S},
         "stall_watch": {"tick_s": vr.b2.STALL_TICK_S, "gap_s": vr.b2.STALL_GAP_S,
                         "sees": "the driver process only", "effect": "a trial overlapping a stall voids its unit"},
         "started_utc": started,
     }
     save(out / "manifest.json", manifest)
-    observations, references_run, stop, pauses = [], [], None, []
+    observations, references, references_run, stop, pauses = [], {}, [], None, []
     with ht.Sampler(out / "telemetry.jsonl") as sampler, d2.StallWatch() as watch:
         try:
             with workers(root, model, out, b1.TOPOLOGY, args.port, env) as worker_urls:
                 d2.wait_while_paused(out, BEFORE_WARM_UP, pauses)
-                floor_ns = warm_up(root, model, args, out, env, worker_urls)
-                references, references_run = take_references(root, model, out, env, worker_urls, floor_ns)
+                warm_up(root, model, args, out, env, worker_urls)
+                take_references(root, model, out, env, worker_urls, references, references_run)
                 for entry in order:
                     if vr.is_pause_point(entry):
-                        d2.wait_while_paused(out, entry["unit"], pauses)
+                        where = entry["unit"] if entry["unit"] is not None else entry["label"]
+                        d2.wait_while_paused(out, where, pauses)
                         save(out / "pauses.json", pauses)
                     trial, relay_records, clock = timed_trial(root, model, out, env, entry, worker_urls)
-                    observation = observe(entry, trial, relay_records, references, floor_ns)
+                    observation = observe(entry, trial, relay_records, references)
                     observation.update(clock)
-                    if entry["role"] == vr.ROLE_BRACKET:
-                        floor_ns = observation["summary"]["per_position_ns"]
                     observations.append(observation)
                     save(out / "trials.json", observations)
         except vr.Stop as error:

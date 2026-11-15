@@ -16,7 +16,11 @@ def reference_ids(n=vr.GENERATE):
     return [1000 + i for i in range(n)]
 
 
-def fake_trial(arm, ids=None, accept=2, shards=1, profiled=True, per_id_ns=BASE_NS, corrupt="none"):
+FAKE_SHA = "0" * 64
+
+
+def fake_trial(arm, ids=None, accept=2, shards=1, profiled=True, per_id_ns=BASE_NS, corrupt="none",
+               generate=None):
     """A record shaped as `v3_verify_remote` writes it, for a consistent run.
 
     Prefill runs the prompt in blocks of eight. A verify arm proposes as much
@@ -81,6 +85,8 @@ def fake_trial(arm, ids=None, accept=2, shards=1, profiled=True, per_id_ns=BASE_
     singles = sum(e["route"] == vr.SINGLE_ROW for e in exchanges)
     return {
         "schema": vr.TRIAL_SCHEMA, "arm": arm, "width": width, "corrupt": corrupt, "profiled": profiled,
+        "generate": len(ids) if generate is None else generate, "stop": list(vr.STOP_IDS),
+        "prefill_width": vr.PREFILL_WIDTH, "workload": {"name": "fake", "sha256": FAKE_SHA},
         "shards": ["http://relay"] * shards, "ids": ids, "timed_ids": max(len(ids) - 1, 0),
         "corrupted_offsets": corrupted, "wall_ns": per_id_ns * max(len(ids) - 1, 1),
         "final_position": position, "generation_from": generation, "units": units, "ledger": ledger,
@@ -158,9 +164,10 @@ class Schedule(unittest.TestCase):
         self.assertEqual(labels, sorted(labels))
         self.assertEqual(len(labels), len(set(labels)))
 
-    def test_only_unit_openings_are_pause_points(self):
-        points = [e for e in vr.schedule() if vr.is_pause_point(e)]
-        self.assertEqual([e["unit"] for e in points], list(range(24)))
+    def test_only_unit_openings_and_controls_are_pause_points(self):
+        points = [e for e in vr.schedule(controls=True) if vr.is_pause_point(e)]
+        self.assertEqual([e["unit"] for e in points], list(range(24)) + [None] * 3)
+        self.assertEqual({e["role"] for e in points[24:]}, {"control"})
 
 
 class Workloads(unittest.TestCase):
@@ -223,6 +230,46 @@ class Gates(unittest.TestCase):
         trial = fake_trial("verify-4")
         trial["ledger"]["events"][0]["source"] = "accepted-proposal"
         self.assertIn("the first event is not the prefill id", vr.ledger_defects(trial))
+
+    def test_unemitted_trailing_events_are_counted_but_not_output(self):
+        trial = fake_trial("verify-4", ids=reference_ids(10))
+        ledger = trial["ledger"]
+        last = ledger["events"][-1]
+        # Mark the final correction unemitted and drop its id from the output.
+        last["emitted"] = False
+        trial["ids"] = trial["ids"][:-1]
+        trial["timed_ids"] -= 1
+        self.assertEqual(vr.ledger_defects(trial), [])
+        # An unemitted id in the middle breaks the output.
+        trial = fake_trial("verify-4", ids=reference_ids(10))
+        trial["ledger"]["events"][2]["emitted"] = False
+        self.assertIn("the emitted events are not the generated ids", vr.ledger_defects(trial))
+
+    def test_a_record_that_is_not_the_scheduled_trial_is_named(self):
+        entry = {"arm": "verify-8", "corrupt": "none", "generate": vr.GENERATE}
+        self.assertEqual(vr.record_mismatches(entry, fake_trial("verify-8"), FAKE_SHA), [])
+        wrong = vr.record_mismatches(entry, fake_trial("verify-2"), FAKE_SHA)
+        self.assertTrue(any(w.startswith("arm") for w in wrong) and any(w.startswith("width") for w in wrong))
+        self.assertTrue(vr.record_mismatches(entry, fake_trial("verify-8"), "1" * 64))
+        trial = fake_trial("verify-8")
+        trial["stop"] = [1]
+        self.assertTrue(any(w.startswith("stop ids") for w in vr.record_mismatches(entry, trial, FAKE_SHA)))
+        relabelled = fake_trial("verify-8")
+        relabelled["units"][-2]["width"] = 9
+        self.assertIn("a verify block is wider than 8", vr.record_mismatches(entry, relabelled, FAKE_SHA))
+
+    def test_worker_records_and_generation_start_are_checked(self):
+        trial = fake_trial("verify-4")
+        trial["units"][3]["worker_records"] = [trial["units"][3]["worker_records"][0] + 1,
+                                               trial["units"][3]["worker_records"][1]]
+        self.assertTrue(any("worker records" in d for d in vr.frame_defects(trial)))
+        trial = fake_trial("verify-4")
+        trial["generation_from"]["exchange"] += 1
+        self.assertIn("generation_from does not point at the first generation unit's records",
+                      vr.frame_defects(trial))
+        trial = fake_trial("verify-4")
+        trial["exchanges"][0]["layer"] = vr.ROUTED_LAYERS
+        self.assertTrue(any("outside" in d for d in vr.frame_defects(trial)))
 
     def test_sequential_must_be_single_steps_without_a_ledger(self):
         trial = fake_trial(vr.SEQUENTIAL)
@@ -353,6 +400,27 @@ class Statements(unittest.TestCase):
                 self.assertAlmostEqual(repeat["ratio"], 2.0 if cell["arm"] == "verify-8" else 1.0)
         self.assertNotIn("pooled", json.dumps(report))
 
+    def test_the_delay_only_prediction_is_descriptive(self):
+        # Sequential slow enough that the delay saved is a part of its time.
+        observations = clean_run(per_arm_ns=lambda e: 2_000_000_000 if e["arm"] == vr.SEQUENTIAL else BASE_NS)
+        report = vr.analyse(observations, vr.judge_units(observations))
+        for cell in report["cells"]:
+            for repeat in cell["repeats"]:
+                if cell["rtt_ms"] == 0.0:
+                    self.assertAlmostEqual(repeat["predicted_ratio"], 1.0)
+                else:
+                    self.assertGreater(repeat["predicted_ratio"], 1.0)
+                self.assertEqual(repeat["rejected"], repeat["proposed"] - repeat["accepted"])
+
+    def test_a_prefill_stop_reads_no_timed_generation(self):
+        observations = clean_run()
+        for o in observations:
+            if o["role"] == "arm" and o["workload"] == "explain":
+                o["summary"].update(timed_ids=0, tokens_per_s=None)
+        report = vr.analyse(observations, vr.judge_units(observations))
+        cells = [c for c in report["cells"] if c["workload"] == "explain"]
+        self.assertEqual({c["statement"] for c in cells}, {"no timed generation"})
+
     def test_a_void_unit_makes_its_cells_missing(self):
         def bracket_ns(entry):
             return BASE_NS * 1.05 if entry["unit"] == 0 and entry["bracket"] == "after" else BASE_NS
@@ -383,6 +451,15 @@ class Statements(unittest.TestCase):
         self.assertTrue(reading["acceptance_fell"])
         self.assertTrue(reading["rejected_within_change"])
 
+    def test_a_control_reports_its_own_gate_defects(self):
+        observations = clean_run()
+        trial = fake_trial("verify-4", accept=0, corrupt="middle")
+        trial["ledger"]["reconcile"] = "broken"
+        control = observation({"label": "c", "unit": None, "role": "control", "arm": "verify-4",
+                               "workload": vr.CONTROL_WORKLOAD, "rtt_ms": 0.0}, trial)
+        [reading] = vr.control_reading([control], observations)
+        self.assertTrue(any("does not reconcile" in d for d in reading["defects"]))
+
     def test_a_change_the_target_accepted_past_is_flagged(self):
         blocks = [{"rejected_at": 1}, {"rejected_at": None}]
         self.assertTrue(vr.rejected_within_change(blocks, [1, None]))
@@ -401,7 +478,8 @@ class Statements(unittest.TestCase):
 class Execute(unittest.TestCase):
     """The driver's run loop end to end, with every process replaced by a fake."""
 
-    def run_execute(self, fail_at=None, wrong_ids_at=None, stall_trial=None, kind="diagnostic"):
+    def run_execute(self, fail_at=None, wrong_ids_at=None, stall_trial=None, kind="diagnostic",
+                    reference_crash_at=None, relay_late_ns=None):
         import argparse
         import contextlib
         import tempfile
@@ -423,8 +501,14 @@ class Execute(unittest.TestCase):
             ids = reference_ids(entry["generate"])
             if wrong_ids_at is not None and clock["count"] - 1 == wrong_ids_at:
                 ids[3] += 1
-            return fake_trial(entry["arm"], ids=ids, corrupt=entry["corrupt"],
-                              accept=0 if entry["corrupt"] != "none" else 2), None
+            if reference_crash_at is not None and entry["role"] == "reference" \
+                    and clock["count"] - 1 == reference_crash_at:
+                raise RuntimeError("reference process exited 101")
+            return fake_trial(entry["arm"], ids=ids, corrupt=entry["corrupt"], generate=entry["generate"],
+                              accept=0 if entry["corrupt"] != "none" else 2), relay
+
+        relay = None if relay_late_ns is None else [
+            {"late_sum_ns": relay_late_ns, "chunks": 10, "bytes": 1, "late_max_ns": relay_late_ns}]
 
         def timed_trial(root, model_, out_, env, entry, urls):
             trial, relay = run_trial(root, model_, out_, env, entry, urls)
@@ -517,9 +601,26 @@ class Execute(unittest.TestCase):
         self.assertEqual([int(u) for u in report["outcomes"]["void_units"]], [unit])
 
     def test_the_admissible_run_is_refused_while_a_draft(self):
+        import contextlib
+        import io
         import verify_remote as driver
-        with self.assertRaises(SystemExit):
+        err = io.StringIO()
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(err):
             driver.main(["--admissible", "--model", "m", "--out", "o"])
+        self.assertIn("is a draft; it admits no run until it is frozen", err.getvalue())
+
+    def test_a_crash_part_way_through_the_references_keeps_those_taken(self):
+        report, files, _ = self.run_execute(reference_crash_at=2 + 2)
+        self.assertIn("reference process exited 101", report["stopped"])
+        self.assertTrue({"references.json", "references_run.json", "failure.txt"} <= files)
+
+    def test_a_late_relay_voids_its_units(self):
+        # Lateness above 1% of every trial's own timed generation.
+        report, _, trials = self.run_execute(relay_late_ns=10 * BASE_NS)
+        self.assertEqual(report["valid_units"], 0)
+        self.assertTrue(all(not t["relay"]["relay_on_schedule"] for t in trials))
+        report, _, trials = self.run_execute(relay_late_ns=1000)
+        self.assertEqual(report["void_units"], 0)
 
 
 PINNED_UNIT_ORDER_SHA256 = "f3fe7765dfc0bc4977d33f95ed41af3ae9a24eab5daaba59790dafb4169fee0f"

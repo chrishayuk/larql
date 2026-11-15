@@ -13,6 +13,7 @@ import statistics
 
 import block_time_2_model as b2
 import block_time_model as bt
+import link_model as lm
 from profile_exact import agreement
 
 PROTOCOL = "VERIFY-REMOTE-1 revision 1 (draft)"
@@ -122,8 +123,8 @@ def warm_entry(index):
 
 
 def is_pause_point(entry):
-    """The first trial of a unit: the only place the run may hold."""
-    return entry["role"] == ROLE_BRACKET and entry["bracket"] == "before"
+    """The first trial of a unit, or a control: the only places the run may hold."""
+    return (entry["role"] == ROLE_BRACKET and entry["bracket"] == "before") or entry["role"] == ROLE_CONTROL
 
 
 # ── per-trial records ────────────────────────────────────────────────────
@@ -194,8 +195,20 @@ def frame_defects(trial):
     exchanges, defects = trial["exchanges"], []
     if len(trial["shards"]) != 1:
         defects.append(f"{len(trial['shards'])} workers configured, one required")
-    covered = 0
-    for index, unit in enumerate(trial["units"]):
+    covered, records_covered = 0, 0
+    profiled = trial.get("profiled") and trial["worker_records"]
+    generation = trial["generation_from"]
+    units = trial["units"]
+    if generation["unit"] < len(units) and (
+            units[generation["unit"]]["exchanges"][0] != generation["exchange"]
+            or (profiled and units[generation["unit"]]["worker_records"][0] != generation["worker_record"])):
+        defects.append("generation_from does not point at the first generation unit's records")
+    for index, unit in enumerate(units):
+        if profiled:
+            r0, r1 = unit["worker_records"]
+            if (r0, r1) != (records_covered, records_covered + (unit["exchanges"][1] - unit["exchanges"][0])):
+                defects.append(f"unit {index}: worker records {r0}..{r1} do not match its exchanges")
+            records_covered = r1
         start, end = unit["exchanges"]
         if start != covered:
             defects.append(f"unit {index}: exchanges {start}..{end} do not follow the previous unit")
@@ -208,12 +221,45 @@ def frame_defects(trial):
             defects.append(f"unit {index}: an exchange is not a {rows}-row {route} frame")
         if sorted(e["layer"] for e in mine) != sorted(set(e["layer"] for e in mine)):
             defects.append(f"unit {index}: a routed layer was contacted twice")
+        if any(not 0 <= e["layer"] < ROUTED_LAYERS for e in mine):
+            defects.append(f"unit {index}: an exchange names a layer outside 0..{ROUTED_LAYERS - 1}")
     if covered != len(exchanges):
         defects.append(f"{len(exchanges) - covered} exchanges belong to no unit")
+    if profiled and records_covered != len(trial["worker_records"]):
+        defects.append("worker records belong to no unit")
     whole = trial["frames"]["whole_run"]
     if whole[SINGLE_ROW] + whole[MULTI_ROW] != len(exchanges):
         defects.append("the frame counts do not match the exchange records")
     return defects
+
+
+def record_mismatches(entry, trial, workload_sha256):
+    """Whether the record is the trial the schedule asked for. A mismatch is a harness fault: it stops the run."""
+    width = ARMS[entry["arm"]]
+    wrong = []
+    for name, want, got in (("arm", entry["arm"], trial["arm"]), ("width", width, trial["width"]),
+                            ("corrupt", entry["corrupt"], trial["corrupt"]),
+                            ("generate", entry["generate"], trial["generate"]),
+                            ("stop ids", list(STOP_IDS), trial["stop"]),
+                            ("prefill width", PREFILL_WIDTH, trial["prefill_width"]),
+                            ("workload", workload_sha256, trial["workload"]["sha256"])):
+        if want != got:
+            wrong.append(f"{name}: scheduled {want}, recorded {got}")
+    units = generation_units(trial)
+    if width is not None and any(u["width"] > width for u in units if u["kind"] == VERIFY):
+        wrong.append(f"a verify block is wider than {width}")
+    return wrong
+
+
+def relay_check(relay_records, trial):
+    """The relay's total lateness against this trial's own timed generation.
+
+    Conservative: lateness during the untimed prefill is in the numerator
+    too, while the denominator is the timed generation alone.
+    """
+    gate = lm.relay_gate(relay_records, 1, trial["wall_ns"])
+    gate["relay_late_share_of_wall"] = gate["relay_late_per_position_ns"] / trial["wall_ns"]
+    return gate
 
 
 def evaluated_positions(trial):
@@ -273,6 +319,7 @@ def summarize(trial):
         "rejection_offsets": [b["rejected_at"] for b in blocks if b["rejected_at"] is not None],
         "block_widths": [b["width"] for b in blocks],
         "verified_positions": verified,
+        "committed_in_blocks": in_blocks,
         "share_committed_in_blocks": in_blocks / committed if committed else 0.0,
         # A diagnostic, never a gate: the arms do different work by design.
         "worker_execute_ns_per_verified_position": (execute_ns / (verified + len(units) - len(blocks))
@@ -371,8 +418,18 @@ def analyse(observations, verdicts):
                     a, s = mine["summary"], base["summary"]
                     ratio = (a["tokens_per_s"] / s["tokens_per_s"]
                              if a["tokens_per_s"] and s["tokens_per_s"] else None)
+                    # Descriptive: BLOCK-TIME's exchange model, delay term only. The
+                    # arm saves one configured round trip per exchange it does not make.
+                    saved_ns = (s["exchanges"] - a["exchanges"]) * rtt_ms * bt.NS_PER_MS
                     repeats.append({
                         "repeat": repeat, "valid": True, "ratio": ratio,
+                        "no_timed_ids": a["timed_ids"] == 0 and s["timed_ids"] == 0,
+                        "predicted_ratio": (s["wall_ns"] / (s["wall_ns"] - saved_ns)
+                                            if s["wall_ns"] > saved_ns else None),
+                        "proposed": a["proposed"], "accepted": a["accepted"],
+                        "rejected": a["proposed"] - a["accepted"],
+                        "committed_in_blocks": a["committed_in_blocks"], "blocks": a["blocks"],
+                        "single_steps": a["single_steps"], "verified_positions": a["verified_positions"],
                         "tokens_per_s": a["tokens_per_s"], "sequential_tokens_per_s": s["tokens_per_s"],
                         "proposed_nothing": a["proposed"] == 0,
                         "mean_accepted_per_block": a["mean_accepted_per_block"],
@@ -383,15 +440,19 @@ def analyse(observations, verdicts):
                         "unqualified_exchange_share": a["traffic"]["unqualified_exchange_share"],
                         "unqualified_byte_share": a["traffic"]["unqualified_byte_share"],
                     })
+                said = statement([r["ratio"] for r in repeats])
+                if all(r["valid"] and r["no_timed_ids"] for r in repeats):
+                    said = "no timed generation"
                 cells.append({"workload": workload, "kind": kind, "rtt_ms": rtt_ms, "arm": arm,
-                              "statement": statement([r["ratio"] for r in repeats]), "repeats": repeats})
+                              "statement": said, "repeats": repeats})
     return {
         "protocol": PROTOCOL, "cells": cells,
         "valid_units": sum(v["valid"] for v in verdicts), "void_units": sum(not v["valid"] for v in verdicts),
         "thresholds": {"gate": GATE, "effect": EFFECT},
-        "reading": "committed new tokens per second, prefill excluded; copy-heavy and low-copy workloads are "
-                   "never aggregated; the 1% rule is a pre-registered reporting rule, not statistical "
-                   "significance; the exchange ratio is descriptive",
+        "reading": "committed new tokens per second over the ids produced inside the clock (the first id is "
+                   "prefill's); copy-heavy and low-copy workloads are never aggregated; the 1% rule is a "
+                   "pre-registered reporting rule, not statistical significance; the exchange ratio and the "
+                   "delay-only predicted ratio are descriptive",
     }
 
 
@@ -407,7 +468,8 @@ def control_reading(controls, observations):
     for control in controls:
         accepted = control["summary"]["accepted"]
         baseline = clean.get(control["arm"])
-        readings.append({"arm": control["arm"], "accepted": accepted, "clean_accepted": baseline,
+        readings.append({"arm": control["arm"], "label": control["label"],
+                         "defects": trial_defects(control), "accepted": accepted, "clean_accepted": baseline,
                          "acceptance_fell": None if not baseline else accepted < min(baseline),
                          "rejected_within_change": control["summary"]["rejected_within_change"]})
     return readings
