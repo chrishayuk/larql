@@ -24,6 +24,18 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod bitnet;
+
+/// Resident-size estimate the pre-flight compares against the cgroup
+/// limit for one vindex. A BitNet `--keep-quant` container is sized by
+/// its ternary layout ([`bitnet::estimate_bitnet_resident_bytes`]); every
+/// other vindex by `VindexConfig::estimate_resident_bytes`, which models
+/// the dense path. Zero means "no estimate — skip".
+pub fn estimate_model_resident_bytes(config: &larql_vindex::VindexConfig) -> u64 {
+    bitnet::estimate_bitnet_resident_bytes(config)
+        .unwrap_or_else(|| config.estimate_resident_bytes())
+}
+
 /// Outcome of the pre-flight memory check.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MemCheckOutcome {

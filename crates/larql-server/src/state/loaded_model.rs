@@ -196,9 +196,9 @@ impl LoadedModel {
     /// HNSW clustering, so walk-mode inference cannot run against
     /// it (the KNN store is empty).  Detected by an empty gate-layer
     /// list in index.json (`build_vindex_dense_only` leaves
-    /// `layer_infos` empty).  Route handlers force dense-mode
-    /// inference on such vindexes regardless of the requested mode,
-    /// since walk would silently return nothing useful.
+    /// `layer_infos` empty).  `/v1/infer` serves an omitted mode as
+    /// dense on such vindexes and refuses an explicit `walk` /
+    /// `compare` with a 400 (see `routes/infer/bitnet.rs`).
     pub fn is_dense_only(&self) -> bool {
         self.config.layers.is_empty()
     }

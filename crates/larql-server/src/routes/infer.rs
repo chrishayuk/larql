@@ -12,6 +12,8 @@ use crate::error::ServerError;
 use crate::session::extract_session_id;
 use crate::state::{elapsed_ms, AppState, LoadedModel};
 
+mod bitnet;
+
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct InferRequest {
     /// Prompt to run inference on.
@@ -19,9 +21,19 @@ pub struct InferRequest {
     /// Top-K next-token predictions to return.
     #[serde(default = "default_top")]
     pub top: usize,
-    /// Inference mode: `walk` (default), `dense`, or `compare`.
-    #[serde(default = "default_mode")]
-    pub mode: String,
+    /// Inference mode: `walk`, `dense`, or `compare`. Omitted means
+    /// `walk` — except on a `--dense-only` BitNet container, which has no
+    /// gate vectors to walk and serves an omitted mode as dense. An
+    /// explicit `walk` / `compare` on such a container is refused (400).
+    #[serde(default)]
+    pub mode: Option<String>,
+}
+
+impl InferRequest {
+    /// The mode this request runs in on a dense (non-BitNet) vindex.
+    fn mode_or_default(&self) -> &str {
+        self.mode.as_deref().unwrap_or(INFER_MODE_WALK)
+    }
 }
 
 /// Predictions/hits returned when a request omits `top`.
@@ -30,12 +42,18 @@ pub(crate) const DEFAULT_INFER_TOP: usize = 5;
 fn default_top() -> usize {
     DEFAULT_INFER_TOP
 }
-fn default_mode() -> String {
-    INFER_MODE_WALK.into()
+/// Decimal places latency fields are rounded to, as a power of ten
+/// (10 → one decimal place).
+const MS_ROUNDING_SCALE: f64 = 10.0;
+/// Decimal places probabilities are rounded to, as a power of ten.
+const PROBABILITY_ROUNDING_SCALE: f64 = 10_000.0;
+
+fn round_ms(ms: f64) -> f64 {
+    (ms * MS_ROUNDING_SCALE).round() / MS_ROUNDING_SCALE
 }
 
 fn round_probability(prob: f64) -> f64 {
-    (prob * 10000.0).round() / 10000.0
+    (prob * PROBABILITY_ROUNDING_SCALE).round() / PROBABILITY_ROUNDING_SCALE
 }
 
 fn format_predictions(predictions: &[(String, f64)]) -> Vec<serde_json::Value> {
@@ -92,110 +110,14 @@ fn run_infer(
         ));
     }
 
-    // BitNet 1.58 (--keep-quant) vindex: take the native-ternary
-    // forward path.  Skips dense weight loading entirely (~5 GB
-    // saved on a 2 B BitNet) and runs predict_bitnet against the
-    // pre-loaded BitnetModel.  Walk-mode is supported via
-    // residual capture + KNN-store override (no sparse FFN — see
-    // larql_inference::ternary::infer_bitnet_walk for the
-    // architecture note).
-    //
-    // Checked before the `has_model_weights` gate below: a
-    // `--keep-quant` container carries ternary artifacts rather than
-    // the dense weight manifest that gate looks for, so a BitNet
-    // vindex would otherwise be refused as weightless.
+    // BitNet 1.58 (--keep-quant) container: take the native-ternary
+    // forward path (see `bitnet.rs`). Checked before the
+    // `has_model_weights` gate below: a `--keep-quant` container carries
+    // ternary artifacts rather than the dense weight manifest that gate
+    // looks for, so a BitNet vindex would otherwise be refused as
+    // weightless.
     if model.is_bitnet() {
-        let bitnet_guard = model
-            .get_or_load_bitnet()
-            .map_err(ServerError::InferenceUnavailable)?;
-        let bitnet: &larql_inference::ternary::BitnetModel = &bitnet_guard;
-
-        let encoding = model
-            .tokenizer
-            .encode(req.prompt.as_str(), true)
-            .map_err(|e| ServerError::Internal(format!("tokenize error: {e}")))?;
-        let token_ids: Vec<u32> = encoding.get_ids().to_vec();
-        if token_ids.is_empty() {
-            return Err(ServerError::BadRequest("empty prompt".into()));
-        }
-
-        let start = std::time::Instant::now();
-        let (is_compare, mut use_walk, mut use_dense) = infer_mode_flags(&req.mode);
-        // Dense-only BitNet vindexes (`--dense-only`) have no gate
-        // vectors / KNN store, so walk-mode would silently return
-        // nothing useful.  Coerce any walk request to dense so
-        // clients that omit `mode` (which defaults to walk) still
-        // get correct predictions.  Compare-mode also collapses to
-        // dense-only output here.
-        if model.is_dense_only() && (use_walk || is_compare) {
-            use_walk = false;
-            use_dense = true;
-        }
-        let mut result = serde_json::Map::new();
-        result.insert("prompt".into(), serde_json::json!(req.prompt));
-
-        if use_walk {
-            let run_bitnet_walk = |knn: &larql_vindex::patch::KnnStore| {
-                larql_inference::ternary::infer_bitnet_walk(
-                    bitnet,
-                    &model.tokenizer,
-                    Some(knn),
-                    &token_ids,
-                    req.top,
-                )
-            };
-            // Same view as the dense path below (see `view_blocking`).
-            let walk_pred = {
-                let patched = state.sessions.view_blocking(model, session_id);
-                run_bitnet_walk(&patched.knn_store)
-            };
-
-            let predictions = format_predictions(&walk_pred.predictions);
-            if let Some(ovr) = &walk_pred.knn_override {
-                result.insert(
-                    "knn_override".into(),
-                    format_knn_override(ovr, walk_pred.model_top1.as_ref()),
-                );
-            }
-            if is_compare {
-                result.insert(INFER_MODE_WALK.into(), serde_json::json!(predictions));
-                result.insert(
-                    "walk_ms".into(),
-                    serde_json::json!((walk_pred.walk_ms * 10.0).round() / 10.0),
-                );
-            } else {
-                result.insert("predictions".into(), serde_json::json!(predictions));
-                result.insert("mode".into(), serde_json::json!(INFER_MODE_WALK));
-            }
-        }
-
-        if use_dense {
-            let dense_start = std::time::Instant::now();
-            let pred = larql_inference::ternary::predict_bitnet(
-                bitnet,
-                &model.tokenizer,
-                &token_ids,
-                req.top,
-            );
-            let dense_ms = dense_start.elapsed().as_secs_f64() * 1000.0;
-
-            let pred_pairs: Vec<(String, f64)> =
-                pred.into_iter().map(|p| (p.token, p.probability)).collect();
-            let predictions = format_predictions(&pred_pairs);
-            if is_compare {
-                result.insert(INFER_MODE_DENSE.into(), serde_json::json!(predictions));
-                result.insert(
-                    "dense_ms".into(),
-                    serde_json::json!((dense_ms * 10.0).round() / 10.0),
-                );
-            } else {
-                result.insert("predictions".into(), serde_json::json!(predictions));
-                result.insert("mode".into(), serde_json::json!("bitnet"));
-            }
-        }
-
-        result.insert("latency_ms".into(), serde_json::json!(elapsed_ms(start)));
-        return Ok(serde_json::Value::Object(result));
+        return bitnet::run_bitnet_infer(state, model, req, session_id);
     }
 
     if !model.config.has_model_weights
@@ -224,7 +146,7 @@ fn run_infer(
 
     let start = std::time::Instant::now();
 
-    let (is_compare, use_walk, use_dense) = infer_mode_flags(&req.mode);
+    let (is_compare, use_walk, use_dense) = infer_mode_flags(req.mode_or_default());
 
     let mut result = serde_json::Map::new();
     result.insert("prompt".into(), serde_json::json!(req.prompt));
@@ -263,10 +185,7 @@ fn run_infer(
 
         if is_compare {
             result.insert(INFER_MODE_WALK.into(), serde_json::json!(predictions));
-            result.insert(
-                "walk_ms".into(),
-                serde_json::json!((pred.walk_ms * 10.0).round() / 10.0),
-            );
+            result.insert("walk_ms".into(), serde_json::json!(round_ms(pred.walk_ms)));
         } else {
             result.insert("predictions".into(), serde_json::json!(predictions));
             result.insert("mode".into(), serde_json::json!(INFER_MODE_WALK));
@@ -282,10 +201,7 @@ fn run_infer(
 
         if is_compare {
             result.insert(INFER_MODE_DENSE.into(), serde_json::json!(predictions));
-            result.insert(
-                "dense_ms".into(),
-                serde_json::json!((dense_ms * 10.0).round() / 10.0),
-            );
+            result.insert("dense_ms".into(), serde_json::json!(round_ms(dense_ms)));
         } else {
             result.insert("predictions".into(), serde_json::json!(predictions));
             result.insert("mode".into(), serde_json::json!(INFER_MODE_DENSE));
@@ -401,7 +317,9 @@ mod tests {
     #[test]
     fn infer_defaults_match_api_contract() {
         assert_eq!(default_top(), 5);
-        assert_eq!(default_mode(), INFER_MODE_WALK);
+        let omitted: InferRequest =
+            serde_json::from_value(serde_json::json!({"prompt": "x"})).unwrap();
+        assert_eq!(omitted.mode_or_default(), INFER_MODE_WALK);
     }
 
     #[test]
@@ -412,7 +330,8 @@ mod tests {
         .unwrap();
         assert_eq!(req.prompt, "The capital of France is");
         assert_eq!(req.top, 5);
-        assert_eq!(req.mode, INFER_MODE_WALK);
+        assert_eq!(req.mode, None, "an omitted mode stays distinguishable");
+        assert_eq!(req.mode_or_default(), INFER_MODE_WALK);
     }
 
     #[test]
@@ -424,14 +343,14 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(dense.top, 2);
-        assert_eq!(dense.mode, INFER_MODE_DENSE);
+        assert_eq!(dense.mode.as_deref(), Some(INFER_MODE_DENSE));
 
         let compare: InferRequest = serde_json::from_value(serde_json::json!({
             "prompt": "x",
             "mode": "compare"
         }))
         .unwrap();
-        assert_eq!(compare.mode, INFER_MODE_COMPARE);
+        assert_eq!(compare.mode_or_default(), INFER_MODE_COMPARE);
     }
 
     /// Regression: `run_infer`'s sessioned branch must NOT take a

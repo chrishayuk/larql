@@ -18,7 +18,7 @@ use crate::routes::openai::util::{
 use crate::routes::openai::OpenAIError;
 use crate::state::{AppState, LoadedModel};
 
-use super::stream::stream_chat_completion;
+use super::stream::{bitnet_stream_refusal, stream_chat_completion};
 use super::tools::{
     build_constrained_mask, build_tool_call_message, is_empty_json_array, resolve_tools,
     schema_for_response_format,
@@ -182,6 +182,11 @@ pub async fn handle_chat_completions(
     let messages = req.messages;
 
     if req.stream.unwrap_or(false) {
+        if let Some(reason) =
+            bitnet_stream_refusal(&model_arc, tools_active, constrained_schema.is_some())
+        {
+            return Err(OpenAIError::invalid_request(reason));
+        }
         return Ok(stream_chat_completion(
             model_arc,
             messages,

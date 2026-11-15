@@ -49,18 +49,10 @@ pub(super) fn stream_chat_completion(
         // generate_streaming_bitnet against the pre-loaded
         // BitnetModel at ~1.4 GB resident instead of ~5 GB.
         //
-        // Tools and constrained generation are refused rather than
-        // silently ignored: both need masked logits over the dense
-        // path, and answering a tool request with prose would look
-        // like a model that chose not to call the tool.
+        // Tools and constrained generation never reach here on BitNet:
+        // the handler refuses them with a 400 before the stream opens
+        // (`bitnet_stream_refusal`), since the refusal is known up front.
         if model.is_bitnet() {
-            if tools_active || constrained_schema.is_some() {
-                let _ = tx.blocking_send(error_chunk(
-                    "tools / constrained generation not supported on BitNet \
-                     (--keep-quant) models yet",
-                ));
-                return;
-            }
             let bitnet_guard = match model.get_or_load_bitnet() {
                 Ok(g) => g,
                 Err(e) => {
@@ -292,6 +284,26 @@ pub(super) fn stream_chat_completion(
         .map(Ok::<_, Infallible>);
 
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+/// The refusal message for tools / constrained generation on BitNet.
+pub(super) const BITNET_CONSTRAINED_REFUSAL: &str =
+    "tools / constrained generation (tools, response_format) are not supported on \
+     BitNet (--keep-quant) models: both need masked logits over the dense path, \
+     which a --keep-quant container does not carry";
+
+/// Why a BitNet (`--keep-quant`) model cannot serve this chat stream,
+/// or `None` when it can. Tools and constrained generation both need
+/// masked logits over the dense path; answering a tool request with prose
+/// would look like a model that chose not to call the tool, so they are
+/// refused — before streaming, as a 4xx, because nothing about the
+/// refusal depends on generation.
+pub(super) fn bitnet_stream_refusal(
+    model: &LoadedModel,
+    tools_active: bool,
+    constrained: bool,
+) -> Option<&'static str> {
+    (model.is_bitnet() && (tools_active || constrained)).then_some(BITNET_CONSTRAINED_REFUSAL)
 }
 
 pub(super) fn build_chat_chunk(

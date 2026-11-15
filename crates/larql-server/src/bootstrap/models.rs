@@ -159,13 +159,11 @@ pub(super) fn memory_preflight(cli: &Cli, models: &[Arc<LoadedModel>]) -> Result
     if !cli.no_memcheck && !cli.lazy_weights {
         let total_estimate: u64 = models
             .iter()
-            // BitNet (--keep-quant) vindexes don't allocate dense
-            // BitLinear tensors at load time — the resident size
-            // estimator targets the dense path and would massively
-            // over-count for them.  Skip until estimate_resident_bytes
-            // grows a bitnet-aware branch.
-            .filter(|m| !m.infer_disabled && !m.is_bitnet())
-            .map(|m| m.config.estimate_resident_bytes())
+            // BitNet (--keep-quant) containers are included, sized by
+            // the bytes their I2_S weights actually occupy rather than
+            // the dense path's f32 sizes (see `memcheck::bitnet`).
+            .filter(|m| !m.infer_disabled)
+            .map(|m| crate::memcheck::estimate_model_resident_bytes(&m.config))
             .sum();
         if total_estimate > 0 {
             let headroom = cli.memcheck_headroom_mib * 1024 * 1024;
