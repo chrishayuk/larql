@@ -62,7 +62,12 @@ view. On a V3 binding the session's typed methods (`tensors`, `tensor`,
 `update_weights` and the patch lifecycle) return NumPy arrays and dicts from the
 same Rust operations `SHOW TENSORS`, `EXPORT WEIGHT`, `CAPTURE`, `INFER`,
 `ADD LOW RANK`, `UPDATE WEIGHTS` and the patch statements run. See the
-[source build instructions](../crates/larql-python/README.md).
+[source build instructions](../crates/larql-python/README.md). The same
+operations run out of process through `larql serve-session` and the pure-Python
+`larql.connect(socket)`, under a policy the service enforces (one container,
+workdir-confined paths, an allow-list, a budget of edited-model executions,
+limits, an audit log); it is not an OS sandbox. See
+[the session service](lql-session-service.md).
 
 Factory build preflight refuses required reconstruction, logit-match and Hub
 verification that the driver cannot execute. A checksum pass cannot authorize

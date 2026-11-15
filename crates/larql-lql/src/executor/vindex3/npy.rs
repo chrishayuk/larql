@@ -89,6 +89,15 @@ pub(super) fn npy_sha256(descr: NpyDescr, shape: &[usize], body: &[u8]) -> std::
     Ok(format!("{:x}", hash.finalize()))
 }
 
+/// The whole `.npy` file an array of `descr` and `shape` with this body is, in memory: the bytes
+/// [`NpyWriter`] writes for the same array, so their SHA-256 is the `npy_sha256` a typed operation's
+/// provenance records. `body` is the elements, little-endian, C order.
+pub fn npy_file_bytes(descr: NpyDescr, shape: &[usize], body: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut bytes = header(descr, shape)?;
+    bytes.extend_from_slice(body);
+    Ok(bytes)
+}
+
 /// An `.npy` file being written. Created only where no file exists.
 pub(super) struct NpyWriter {
     out: BufWriter<File>,

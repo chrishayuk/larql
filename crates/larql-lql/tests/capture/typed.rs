@@ -4,8 +4,8 @@
 //! op an operand file stages, and the patch lifecycle reports what its statements print.
 
 use larql_lql::operations::{
-    operand_bits_from_values, operand_origin, CaptureContinuation, CaptureLayers, CapturePositions,
-    CaptureSite, CaptureSpec, NpyDescr, OperandBits, OperandValues,
+    npy_file_bytes, operand_bits_from_values, operand_origin, CaptureContinuation, CaptureLayers,
+    CapturePositions, CaptureSite, CaptureSpec, NpyDescr, OperandBits, OperandValues,
 };
 
 use crate::support::*;
@@ -125,6 +125,11 @@ fn read_weight_equals_export_weight() {
         );
         assert!(file.ends_with(&read.bytes), "{stmt}");
         assert_eq!(read.provenance["npy_sha256"], sha256_hex(&file));
+        assert_eq!(
+            npy_file_bytes(read.descr, &read.shape, &read.bytes).unwrap(),
+            file,
+            "{stmt}"
+        );
         assert_eq!(
             without_statement(read.provenance, true),
             without_statement(sidecar(&out), false)
@@ -414,4 +419,58 @@ fn the_typed_operations_refuse_without_a_binding() {
         )
         .is_err());
     assert!(s.stage_weight_delta(TENSOR, 0, &[0], 1.0).is_err());
+    assert!(s.discard_weight_edits().is_err());
+}
+
+#[test]
+fn discard_weight_edits_drops_what_was_staged_and_keeps_applied_patches() {
+    let fx = Fixture::new();
+    let vlp = fx.patch("applied.vlp");
+    let mut s = fx.session();
+    run(&mut s, &format!("APPLY PATCH \"{}\";", q(&vlp)));
+    s.begin_patch(fx.path("open.vlp").to_str().unwrap())
+        .unwrap();
+    s.stage_weight_delta(TENSOR, 6, &[0, 1], 2.0).unwrap();
+    let discarded = s.discard_weight_edits().unwrap();
+    assert_eq!(discarded.discarded, 1);
+    assert_eq!(discarded.unrecorded, 1);
+    assert_eq!(discarded.from_patches, 1);
+    assert_eq!(s.patches().unwrap().weight_ops, 1);
+    assert_eq!(s.patches().unwrap().recording.unwrap().1, 0);
+
+    let again = s.discard_weight_edits().unwrap();
+    assert_eq!((again.discarded, again.unrecorded), (0, 0));
+    assert_eq!(
+        run(&mut s, "DISCARD WEIGHT EDITS;")[0],
+        "Nothing to discard: no stored-weight op is staged in this session"
+    );
+}
+
+#[test]
+fn npy_file_bytes_are_the_file_capture_writes() {
+    let fx = Fixture::new();
+    let mut s = fx.session();
+    let out = fx.path("c.npy");
+    capture(
+        &mut s,
+        &format!("logits FOR \"{PROMPT}\" POSITIONS ALL"),
+        &out,
+    );
+    let captured = s
+        .capture(&CaptureSpec {
+            site: CaptureSite::Logits,
+            layers: None,
+            prompt: PROMPT,
+            continuation: None,
+            positions: &CapturePositions::All,
+        })
+        .unwrap();
+    let body: Vec<u8> = captured
+        .values()
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .collect();
+    let bytes = npy_file_bytes(NpyDescr::F4, &captured.shape, &body).unwrap();
+    assert_eq!(bytes, std::fs::read(&out).unwrap());
+    assert_eq!(captured.provenance["npy_sha256"], sha256_hex(&bytes));
 }

@@ -55,7 +55,7 @@ pub(crate) const HELP_GROUPS: &[HelpGroup] = &[
     },
     HelpGroup {
         heading: "Server",
-        commands: &["server-capabilities"],
+        commands: &["server-capabilities", "serve-session"],
     },
     HelpGroup {
         heading: "Factory",

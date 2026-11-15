@@ -405,3 +405,17 @@ class TestPatchLifecycle:
             s.remove_patch("absent.vlp")
         with pytest.raises(RuntimeError, match="patch not found"):
             s.apply_patch("absent.vlp")
+
+
+class TestDiscardWeightEdits:
+    def test_discard_equals_the_statement(self, container):
+        s = larql.session(container)
+        t = larql.session(container)
+        for session in (s, t):
+            session.update_weights(TENSOR, 5, [0, 1], 2.0)
+        discarded = s.discard_weight_edits()
+        printed = t.query("DISCARD WEIGHT EDITS")
+        assert discarded == {"discarded": 1, "unrecorded": 0, "from_patches": 0}
+        assert printed[0] == f"Discarded: {discarded['discarded']} stored-weight op(s) staged in this session"
+        assert s.patches()["weight_ops"] == 0
+        assert s.discard_weight_edits()["discarded"] == 0

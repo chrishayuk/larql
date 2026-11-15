@@ -35,10 +35,10 @@ pub use capture::{CaptureSpec, Captured};
 pub use export_weight::WeightRead;
 pub(crate) use live::{live_weight_lines, nothing_in_effect_line};
 pub use low_rank::{operand_bits_from_values, operand_origin, OperandValues, StagedLowRank};
-pub use npy::NpyDescr;
+pub use npy::{npy_file_bytes, NpyDescr};
 pub(crate) use overrides::*;
 pub(crate) use session::*;
-pub use weights::{EditedElement, StagedWeightDelta};
+pub use weights::{DiscardedWeightEdits, EditedElement, StagedWeightDelta};
 
 /// The statements a VINDEX3 binding serves today. Everything else gets
 /// [`unsupported`] — a capability refusal, not a format apology.

@@ -505,6 +505,21 @@ impl PySession {
         Ok(d)
     }
 
+    /// Drop every stored-weight op staged directly in this session, and the copies an open recording holds
+    /// (`DISCARD WEIGHT EDITS`); ops an applied patch carries stay with it. Returns a dict: `discarded`,
+    /// `unrecorded` (ops removed from the open recording) and `from_patches` (weight ops applied patches
+    /// still carry).
+    fn discard_weight_edits<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let discarded = py
+            .detach(|| lock(&self.session).discard_weight_edits())
+            .map_err(failed)?;
+        let d = PyDict::new(py);
+        d.set_item("discarded", discarded.discarded)?;
+        d.set_item("unrecorded", discarded.unrecorded)?;
+        d.set_item("from_patches", discarded.from_patches)?;
+        Ok(d)
+    }
+
     /// What `SHOW PATCHES` reports, as values: a dict of `applied` (a list of `{"name", "path", "sha256",
     /// "operations", "inserts", "updates", "deletes"}`), `session_overrides`, `weight_ops`,
     /// `weight_elements` and `recording` (None, or `{"path", "operations"}`; the path is empty for the

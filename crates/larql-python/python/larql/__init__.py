@@ -16,45 +16,73 @@ Two interfaces:
         s = larql.session("model.vindex3")
         s.capture("logits", "The capital of France is").array
         s.tensor("target.embedding@BF16::weight", rows=[0]).provenance
+
+    - The same operations from a restricted `larql serve-session` process, over its Unix socket (pure
+      Python; works without the native extension):
+        s = larql.connect("/path/to/larql.sock")
+        s.capture("logits", "The capital of France is").array
+        s.budget()
 """
 
 from contextlib import contextmanager
 
-from larql._native import (
-    # Vindex types
-    Vindex,
-    FeatureMeta,
-    WalkHit,
-    DescribeEdge,
-    Relation,
-    Session,
-    Readout,
-    WalkModel,
+from larql.session_client import RemoteSession, ServiceError, connect
 
-    # Graph types
-    Edge,
-    Node,
-    Graph,
+# The native extension. Without it, `larql.connect` (pure Python) still works; every native name raises the
+# import error on use.
+try:
+    from larql._native import (
+        # Vindex types
+        Vindex,
+        FeatureMeta,
+        WalkHit,
+        DescribeEdge,
+        Relation,
+        Session,
+        Readout,
+        WalkModel,
 
-    # Vindex functions
-    load_vindex,
-    create_session,
+        # Graph types
+        Edge,
+        Node,
+        Graph,
 
-    # Graph functions
-    load as load_graph,
-    save as save_graph,
-    load_csv,
-    save_csv,
-    shortest_path,
-    merge_graphs,
-    merge_graphs_with_strategy,
-    diff,
-    pagerank,
-    bfs_traversal,
-    dfs_traversal,
-    weight_walk,
-    attention_walk,
-)
+        # Vindex functions
+        load_vindex,
+        create_session,
+
+        # Graph functions
+        load as load_graph,
+        save as save_graph,
+        load_csv,
+        save_csv,
+        shortest_path,
+        merge_graphs,
+        merge_graphs_with_strategy,
+        diff,
+        pagerank,
+        bfs_traversal,
+        dfs_traversal,
+        weight_walk,
+        attention_walk,
+    )
+except ImportError as _error:
+    _NATIVE_ERROR = _error
+
+    def __getattr__(name):
+        raise ImportError(
+            f"larql.{name} needs the native extension larql._native, which did not import: {_NATIVE_ERROR}"
+        )
+else:
+    _NATIVE_ERROR = None
+
+
+def _require_native(name):
+    if _NATIVE_ERROR is not None:
+        raise ImportError(
+            f"larql.{name} needs the native extension larql._native, which did not import: {_NATIVE_ERROR}"
+        )
+
 
 
 def load(path: str, **kwargs) -> "Vindex":
@@ -71,6 +99,7 @@ def load(path: str, **kwargs) -> "Vindex":
         edges = vindex.describe("France")
         embed = vindex.embed("France")
     """
+    _require_native("load")
     return load_vindex(path)
 
 
@@ -88,6 +117,7 @@ def session(path: str) -> "Session":
     Returns:
         Session with .query() and .vindex properties
     """
+    _require_native("session")
     return create_session(path)
 
 
@@ -149,6 +179,9 @@ __all__ = [
     "Session",
     "Readout",
     "recording",
+    "connect",
+    "RemoteSession",
+    "ServiceError",
 
     # Graph types
     "Edge",

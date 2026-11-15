@@ -66,6 +66,7 @@ writes: Python builds no LQL text and reads no console output.
 | `s.add_low_rank(tensor, a, b, columns, numerics)` | `ADD LOW RANK` | a dict: `digest`, `changed_elements`, `sham`, `pending_structured_ops`, `origin` |
 | `s.update_weights(tensor, row, cols, delta)` | `UPDATE WEIGHTS` | a dict: `digest`, `elements` (BF16 bits before and after), `pending_elements` |
 | `s.apply_patch(path)`, `s.remove_patch(path)`, `s.patches()` | `APPLY PATCH`, `REMOVE PATCH`, `SHOW PATCHES` | dicts |
+| `s.discard_weight_edits()` | `DISCARD WEIGHT EDITS` | a dict: `discarded`, `unrecorded`, `from_patches` |
 
 ```python
 import numpy as np
@@ -106,6 +107,33 @@ with larql.recording(s, "edit.vlp"):
   statements; a Python session runs under the full profile.
 - `larql._native._write_test_container(dir)` builds the tiny synthetic
   container the tests run on.
+
+`s.discard_weight_edits()` (`DISCARD WEIGHT EDITS`) drops the weight ops staged
+directly in the session and their copies in an open recording; ops an applied
+patch carries stay with it.
+
+### Out of process: `larql.connect`
+
+`larql.connect(socket_path)` talks to a `larql serve-session` process and
+returns an object with the same method names, arguments and return types as
+the session methods above (arrays come back as `Readout`s with `.array` and
+`.provenance`), plus `budget()`, the edited-model executions left. It is pure
+Python (standard library and NumPy) and does not import the native extension,
+so it works where `larql._native` is not installed; `import larql` then still
+succeeds and only the native names raise `ImportError`. Paths name files in the
+service's workdir. The service's refusals raise `larql.ServiceError` with its
+`kind` and `reason`. See [the session service](../../docs/lql-session-service.md),
+including what it does not enforce: it is not an OS sandbox.
+
+```python
+s = larql.connect("/path/to/larql.sock")
+s.capture("logits", "The capital of France is").array
+s.apply_patch("edit.vlp")
+s.budget()
+```
+
+`tests/test_session_service.py` runs the `larql` binary (`$LARQL_BIN`, or
+`target/{release,debug}/larql`; build it with `cargo build -p larql-cli`).
 
 The full `Vindex3Runtime`, observation and intervention-record APIs remain
 available through Rust/CLI rather than separate Python wrappers.

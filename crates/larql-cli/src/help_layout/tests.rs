@@ -43,6 +43,10 @@ fn no_command_is_grouped_twice() {
 fn every_grouped_name_is_a_real_command() {
     let cmd = root();
     for name in HELP_GROUPS.iter().flat_map(|g| g.commands) {
+        // A Unix-socket service: not built on other hosts.
+        if cfg!(not(unix)) && *name == "serve-session" {
+            continue;
+        }
         assert!(
             cmd.find_subcommand(name).is_some(),
             "HELP_GROUPS names `{name}`, which is not a command"
