@@ -107,9 +107,19 @@ A **pair is valid** only if all hold:
    cost inside the pair, which the brackets either side cannot see.
 5. **No stall of the driver inside any of its four trials** (see Pausing).
 
-A parity mismatch in any trial stops the run, as in BLOCK-TIME-1. A void
-pair is kept, with its measurements and named reasons, and is never fitted
-or pooled.
+A parity mismatch in any trial stops the run, as in BLOCK-TIME-1. **So does
+any other failure**: a trial process that crashes or times out, a worker
+that dies, a relay that carried no traffic, an interrupt. A stopped run is
+not analysed: no slope or per-arm statement is computed from it, though the
+trials it completed are judged into pairs and every record is written
+(trials, pairs, stalls, telemetry, the failure itself) as for a complete
+run. A void pair is kept, with its measurements and named reasons, and is
+never fitted or pooled; every trial of it carries the pair's reasons.
+
+Each pair's brackets are its own, but the relay-lateness gate scales by a
+floor taken from the most recent bracket, so a pair's opening bracket is
+judged against the previous pair's closing one. This links neighbouring
+pairs only through that threshold.
 
 The 5% is an engineering tolerance, not a measured bound on natural
 variation. It rests on BLOCK-TIME-1, where the same arm's coordinator time
@@ -117,6 +127,26 @@ at 5 and 20 ms agreed within 2 to 3% in undisturbed trials. It was added
 after the functional diagnostic found a pair corrupted by a 5-second stop
 inside its 20 ms trial (coordinator 34.4 against 123.7 ms per position,
 slope 8.98 against 3), whose brackets agreed within 0.7%.
+
+**What rule 4 conditions on.** The configured delay per position is fixed
+by the exchange count, which rule 2 fixes. So a pair's slope can leave
+`24 / W` only through changes between its two delays in three things:
+coordinator time, worker handler time, and the transport remainder. Rule 4
+voids pairs on the first two. **A systematic deviation from the model in
+either of them therefore shows as missing slopes, never as "does not
+follow".** To keep it visible, the analysis also reports a **secondary,
+ungated slope** per arm: the mean over pairs that pass every rule except
+rule 4 (with the same three-pair minimum). It is not the registered
+statement.
+
+**The shift rule 4 can still admit** in one pair is `0.05 × (C + E) / 15 ms`
+round trips per position, with both costs moving by the full tolerance in
+the same direction. With BLOCK-TIME-1's undisturbed 20 ms costs that is
+about 0.42 round trips for every arm: **1.8% of the prediction for
+`sequential` and `block-1`, 3.7% for `block-2`, 7.0% for `block-4`, and
+13.6% for `block-8`**, more than the 10% band. Averaging pairs reduces it
+only if the shifts vary in sign; a delay-dependent effect would not. The
+analysis reports this bound for each arm from the run's own costs.
 
 **A failure of rule 4 is reported as an observed execution-cost change,
 not as external interference.** The rule assumes both costs are invariant
@@ -141,15 +171,19 @@ report, and not a reason to change the tolerance.
    exchange model"). With two or fewer valid pairs the arm's slope is
    reported as **missing**, with the count. The three-of-four rule is a
    minimum for reporting, not a confidence level or significance test.
-3. **Delay order**: per arm, the mean `s` of its valid 5→20 pairs and of
+3. **Secondary, ungated slope** per arm (see "What rule 4 conditions on"),
+   and the shift rule 4 admits for that arm, from its measured costs.
+   Neither is the registered statement.
+4. **Delay order**: per arm, the mean `s` of its valid 5→20 pairs and of
    its valid 20→5 pairs, and their difference. Reported, not gated.
-4. **Worker execution**: for each arm and delay, the worker's execution time
+5. **Worker execution**: for each arm and delay, the worker's execution time
    per position in every trial (minimum, median, maximum and each value),
-   for valid pairs and separately for all pairs.
-5. **Times**: mean `t(5 ms)` and `t(20 ms)` per arm over valid pairs,
+   for valid pairs and separately for all pairs, with the count of trials
+   that lack it.
+6. **Times**: mean `t(5 ms)` and `t(20 ms)` per arm over valid pairs,
    reported as a table. **No speed comparison is made or claimed**; that was
    BLOCK-TIME-1's question.
-6. **Decomposition** per trial, as in BLOCK-TIME-1: exchanges, coordinator,
+7. **Decomposition** per trial, as in BLOCK-TIME-1: exchanges, coordinator,
    worker handler and execution, configured delay, transport remainder, and
    bytes moved.
 
@@ -165,10 +199,10 @@ Throughout the run, written beside the receipt:
   the total, from `ps`;
 - every 30 s: `pmset -g therm` (thermal and performance warning levels) and
   the kernel's memory-pressure and free-memory levels from `sysctl`;
-- each trial's start and end wall-clock time, so samples can be matched to
-  trials;
+- each trial's start and end time (UTC and monotonic), so samples can be
+  matched to trials;
 - after the run: Spotlight worker starts per minute over the run window,
-  from the unified log.
+  from the unified log (minutes in the log's local time).
 
 Telemetry is observational. It does not void, exclude or reorder anything,
 and no threshold is applied to it. Its cost is recorded with every sample:
@@ -181,7 +215,9 @@ Spotlight's configuration is not changed.
 The run is admissible only if: both block-frame qualification receipts for
 the relay in use are supplied; the peer sessions confirmed quiet before the
 first trial and the handshake is saved with the receipt; and no compiler or
-model process other than this experiment's runs at start or end.
+model process other than this experiment's runs at start or end. **The end
+is checked by the driver after the worker has shut down; a busy process
+then means the run does not count**, even if it completed.
 
 **The quiet request names what is excluded**: worktree creation, checkouts,
 clones, branch switches that rewrite the working tree, builds and
@@ -195,29 +231,54 @@ that do not rewrite a working tree are allowed.
 Other sessions' work takes priority over this run, so the run can be
 held. Creating a file named `PAUSE` in the run directory makes the driver
 finish the pair it is in, then wait before the next pair's first bracket
-until the file is removed. The worker stays resident (about 12 GB) but idle.
-Pausing is possible only there and before warm-up, never inside a pair, so
-a pause voids nothing: every pair is bracketed on its own. Every pause is
-recorded with the pair it preceded and its start and end times, in
-`pauses.json` and the analysis.
+until the file is removed. **While it holds, the driver writes `PAUSED`**
+in the run directory, and removes it on resuming: the session that asked
+should wait for `PAUSED` before starting heavy work, since the pair in
+flight (up to about five minutes) is still being measured until then. The
+worker stays resident (about 12 GB) but idle. Pausing is possible only
+there and before warm-up, never inside a pair, so no rule voids a pair
+because of a pause. **It is not neutral, though**: there is no warm-up
+after a hold, and a long hold under other sessions' load leaves the worker
+cold. The next pair's own brackets and rule 4 measure that state; they do
+not undo it. Every pause is recorded with the pair it preceded and its
+start and end times, in `pauses.json` and the analysis.
 
 **There is no way to pause inside a pair, and none may be used in an
 admissible run.** Stopping the run's processes with a signal (`SIGSTOP`), or
 anything else that suspends the driver mid-trial, is not a pause under this
 protocol: the stopped time lands inside a measurement. The driver therefore
-watches for its own suspension. A thread ticks every 0.2 s; a gap of more
-than 2 s in either the monotonic or the wall clock is recorded as a stall,
-with its start, end and length, in `suspensions.json` and the analysis.
-**Any trial that overlaps a stall voids its pair**, by name (rule 5). A stall
-can also be a starved thread on an overloaded host or a system sleep; it
-voids the pair either way, and is reported as a stall, not as a cause. A
-stall shorter than 2 s is not detected as a stall. Rule 4 catches a shorter
-one only where it lands: in coordinator time (at about 35 ms per position,
-anything over about 0.1 s in a trial exceeds 5%) or in worker execution
-(about 0.24 s). A stall while the coordinator waits on an exchange lands in
-exchange time, which rule 4 does not compare, so one shorter than 2 s there
-is not detected by any rule. The quiet request and the absence of any pause
-mechanism inside a pair are the controls for it.
+watches for its own suspension. A thread in the driver ticks every 0.1 s; a
+gap of more than **0.5 s** in either the monotonic or the wall clock is
+recorded as a stall, with its length, placed on the monotonic clock (which
+a wall-clock correction cannot move), in `suspensions.json` and the
+analysis. **Any trial whose monotonic span overlaps a stall voids its
+pair**, by name (rule 5). A stall can also be a starved thread on an
+overloaded host or a system sleep; it voids the pair either way, and is
+reported as a stall, not as a cause. The rule and its thresholds are in
+`block_time_2_model.py`, under the freeze.
+
+**What the watch cannot see.** It runs in the driver's process. Stopping
+the run's whole process group, the way to stop everything at once, stops
+the driver too and is seen. **Stopping the worker, the relay or the trial
+process alone is not seen** by rule 5:
+
+- a stop of the trial process lands in its coordinator time, which rule 4
+  catches beyond about 0.1 s (5% of about 35 ms per position over 56
+  positions);
+- a stop of the worker lands in worker execution if it falls inside it
+  (caught beyond about 0.24 s), and otherwise in exchange time;
+- a stop of the relay, or any stall while the coordinator waits on an
+  exchange, lands in exchange time, which no rule compares within a pair.
+
+How large an undetected stall in exchange time is: one of `d` seconds in a
+20 ms `block-8` trial adds `d / 56` s per position and `d / (56 × 15 ms)`
+round trips to that pair's slope, so 0.5 s adds 0.60 round trips, 20% of
+the predicted 3. A within-pair check on the transport remainder was
+considered and not adopted: unlike coordinator and execution time it does
+depend on the delay (BLOCK-TIME-1: 6.4 ms per position for `sequential` at
+0 ms, 10.1 at 20 ms), so there is no invariant to compare. The quiet
+request, the absence of any pause inside a pair, and the per-arm mean over
+three or four pairs are the controls for it.
 
 ## Budget
 
@@ -231,13 +292,18 @@ worker start, **about 70 to 75 minutes**. The quiet window to request is
 
 ## Before freezing
 
-- Review of this document, `block_time_2_model.py`, `block_time_2.py` and
-  `host_telemetry.py`, with their tests.
-- One declared diagnostic is optional: it would exercise the driver and the
-  telemetry end to end, would never count, and its timings would not be
-  summarised.
-- On freezing: hashes of this document and the model added to
-  `frozen-protocols.json` under "BLOCK-TIME-2 revision 1".
+- Independent review of this document, `block_time_2_model.py`,
+  `block_time_2.py` and `host_telemetry.py`, with their tests.
+- A declared functional diagnostic was run
+  ([`20261115-01-diagnostic`](link-results/block-time-2/README.md)); it does
+  not count, and its pair 0, which held a 5-second stop, led to rules 4
+  and 5.
+- On freezing: hashes of this document and the contract it depends on
+  (`block_time_2_model.py`, `block_time_model.py`,
+  `link_block_frames_model.py`, `link_model.py`, `profile_exact.py`,
+  `block_frames.json`) added to `frozen-protocols.json` under
+  "BLOCK-TIME-2 revision 1". The driver and telemetry are implementation:
+  every receipt records their hashes.
 
 ## Implementation
 
