@@ -1,0 +1,2 @@
+{"connection":0,"direction":"request","qos":"default","delay_us":2500,"rate_bits_per_s":"inf","bytes":60498579,"chunks":5189,"late_sum_ns":359269541,"late_max_ns":14542167}
+{"connection":0,"direction":"response","qos":"default","delay_us":2500,"rate_bits_per_s":"inf","bytes":240255537,"chunks":15560,"late_sum_ns":977138077,"late_max_ns":10815167}
