@@ -1,0 +1,25 @@
+p1: sequential reference
+p1: negative controls
+p1: blocks of 1
+p1: blocks of 2
+p1: blocks of 4
+p1: blocks of 8
+p1: partial commit
+p1: chained partial commit
+p2: sequential reference
+p2: negative controls
+p2: blocks of 1
+p2: blocks of 2
+p2: blocks of 4
+p2: blocks of 8
+p2: partial commit
+p2: chained partial commit
+p3: sequential reference
+p3: negative controls
+p3: blocks of 1
+p3: blocks of 2
+p3: blocks of 4
+p3: blocks of 8
+p3: partial commit
+p3: chained partial commit
+pass: true; receipt at bench/v3-routed-experts/block-results/20261114-03-two-workers/receipt.json

@@ -1,0 +1,10 @@
+[2m2026-11-14T19:51:52.101159Z[0m [32m INFO[0m [2mlarql_server::bootstrap[0m[2m:[0m larql-server v0.2.1
+[2m2026-11-14T19:51:52.101200Z[0m [32m INFO[0m [2mlarql_server::bootstrap[0m[2m:[0m   Q4K/Q6K×Q8K kernel class: q4k_matvec=neon-asm q6k_matvec=neon q4k_gate_up=neon-asm
+[2m2026-11-14T19:51:52.101210Z[0m [32m INFO[0m [2mlarql_server::bootstrap[0m[2m:[0m   decode options: q4k_direct_attn=on q4k_attn_int8=on q4k_lm_head=on q4k_direct_ffn=on q4k_asm=on spin_pool=on moe_q4k_direct=on
+[2m2026-11-14T19:51:52.101294Z[0m [32m INFO[0m [2mlarql_server::bootstrap::load[0m[2m:[0m Loading VINDEX3 container: /Users/christopherhay/chris-models/gpt-oss-20b.vindex3
+[2m2026-11-14T19:52:12.511361Z[0m [32m INFO[0m [2mlarql_server::bootstrap[0m[2m:[0m Infer timeout: 60s
+[2m2026-11-14T19:52:12.511394Z[0m [32m INFO[0m [2mlarql_server::bootstrap[0m[2m:[0m Maintenance sweeper: every 60s (session TTL 3600s)
+[2m2026-11-14T19:52:12.511402Z[0m [32m INFO[0m [2mlarql_server::bootstrap[0m[2m:[0m Single-model mode: 6cee5e81ee83917806bbde320786a8fb61efebee (VINDEX3)
+[2m2026-11-14T19:52:12.512386Z[0m [32m INFO[0m [2mlarql_server::bootstrap[0m[2m:[0m OpenAPI: /swagger-ui and /v1/openapi.json enabled
+[2m2026-11-14T19:52:12.512407Z[0m [32m INFO[0m [2mlarql_server::bootstrap[0m[2m:[0m Max concurrent: 100
+[2m2026-11-14T19:52:12.512419Z[0m [32m INFO[0m [2mlarql_server::bootstrap[0m[2m:[0m Listening: http://127.0.0.1:9310
