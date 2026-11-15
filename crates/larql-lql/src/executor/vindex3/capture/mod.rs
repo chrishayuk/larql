@@ -20,7 +20,7 @@ pub(crate) use provenance::AppliedPatchFile;
 
 use larql_inference::vindex3::OperandOverrides;
 
-use super::npy::{NpyDescr, NpyWriter};
+use super::npy::{npy_sha256, NpyDescr, NpyWriter};
 use super::npy_output::{
     container_index, container_path, index_list, literal, output_paths, remove_partial,
     write_sidecar, LARQL_VERSION,
@@ -51,28 +51,76 @@ fn refused(e: impl std::fmt::Display) -> LqlError {
     super::npy_output::refused(STATEMENT, e)
 }
 
-/// The arguments of one `CAPTURE`, as the statement gives them.
-pub(crate) struct CaptureRequest<'a> {
+/// What one capture computes: the site, its layers, the sequence and the positions kept. The arguments of a
+/// `CAPTURE` statement other than its output.
+#[derive(Debug, Clone, Copy)]
+pub struct CaptureSpec<'a> {
     pub site: CaptureSite,
     pub layers: Option<&'a CaptureLayers>,
     pub prompt: &'a str,
     pub continuation: Option<&'a CaptureContinuation>,
     pub positions: &'a CapturePositions,
+}
+
+/// The arguments of one `CAPTURE`, as the statement gives them.
+pub(crate) struct CaptureRequest<'a> {
+    pub spec: CaptureSpec<'a>,
     pub output: &'a str,
+}
+
+/// The values one capture computed, in memory, with the provenance `CAPTURE`'s sidecar records.
+#[derive(Debug, Clone)]
+pub struct Captured {
+    /// `[positions, width]`, or `[layers, positions, width]` for a list of layers.
+    pub shape: Vec<usize>,
+    /// The sidecar's fields for the same capture, with `statement` null and `npy_sha256` the digest of the
+    /// `.npy` file the statement would write.
+    pub provenance: serde_json::Value,
+    blocks: Vec<Rows>,
+    summary: CaptureSummary,
+}
+
+impl Captured {
+    /// The values, C order, in the array's shape.
+    pub fn values(&self) -> Vec<f32> {
+        self.blocks.iter().flatten().flatten().copied().collect()
+    }
+}
+
+/// What the statement's reply says beyond the provenance.
+#[derive(Debug, Clone)]
+struct CaptureSummary {
+    sequence_len: usize,
+    prompt_len: usize,
+    positions: Vec<usize>,
+    executes: &'static str,
+    path: &'static str,
+    start: std::time::Instant,
+}
+
+/// The values as the `.npy` body holds them: little-endian f32, C order.
+fn body_bytes(blocks: &[Rows]) -> Vec<u8> {
+    blocks
+        .iter()
+        .flatten()
+        .flatten()
+        .flat_map(|v| v.to_le_bytes())
+        .collect()
 }
 
 /// The statement as LQL text, in its canonical form: what the sidecar records.
 fn statement_text(request: &CaptureRequest<'_>) -> String {
-    let mut text = format!("{STATEMENT} {}", request.site.name());
-    match request.layers {
+    let spec = &request.spec;
+    let mut text = format!("{STATEMENT} {}", spec.site.name());
+    match spec.layers {
         Some(CaptureLayers::One(layer)) => text.push_str(&format!(" AT LAYER {layer}")),
         Some(CaptureLayers::Many(layers)) => {
             text.push_str(&format!(" AT LAYERS ({})", index_list(layers)))
         }
         None => {}
     }
-    text.push_str(&format!(" FOR {}", literal(request.prompt)));
-    match request.continuation {
+    text.push_str(&format!(" FOR {}", literal(spec.prompt)));
+    match spec.continuation {
         Some(CaptureContinuation::Text(t)) => text.push_str(&format!(" CONTINUE {}", literal(t))),
         Some(CaptureContinuation::Tokens(ids)) => {
             text.push_str(&format!(" CONTINUE TOKENS ({})", index_list(ids)))
@@ -82,7 +130,7 @@ fn statement_text(request: &CaptureRequest<'_>) -> String {
     }
     text.push_str(&format!(
         " POSITIONS {} TO {};",
-        request.positions.spelled(),
+        spec.positions.spelled(),
         literal(request.output)
     ));
     text
@@ -127,10 +175,23 @@ fn write_npy(path: &std::path::Path, shape: &[usize], blocks: &[Rows]) -> Result
 }
 
 impl Session {
-    pub(crate) fn exec_capture(
+    /// The typed operation behind `CAPTURE`: the values the session's program computes at one site, in memory,
+    /// with their provenance. Nothing is written.
+    pub fn capture(&self, spec: &CaptureSpec<'_>) -> Result<Captured, LqlError> {
+        let (mut captured, ()) = self.compute_capture(spec, || Ok(()))?;
+        let npy_sha256 = npy_sha256(DESCR, &captured.shape, &body_bytes(&captured.blocks))
+            .map_err(|e| LqlError::exec("describe the array", e))?;
+        captured.provenance["npy_sha256"] = npy_sha256.into();
+        Ok(captured)
+    }
+
+    /// Compute a capture; the provenance's `statement` and `npy_sha256` are left null. `check_output` runs once the site and layers are checked and before anything is
+    /// computed, where the statement checks its output, so a refusal names the same first problem either way.
+    fn compute_capture<T>(
         &self,
-        request: &CaptureRequest<'_>,
-    ) -> Result<Vec<String>, LqlError> {
+        spec: &CaptureSpec<'_>,
+        check_output: impl FnOnce() -> Result<T, LqlError>,
+    ) -> Result<(Captured, T), LqlError> {
         let (root, runtime, tokenizer, overlay, bos, patch_files) = match &self.backend {
             Backend::Vindex3 {
                 path,
@@ -153,9 +214,9 @@ impl Session {
                     .into(),
             )
         })?;
-        let site = request.site;
-        let layers = sequence::layers(site, request.layers, runtime.plan().layers.len())?;
-        let (npy_path, sidecar_path) = output_paths(STATEMENT, request.output)?;
+        let site = spec.site;
+        let layers = sequence::layers(site, spec.layers, runtime.plan().layers.len())?;
+        let checked_output = check_output()?;
         let (index, index_sha256) = container_index(root)?;
         let start = std::time::Instant::now();
 
@@ -164,10 +225,10 @@ impl Session {
             overlay,
             tokenizer,
             bos,
-            request.prompt,
-            request.continuation,
+            spec.prompt,
+            spec.continuation,
         )?;
-        let positions = sequence::positions(request.positions, &sequence)?;
+        let positions = sequence::positions(spec.positions, &sequence)?;
         let overrides: Option<OperandOverrides> = execution_overrides(runtime, overlay)?;
         let continuation = v3_continuation(runtime)?;
         let (blocks, path, cross_check) = match site {
@@ -200,10 +261,8 @@ impl Session {
                 (blocks, PATH_INFER_PASS, serde_json::Value::Null)
             }
         };
-        let stacked = matches!(request.layers, Some(CaptureLayers::Many(_)));
+        let stacked = matches!(spec.layers, Some(CaptureLayers::Many(_)));
         let shape = checked_shape(&blocks, positions.len(), stacked)?;
-        let npy_sha256 = write_npy(&npy_path, &shape, &blocks)?;
-        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
         let decode = |id: u32| tokenizer.decode(&[id], false).unwrap_or_default();
         let position_records: Vec<serde_json::Value> = positions
@@ -219,9 +278,9 @@ impl Session {
             })
             .collect();
         let executes = provenance::executes(overlay, overrides.is_some());
-        let sidecar = serde_json::json!({
+        let provenance = serde_json::json!({
             "schema": SIDECAR_SCHEMA,
-            "statement": statement_text(request),
+            "statement": serde_json::Value::Null,
             "container": container_path(root),
             "index_sha256": index_sha256,
             "model": index.model,
@@ -231,7 +290,7 @@ impl Session {
             "sequence": {
                 "token_ids": sequence.ids,
                 "prompt_tokens": sequence.prompt_len,
-                "prompt": request.prompt,
+                "prompt": spec.prompt,
                 "prompt_encoding": PROMPT_ENCODING,
                 "bos_token_id": bos,
                 "continuation": sequence.continuation,
@@ -247,26 +306,60 @@ impl Session {
             },
             "dtype": DESCR.label(),
             "shape": shape,
-            "npy_sha256": npy_sha256,
+            // Filled in by whoever holds the array: the file's digest, or the digest of the file it would be.
+            "npy_sha256": serde_json::Value::Null,
             "larql_version": LARQL_VERSION,
         });
-        write_sidecar(&sidecar_path, &sidecar, &[&npy_path])?;
+        let captured = Captured {
+            shape,
+            provenance,
+            summary: CaptureSummary {
+                sequence_len: sequence.ids.len(),
+                prompt_len: sequence.prompt_len,
+                positions,
+                executes,
+                path,
+                start,
+            },
+            blocks,
+        };
+        Ok((captured, checked_output))
+    }
+
+    pub(crate) fn exec_capture(
+        &self,
+        request: &CaptureRequest<'_>,
+    ) -> Result<Vec<String>, LqlError> {
+        let (captured, (npy_path, sidecar_path)) =
+            self.compute_capture(&request.spec, || output_paths(STATEMENT, request.output))?;
+        let Captured {
+            shape,
+            mut provenance,
+            blocks,
+            summary,
+        } = captured;
+        let npy_sha256 = write_npy(&npy_path, &shape, &blocks)?;
+        let elapsed_ms = summary.start.elapsed().as_secs_f64() * 1000.0;
+
+        provenance["statement"] = statement_text(request).into();
+        provenance["npy_sha256"] = npy_sha256.clone().into();
+        write_sidecar(&sidecar_path, &provenance, &[&npy_path])?;
 
         Ok(vec![
             format!(
                 "Captured {} {:?} ({}) to {}",
-                site.name(),
+                request.spec.site.name(),
                 shape,
                 DESCR.label(),
                 npy_path.display()
             ),
             format!(
                 "  sequence: {} token(s), {} from the prompt; positions {}",
-                sequence.ids.len(),
-                sequence.prompt_len,
-                index_list(&positions)
+                summary.sequence_len,
+                summary.prompt_len,
+                index_list(&summary.positions)
             ),
-            format!("  executes: {executes} weights; {path}"),
+            format!("  executes: {} weights; {}", summary.executes, summary.path),
             format!("  sha256:  {npy_sha256}"),
             format!("  sidecar: {}", sidecar_path.display()),
             format!("  {elapsed_ms:.0}ms"),

@@ -9,7 +9,7 @@ surfaces and the checks that decide what a particular artifact can do.
 | `vindex` | Plan/encode/inspect/verify, representation compilation and supported export | No inference session or observation runner |
 | `larql vindex3` | Container operations, execution, representation instruments and observation/intervention | Backend, operator and representation support are explicit |
 | LQL | Parsed queries, lifecycle, mutation, tracing and generation-specific dispatch | Capability profile and artifact capabilities apply after parsing |
-| Python bindings | Native graph, direct index, LQL-session, walk and trace wrappers | LQL sessions bind V2/V3; direct NumPy arrays require V2; no general V3 runtime wrapper |
+| Python bindings | Native graph, direct index, LQL-session, walk and trace wrappers; typed VINDEX3 operations on a session | LQL sessions bind V2/V3; the `VectorIndex` array view requires V2; V3 tensors, captures, predictions and patches go through the same typed operations as their LQL statements |
 | HTTP server | Bind V2/V3 artifacts, generation, query/profile-specific services and distributed execution | Mounted routes and loaded capabilities determine availability |
 | Router | Shard fan-out, grid membership and capability-based API proxying | A partial shard is not a whole-model generation backend |
 | Factory | Recipe validation, identity, estimation and staged build/publish execution | Build preflight refuses unmet numeric/Hub verification requirements; MIRROR/REGISTER are external |
@@ -57,7 +57,12 @@ contracts. Transport options change delivery, not the artifact's semantics.
 
 Python sessions bind V2/V3 through LQL; `session.vindex` lazily opens a V2-only
 array view and explicitly refuses on V3. Rebinding with `USE` invalidates that
-view. See the [source build instructions](../crates/larql-python/README.md).
+view. On a V3 binding the session's typed methods (`tensors`, `tensor`,
+`tokenize`, `decode`, `capture`, `infer`, `generate`, `add_low_rank`,
+`update_weights` and the patch lifecycle) return NumPy arrays and dicts from the
+same Rust operations `SHOW TENSORS`, `EXPORT WEIGHT`, `CAPTURE`, `INFER`,
+`ADD LOW RANK`, `UPDATE WEIGHTS` and the patch statements run. See the
+[source build instructions](../crates/larql-python/README.md).
 
 Factory build preflight refuses required reconstruction, logit-match and Hub
 verification that the driver cannot execute. A checksum pass cannot authorize

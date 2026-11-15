@@ -31,9 +31,14 @@ mod session;
 mod tensors;
 mod weights;
 pub(crate) use capture::{AppliedPatchFile, CaptureRequest};
+pub use capture::{CaptureSpec, Captured};
+pub use export_weight::WeightRead;
 pub(crate) use live::{live_weight_lines, nothing_in_effect_line};
+pub use low_rank::{operand_bits_from_values, operand_origin, OperandValues, StagedLowRank};
+pub use npy::NpyDescr;
 pub(crate) use overrides::*;
 pub(crate) use session::*;
+pub use weights::{EditedElement, StagedWeightDelta};
 
 /// The statements a VINDEX3 binding serves today. Everything else gets
 /// [`unsupported`] — a capability refusal, not a format apology.
@@ -82,6 +87,42 @@ pub(crate) fn unsupported(what: &str) -> LqlError {
     ))
 }
 
+/// One ranked next token.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Prediction {
+    pub token_id: u32,
+    /// The token decoded alone, special tokens kept.
+    pub token: String,
+    /// Its softmax probability over the whole vocabulary.
+    pub probability: f32,
+}
+
+/// What `INFER … TOP <k>` computes on a VINDEX3 binding.
+#[derive(Debug, Clone)]
+pub struct Predictions {
+    /// The prompt as INFER's raw-prompt encoder encodes it.
+    pub prompt_ids: Vec<u32>,
+    /// The top `k` tokens, most probable first.
+    pub top: Vec<Prediction>,
+    /// The session KNN store's answer, where it overrides the model's top token.
+    pub knn_override: Option<larql_inference::KnnOverride>,
+    pub elapsed_ms: f64,
+}
+
+/// What `INFER … GENERATE <n>` computes on a VINDEX3 binding.
+#[derive(Debug, Clone)]
+pub struct Generated {
+    /// The prompt as INFER's raw-prompt encoder encodes it.
+    pub prompt_ids: Vec<u32>,
+    /// The prompt length prefill consumed, in tokens.
+    pub prompt_len: usize,
+    /// The generated ids, in order; a stop token is never included.
+    pub token_ids: Vec<u32>,
+    /// Their text, detokenized as generation streamed it.
+    pub text: String,
+    pub elapsed_ms: f64,
+}
+
 impl Session {
     /// The BOS token id the bound V3 container declares, resolved once
     /// at bind. `None` on any other backend — callers are already in a
@@ -91,6 +132,157 @@ impl Session {
             Backend::Vindex3 { bos_token, .. } => *bos_token,
             _ => None,
         }
+    }
+
+    /// The bound container's runtime, tokenizer, overlay and declared BOS, for a statement that runs the
+    /// program over text: refused without a VINDEX3 binding, or without a tokenizer.
+    fn v3_text_program(
+        &self,
+        statement: &str,
+    ) -> Result<
+        (
+            &V3Runtime,
+            &larql_vindex::tokenizers::Tokenizer,
+            &larql_vindex::format::vindex3::knowledge::KnowledgeOverlay,
+            Option<u32>,
+        ),
+        LqlError,
+    > {
+        let (runtime, tokenizer, overlay, bos_token) = match &self.backend {
+            Backend::Vindex3 {
+                runtime,
+                tokenizer,
+                overlay,
+                bos_token,
+                ..
+            } => (runtime, tokenizer, overlay, *bos_token),
+            Backend::None => return Err(LqlError::NoBackend),
+            _ => {
+                return Err(LqlError::Execution(format!(
+                    "{statement} here runs a VINDEX3 container's program, and this session is not bound to one"
+                )))
+            }
+        };
+        let tokenizer = tokenizer.as_ref().ok_or_else(|| {
+            LqlError::Execution(format!(
+                "{statement} needs a tokenizer and this container carries no tokenizer.json — \
+                 token-id capability only"
+            ))
+        })?;
+        Ok((runtime, tokenizer, overlay, bos_token))
+    }
+
+    /// The token ids `text` encodes to, as the bound VINDEX3 container's statements encode it. With
+    /// `special_tokens`, this is INFER's raw-prompt encoder (the encoding of every `INFER` and `CAPTURE` prompt):
+    /// the tokenizer's own special tokens, plus the container's declared BOS where the tokenizer did not add it;
+    /// no chat template. Without, the text's tokens alone: how `CAPTURE … CONTINUE "<text>"` encodes its text.
+    pub fn tokenize(&self, text: &str, special_tokens: bool) -> Result<Vec<u32>, LqlError> {
+        let (_, tokenizer, _, bos) = self.v3_text_program("TOKENIZE")?;
+        if special_tokens {
+            return Ok(encode_raw_prompt(tokenizer, text, bos)?);
+        }
+        Ok(tokenizer
+            .encode(text, false)
+            .map_err(|e| LqlError::exec("tokenize", e))?
+            .get_ids()
+            .to_vec())
+    }
+
+    /// The text `ids` decode to, special tokens kept: the decoding `CAPTURE` records for each position's token.
+    pub fn decode(&self, ids: &[u32]) -> Result<String, LqlError> {
+        let (_, tokenizer, _, _) = self.v3_text_program("DECODE")?;
+        tokenizer
+            .decode(ids, false)
+            .map_err(|e| LqlError::exec("decode", e))
+    }
+
+    /// The typed operation behind `INFER "<prompt>" TOP <k>` on a VINDEX3 binding: the next-token
+    /// distribution's top `top_k`, priced from the batch-prefill logits, and the KNN override where the
+    /// session's KNN store answers.
+    pub fn predict(&self, prompt: &str, top_k: usize) -> Result<Predictions, LqlError> {
+        let (runtime, tokenizer, overlay, bos_token) = self.v3_text_program("INFER")?;
+        let prompt_ids = encode_raw_prompt(tokenizer, prompt, bos_token)?;
+        let start = std::time::Instant::now();
+        // One observed pass over the same traversal generation
+        // runs: logits for the display, per-layer residual taps
+        // for the KnnStore override (only captured while the
+        // overlay holds entries).
+        let capture_residuals = !overlay.knn_store.is_empty();
+        let mut residuals: Vec<(usize, Vec<f32>)> = Vec::new();
+        let mut sink = |event: larql_inference::vindex3::PlaneEvent| {
+            if capture_residuals {
+                if let larql_inference::vindex3::PlaneEvent::Layer { index, trace } = event {
+                    // Normed FFN inputs — the same tap the
+                    // stored keys were captured from.
+                    if let Some(last) = trace.ffn_input.last() {
+                        residuals.push((index, last.clone()));
+                    }
+                }
+            }
+            Ok(())
+        };
+        // Compose edits and pending stored-weight ops reach
+        // execution through the operand-source seam; without
+        // either this is the plain pass, bit for bit.
+        let overrides = execution_overrides(runtime, overlay)?;
+        let output = match &overrides {
+            Some(overrides) => runtime
+                .execute_streaming_overlaid(
+                    &prompt_ids,
+                    overrides,
+                    &v3_continuation(runtime)?,
+                    &mut sink,
+                )
+                .map_err(|e| LqlError::exec("v3 prefill failed", e))?,
+            None => runtime
+                .execute_streaming(&prompt_ids, &v3_continuation(runtime)?, &mut sink)
+                .map_err(|e| LqlError::exec("v3 prefill failed", e))?,
+        };
+        confirm_patched_weights_ran(overrides.as_ref())?;
+        let logits = output
+            .logits
+            .ok_or_else(|| LqlError::Execution("the component carries no output head".into()))?;
+        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+        let top: Vec<Prediction> = top_k_probs(&logits, top_k)
+            .into_iter()
+            .map(|(token_id, probability)| Prediction {
+                token_id,
+                token: tokenizer.decode(&[token_id], false).unwrap_or_default(),
+                probability,
+            })
+            .collect();
+        // The shared post-logits resolution rule — same
+        // first-stored-layer, fixed-threshold gate V2 runs.
+        let raw: Vec<(String, f64)> = top
+            .iter()
+            .map(|p| (p.token.clone(), p.probability as f64))
+            .collect();
+        let (_, knn_override) =
+            larql_inference::apply_knn_override(raw, &residuals, Some(&overlay.knn_store), top_k);
+        Ok(Predictions {
+            prompt_ids,
+            top,
+            knn_override,
+            elapsed_ms,
+        })
+    }
+
+    /// The typed operation behind `INFER "<prompt>" GENERATE <n>` on a VINDEX3 binding: greedy continuation
+    /// for up to `max_new` tokens, stopping before a built-in stop token.
+    pub fn generate(&self, prompt: &str, max_new: usize) -> Result<Generated, LqlError> {
+        let (runtime, tokenizer, overlay, bos_token) = self.v3_text_program("INFER")?;
+        let prompt_ids = encode_raw_prompt(tokenizer, prompt, bos_token)?;
+        let start = std::time::Instant::now();
+        let (result, text) =
+            generate::greedy_generate(runtime, overlay, tokenizer, &prompt_ids, max_new)?;
+        Ok(Generated {
+            prompt_ids,
+            prompt_len: result.prompt_len,
+            token_ids: result.tokens,
+            text,
+            elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
+        })
     }
 
     /// `INFER` on a V3 binding. Without `GENERATE`: classic single-step
@@ -103,100 +295,17 @@ impl Session {
         top_k: usize,
         generate: Option<u32>,
     ) -> Result<Vec<String>, LqlError> {
-        let Backend::Vindex3 {
-            runtime,
-            tokenizer,
-            overlay,
-            bos_token,
-            ..
-        } = &self.backend
-        else {
-            unreachable!("caller matched the backend");
-        };
-        let tokenizer = tokenizer.as_ref().ok_or_else(|| {
-            LqlError::Execution(
-                "INFER needs a tokenizer and this container carries no tokenizer.json — \
-                 token-id capability only"
-                    .into(),
-            )
-        })?;
-        let prompt_ids = encode_raw_prompt(tokenizer, prompt, *bos_token)?;
-
-        let start = std::time::Instant::now();
-
         match generate {
             None => {
-                // One observed pass over the same traversal generation
-                // runs: logits for the display, per-layer residual taps
-                // for the KnnStore override (only captured while the
-                // overlay holds entries).
-                let capture_residuals = !overlay.knn_store.is_empty();
-                let mut residuals: Vec<(usize, Vec<f32>)> = Vec::new();
-                let mut sink = |event: larql_inference::vindex3::PlaneEvent| {
-                    if capture_residuals {
-                        if let larql_inference::vindex3::PlaneEvent::Layer { index, trace } = event
-                        {
-                            // Normed FFN inputs — the same tap the
-                            // stored keys were captured from.
-                            if let Some(last) = trace.ffn_input.last() {
-                                residuals.push((index, last.clone()));
-                            }
-                        }
-                    }
-                    Ok(())
-                };
-                // Compose edits and pending stored-weight ops reach
-                // execution through the operand-source seam; without
-                // either this is the plain pass, bit for bit.
-                let overrides = execution_overrides(runtime, overlay)?;
-                let output = match &overrides {
-                    Some(overrides) => runtime
-                        .execute_streaming_overlaid(
-                            &prompt_ids,
-                            overrides,
-                            &v3_continuation(runtime)?,
-                            &mut sink,
-                        )
-                        .map_err(|e| LqlError::exec("v3 prefill failed", e))?,
-                    None => runtime
-                        .execute_streaming(&prompt_ids, &v3_continuation(runtime)?, &mut sink)
-                        .map_err(|e| LqlError::exec("v3 prefill failed", e))?,
-                };
-                confirm_patched_weights_ran(overrides.as_ref())?;
-                let logits = output.logits.ok_or_else(|| {
-                    LqlError::Execution("the component carries no output head".into())
-                })?;
-                let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
-
-                let scored = top_k_probs(&logits, top_k);
-                // The shared post-logits resolution rule — same
-                // first-stored-layer, fixed-threshold gate V2 runs.
-                let raw: Vec<(String, f64)> = scored
-                    .iter()
-                    .map(|(id, prob)| {
-                        (
-                            tokenizer.decode(&[*id], false).unwrap_or_default(),
-                            *prob as f64,
-                        )
-                    })
-                    .collect();
-                let (_, knn_override) = larql_inference::apply_knn_override(
-                    raw,
-                    &residuals,
-                    Some(&overlay.knn_store),
-                    top_k,
-                );
-
+                let predicted = self.predict(prompt, top_k)?;
                 let mut out = Vec::new();
                 out.push("Predictions (VINDEX3 program):".into());
-                match &knn_override {
+                match &predicted.knn_override {
                     Some(ovr) => {
-                        let model_top1 = scored.first().map(|(id, prob)| {
-                            (
-                                tokenizer.decode(&[*id], false).unwrap_or_default(),
-                                *prob as f64,
-                            )
-                        });
+                        let model_top1 = predicted
+                            .top
+                            .first()
+                            .map(|p| (p.token.clone(), p.probability as f64));
                         out.push(format!(
                             "   1. {:20} (100.00%, {})",
                             ovr.token,
@@ -205,34 +314,35 @@ impl Session {
                                 model_top1.as_ref(),
                             ),
                         ));
-                        for (i, (id, prob)) in
-                            scored.iter().take(top_k.saturating_sub(1)).enumerate()
+                        for (i, p) in predicted
+                            .top
+                            .iter()
+                            .take(top_k.saturating_sub(1))
+                            .enumerate()
                         {
-                            let token = tokenizer.decode(&[*id], false).unwrap_or_default();
                             out.push(format!(
                                 "  {:2}. {:20} ({:.2}%)  [id {}]",
                                 i + 2,
-                                token,
-                                prob * 100.0,
-                                id,
+                                p.token,
+                                p.probability * 100.0,
+                                p.token_id,
                             ));
                         }
                     }
                     None => {
-                        for (i, (id, prob)) in scored.iter().enumerate() {
-                            let token = tokenizer.decode(&[*id], false).unwrap_or_default();
+                        for (i, p) in predicted.top.iter().enumerate() {
                             out.push(format!(
                                 "  {:2}. {:20} ({:.2}%)  [id {}]",
                                 i + 1,
-                                token,
-                                prob * 100.0,
-                                id,
+                                p.token,
+                                p.probability * 100.0,
+                                p.token_id,
                             ));
                         }
                     }
                 }
-                out.push(format!("  {:.0}ms", elapsed_ms));
-                if knn_override.is_some() {
+                out.push(format!("  {:.0}ms", predicted.elapsed_ms));
+                if predicted.knn_override.is_some() {
                     out.push(
                         "  note: KNN override is a post-logits retrieval sidecar, not an \
                          FFN/residual edit."
@@ -242,25 +352,17 @@ impl Session {
                 Ok(out)
             }
             Some(n) => {
-                let (result, text) = generate::greedy_generate(
-                    runtime,
-                    overlay,
-                    tokenizer,
-                    &prompt_ids,
-                    n as usize,
-                )?;
-                let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
-
-                let ids: Vec<String> = result.tokens.iter().map(u32::to_string).collect();
+                let generated = self.generate(prompt, n as usize)?;
+                let ids: Vec<String> = generated.token_ids.iter().map(u32::to_string).collect();
                 Ok(vec![
-                    format!("Generated ({} tokens, greedy):", result.tokens.len()),
+                    format!("Generated ({} tokens, greedy):", generated.token_ids.len()),
                     format!("  ids:  {}", ids.join(",")),
-                    format!("  text: {}", text),
+                    format!("  text: {}", generated.text),
                     format!(
                         "  prompt {} tokens, continued from position {}",
-                        result.prompt_len, result.prompt_len,
+                        generated.prompt_len, generated.prompt_len,
                     ),
-                    format!("  {:.0}ms", elapsed_ms),
+                    format!("  {:.0}ms", generated.elapsed_ms),
                 ])
             }
         }

@@ -239,3 +239,24 @@ def test_reads_run_alongside_inserts(small_vindex_path):
     assert [vindex.feature_meta(2, i).top_token for i in range(FREE_SLOTS)] == [
         f"m{i}" for i in range(FREE_SLOTS)
     ]
+
+
+@pytest.fixture(scope="module")
+def v3_session(tmp_path_factory):
+    root = tmp_path_factory.mktemp("v3_container")
+    yield larql.session(larql._native._write_test_container(str(root)))
+    shutil.rmtree(root, ignore_errors=True)
+
+
+def _capture_call(session, scale):
+    tokens = [3, 7, 11, 19] * scale
+    return lambda: session.capture(
+        "residual", "The capital of France is", layer=1, continue_tokens=tokens, positions="ALL"
+    )
+
+
+def test_capture_releases_the_gil(v3_session):
+    call = calibrated(lambda scale: _capture_call(v3_session, scale))
+    with Ticker() as ticker:
+        ticks = ticker.ticks_during(call)
+    assert ticks >= MIN_TICKS_WHEN_RELEASED, ticks

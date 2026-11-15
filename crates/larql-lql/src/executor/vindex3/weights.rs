@@ -47,14 +47,37 @@ fn refused(e: impl std::fmt::Display) -> LqlError {
     LqlError::Execution(format!("UPDATE WEIGHTS refused: {e}"))
 }
 
+/// One element a staged weight delta changes: its column, and its BF16 bits before and after.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditedElement {
+    pub col: usize,
+    pub old_bits: u16,
+    pub new_bits: u16,
+}
+
+/// What staging one `UPDATE WEIGHTS` delta did.
+#[derive(Debug, Clone)]
+pub struct StagedWeightDelta {
+    /// The op's digest.
+    pub digest: String,
+    /// Every element it changes, in column order as given.
+    pub elements: Vec<EditedElement>,
+    /// Weight elements pending in this session after staging.
+    pub pending_elements: usize,
+    /// The live-weights report the statement prints after staging.
+    live: Vec<String>,
+}
+
 impl Session {
-    pub(crate) fn exec_update_weights(
+    /// The typed operation behind `UPDATE WEIGHTS`: stage `delta` on `cols` of `row` of `tensor`. Everything
+    /// checkable is checked before anything is staged. A `BEGIN PATCH` recording records it.
+    pub fn stage_weight_delta(
         &mut self,
         tensor: &str,
         row: usize,
         cols: &[usize],
         delta: f32,
-    ) -> Result<Vec<String>, LqlError> {
+    ) -> Result<StagedWeightDelta, LqlError> {
         let path = match &self.backend {
             Backend::Vindex3 { path, .. } => path.clone(),
             Backend::Vindex { .. } => {
@@ -85,13 +108,38 @@ impl Session {
             unreachable!("matched above")
         };
         overlay.stage_weight_op(op.clone()).map_err(refused)?;
-        let total = overlay.weight_edit_count();
+        let pending_elements = overlay.weight_edit_count();
         if let Some(recording) = &mut self.patch_recording {
             recording
                 .operations
                 .push(larql_vindex::PatchOp::WeightDelta(op));
         }
+        let elements = planned
+            .iter()
+            .map(|e| EditedElement {
+                col: e.col,
+                old_bits: e.old_bits,
+                new_bits: e.new_bits,
+            })
+            .collect();
+        let live = self.refresh_live_weights();
+        Ok(StagedWeightDelta {
+            digest,
+            elements,
+            pending_elements,
+            live,
+        })
+    }
 
+    pub(crate) fn exec_update_weights(
+        &mut self,
+        tensor: &str,
+        row: usize,
+        cols: &[usize],
+        delta: f32,
+    ) -> Result<Vec<String>, LqlError> {
+        let staged = self.stage_weight_delta(tensor, row, cols, delta)?;
+        let planned = &staged.elements;
         let mut out = vec![format!(
             "Staged: {} element(s) of {tensor}, row {row}, delta {delta} (BF16, nearest-even of the exact sum)",
             planned.len()
@@ -107,9 +155,10 @@ impl Session {
         if planned.len() > SHOWN_ELEMENTS {
             out.push(format!("  … and {} more", planned.len() - SHOWN_ELEMENTS));
         }
-        out.push(format!("  op digest {}", &digest[..16]));
+        out.push(format!("  op digest {}", &staged.digest[..16]));
         out.push(format!(
-            "  {total} weight element(s) pending in this session"
+            "  {} weight element(s) pending in this session",
+            staged.pending_elements
         ));
         match &self.patch_recording {
             Some(r) if !r.path.is_empty() => out.push(format!(
@@ -120,10 +169,12 @@ impl Session {
             Some(_) => out.push("  recorded into the anonymous patch".into()),
             None => {}
         }
-        out.extend(self.refresh_live_weights());
+        out.extend(staged.live);
         Ok(out)
     }
+}
 
+impl Session {
     /// `COMPILE CURRENT INTO VINDEX` when weight edits are pending: write a new
     /// container with every pending edit applied, or nothing.
     pub(crate) fn exec_compile_weights(&mut self, output: &str) -> Result<Vec<String>, LqlError> {

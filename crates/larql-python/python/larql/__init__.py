@@ -11,7 +11,14 @@ Two interfaces:
         session = larql.session("gemma3-4b.vindex")
         session.query("DESCRIBE 'France'")
         session.vindex.gate_vectors(layer=26)
+
+    - Typed VINDEX3 operations on a session, NumPy in and out:
+        s = larql.session("model.vindex3")
+        s.capture("logits", "The capital of France is").array
+        s.tensor("target.embedding@BF16::weight", rows=[0]).provenance
 """
+
+from contextlib import contextmanager
 
 from larql._native import (
     # Vindex types
@@ -21,6 +28,7 @@ from larql._native import (
     DescribeEdge,
     Relation,
     Session,
+    Readout,
     WalkModel,
 
     # Graph types
@@ -83,6 +91,26 @@ def session(path: str) -> "Session":
     return create_session(path)
 
 
+@contextmanager
+def recording(session: "Session", path: str):
+    """Record the edits staged inside the block into the patch file `path`.
+
+    Opens the recording with `session.begin_patch(path)` and, when the block
+    ends normally, writes it with `session.save_patch()`, whose result dict is
+    stored on the yielded object's `saved` key. If the block raises, nothing is
+    saved and the recording stays open, so the edits staged so far are kept.
+
+    Example:
+        with larql.recording(s, "edit.vlp") as rec:
+            s.add_low_rank(tensor, a, b, columns, numerics="f64-seq-rne1/v1")
+        rec["saved"]["path"]
+    """
+    session.begin_patch(path)
+    rec = {"path": path, "saved": None}
+    yield rec
+    rec["saved"] = session.save_patch()
+
+
 # MLX integration (lazy import — only loaded when used)
 try:
     from larql import mlx
@@ -119,6 +147,8 @@ __all__ = [
     "DescribeEdge",
     "Relation",
     "Session",
+    "Readout",
+    "recording",
 
     # Graph types
     "Edge",
