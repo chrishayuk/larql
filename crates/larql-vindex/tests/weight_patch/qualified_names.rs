@@ -142,3 +142,42 @@ fn a_compile_of_a_qualified_embedding_edit_records_the_bare_name_in_its_ledger()
     assert_eq!(ledger.targets[0].tensor, AMBIGUOUS);
     assert_eq!(ledger.targets[0].representation, EMBEDDING);
 }
+
+#[test]
+fn a_qualified_embedding_edit_changes_only_that_tensor_and_never_the_final_norm_it_shares_a_name_with(
+) {
+    let src = source_with_pack();
+    let container = src.dir.path().join(BF16_ONLY);
+    let out = src.out("embedding-only.vindex3");
+    let patch = WeightPatch {
+        tensor: embedding_name(),
+        edits: vec![WeightEdit {
+            row: 3,
+            col: 4,
+            delta: 0.5,
+        }],
+    };
+    apply_weight_patch(&container, &patch, &out).unwrap();
+    let before = index_of(&container);
+    let after = index_of(&out);
+    for (id, entry) in &before.representations {
+        let same = std::fs::read(container.join(&entry.segment)).unwrap()
+            == std::fs::read(out.join(&after.representations[id].segment)).unwrap();
+        assert_eq!(
+            same,
+            id != EMBEDDING,
+            "{id}: only the embedding's segment may change"
+        );
+    }
+    let base = tensor_bytes(&container, EMBEDDING, AMBIGUOUS);
+    let edited = tensor_bytes(&out, EMBEDDING, AMBIGUOUS);
+    let cols = embedding_shape(&container)[1];
+    let changed: Vec<usize> = (0..base.len() / 2)
+        .filter(|&i| base[2 * i..2 * i + 2] != edited[2 * i..2 * i + 2])
+        .collect();
+    assert_eq!(
+        changed,
+        vec![3 * cols + 4],
+        "exactly the one edited element changes"
+    );
+}
