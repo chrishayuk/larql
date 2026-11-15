@@ -144,6 +144,25 @@ Worker accounting is returned in `x-larql-expert-rows-accounting` only when
 the request carries the profile header; it is never part of the numerical
 frame.
 
+A profiled request also gets the worker's own timing back in
+`x-larql-expert-profile`, the header and fields the single-row frame uses:
+decode, queue, execution, time inside the expert transforms, encode, and the
+whole handler. The client sends the profile header only while a profile
+capture is active and then records, per request, the round trip, the request
+and response bytes, the worker timing and the round trip less the worker's
+handler time. That remainder is serialisation, HTTP, scheduling and the link
+together; it is not network latency alone. Nor is it the whole link: the
+worker's handler starts when the request's headers have arrived and before
+its body has been read, so the time to receive the request body is inside
+the worker's decode and handler times, not in the remainder. The single-row
+frame has the same convention; it matters more here because the frames are
+larger. Execution and expert-transform times are unaffected. The frame bytes
+are identical with and without the header.
+
+A failed profiled request still leaves one record, marked incomplete, and a
+worker that returns no timing leaves a record with no worker fields: a
+reader must treat those fields as absent, not as zero.
+
 **`transform_calls` equals `pairs`.** The expert kernel takes one row at a
 time, so grouping changes the order experts are visited in and not how often
 their weights are read. `distinct_experts < pairs` shows that reuse is

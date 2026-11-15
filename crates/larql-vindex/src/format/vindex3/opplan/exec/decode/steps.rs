@@ -6,9 +6,10 @@ use super::super::continuation_registry::BoxedContinuation;
 use super::super::hyper_connection::Mutation;
 use super::super::intervene::{InterventionPlan, InterventionStepOutput};
 use super::super::intervene_heads::HeadInterventionPlan;
-use super::super::kv::KvState;
+use super::super::kv::{settle_block, unusable, KvState};
 use super::super::observe::{NoopObserver, StepObserver};
 use super::super::operands::OperandSource;
+use super::super::position_logits::{row_logits, same_as_exit};
 use super::super::prepared::{ExecutionSlice, PreparedOperands};
 use super::super::{Plane, PlaneEvent};
 use crate::error::VindexError;
@@ -109,6 +110,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
             backend,
             ops,
             kv,
+            fault: None,
         })
     }
 
@@ -153,6 +155,13 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
     /// decode-vs-batch parity tests are the guarantee.
     pub fn step(&mut self, token: u32) -> Result<StepOutput, VindexError> {
         self.step_observed(token, &mut NoopObserver)
+    }
+
+    /// Refuse a continuation a failed advance left unusable: declared by
+    /// this session, or recorded on the provider by an earlier one.
+    pub(super) fn usable(&self) -> Result<(), VindexError> {
+        let reason = self.fault.as_deref().or(self.kv.state().invalidated());
+        reason.map_or(Ok(()), |reason| Err(unusable(reason)))
     }
 
     /// Consume one ready-to-concatenate embedding row at the next absolute
@@ -204,53 +213,55 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
     /// logits need the streaming sink and are owed to CPU-7D, which is the
     /// first thing that actually needs them.
     pub fn step_many(&mut self, tokens: &[u32]) -> Result<StepOutput, VindexError> {
-        if tokens.is_empty() {
-            return Err(VindexError::Parse(
-                "step_many advances a continuation through supplied tokens and was given none;                  an empty advance is a caller bug, not a no-op"
-                    .to_string(),
-            ));
-        }
+        self.admit_block("step_many", tokens)?;
         let Self {
             plan,
             backend,
             ops,
             kv,
+            fault,
         } = self;
-        let ops = ops.get();
-        let hidden = ops.hidden();
-        let embed_table = ops.embed_table().ok_or_else(|| {
-            VindexError::Parse(
-                "this prepared image carries no embedding table — a layer-range slice consumes                  hidden states, not token ids"
-                    .to_string(),
-            )
-        })?;
-        // Checked for EVERY token before any state moves. A bad id found
-        // half way through would leave the continuation advanced by some
-        // of the batch, which is a corrupted session rather than a failed
-        // call.
-        for token in tokens {
-            if (*token as usize + 1) * hidden > embed_table.len() {
-                return Err(VindexError::Parse(format!(
-                    "token id {token} is outside the embedding table",
-                )));
-            }
-        }
         let state = kv.state_mut();
         let base = state.position();
-        let out = super::super::traverse(
+        let outcome = super::super::traverse(
             plan,
-            ops,
+            ops.get(),
             tokens,
             *backend,
             None,
             &mut |_| Ok(()),
-            Some(state),
+            Some(&mut *state),
             Mutation::None,
-        )?;
-        // The provider is the position authority, and the traversal does
-        // not move it — the same contract `prefill_prepared` keeps.
-        state.set_position(base + tokens.len());
-        Ok(StepOutput { logits: out.logits })
+        );
+        let outcome = outcome.map(|out| StepOutput { logits: out.logits });
+        settle_block(state, base, tokens.len(), fault, outcome)
+    }
+
+    /// What every block step checks before any state moves: the session is
+    /// usable, the block is not empty, and EVERY token is inside the
+    /// embedding table. A bad id found half way through would otherwise be
+    /// found with part of the block already run.
+    fn admit_block(&self, step: &str, tokens: &[u32]) -> Result<(), VindexError> {
+        self.usable()?;
+        if tokens.is_empty() {
+            return Err(VindexError::Parse(format!(
+                "{step} advances a continuation through supplied tokens and was given none; \
+                 an empty advance is a caller bug, not a no-op"
+            )));
+        }
+        let ops = self.ops.get();
+        let embed_table = ops
+            .embed_table()
+            .ok_or_else(|| VindexError::Parse(NO_EMBED_TABLE.into()))?;
+        let bad = tokens
+            .iter()
+            .find(|token| (**token as usize + 1) * ops.hidden() > embed_table.len());
+        if let Some(token) = bad {
+            return Err(VindexError::Parse(format!(
+                "token id {token} is outside the embedding table",
+            )));
+        }
+        Ok(())
     }
 
     /// [`step_many`](Self::step_many), returning the logits of EVERY
@@ -268,22 +279,12 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
     /// over more than one row per position, and is refused here, before
     /// any state moves, rather than given a per-position exit this method
     /// has no gate for.
+    ///
+    /// A failure after the traversal has started has already changed the
+    /// state. It is put back, or the continuation is declared unusable:
+    /// the same boundary `step_many` keeps.
     pub fn step_many_logits(&mut self, tokens: &[u32]) -> Result<Vec<Vec<f32>>, VindexError> {
-        if tokens.is_empty() {
-            return Err(VindexError::Parse(
-                "step_many_logits advances a continuation through supplied tokens and was \
-                 given none; an empty advance is a caller bug, not a no-op"
-                    .to_string(),
-            ));
-        }
-        let Self {
-            plan,
-            backend,
-            ops,
-            kv,
-        } = self;
-        let ops = ops.get();
-        let hidden = ops.hidden();
+        let ops = self.ops.get();
         if ops.hyper_connection().is_some() || ops.carries_attention_residual() {
             return Err(VindexError::Parse(
                 "every-position logits are implemented for a single-stream residual; this \
@@ -298,64 +299,18 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                     .to_string(),
             ));
         }
-        let embed_table = ops
-            .embed_table()
-            .ok_or_else(|| VindexError::Parse(NO_EMBED_TABLE.into()))?;
-        // Checked for EVERY token before any state moves, as `step_many` does.
-        for token in tokens {
-            if (*token as usize + 1) * hidden > embed_table.len() {
-                return Err(VindexError::Parse(format!(
-                    "token id {token} is outside the embedding table",
-                )));
-            }
-        }
+        self.admit_block("step_many_logits", tokens)?;
+        let Self {
+            plan,
+            backend,
+            ops,
+            kv,
+            fault,
+        } = self;
         let state = kv.state_mut();
         let base = state.position();
-        // Every position's residual as it leaves the stack: the plane after
-        // the last executed layer, or the embedded plane if none executed.
-        let mut exit_rows: Option<Vec<Vec<f32>>> = None;
-        let out = super::super::traverse(
-            plan,
-            ops,
-            tokens,
-            *backend,
-            None,
-            &mut |event| {
-                match event {
-                    PlaneEvent::Embedded(Plane::Rows(rows)) => exit_rows = Some(rows.clone()),
-                    PlaneEvent::Layer { trace, .. } => {
-                        if let Plane::Rows(rows) = trace.post_layer {
-                            exit_rows = Some(rows);
-                        }
-                    }
-                    _ => {}
-                }
-                Ok(())
-            },
-            Some(state),
-            Mutation::None,
-        )?;
-        let reported = exit_rows.filter(|rows| rows.len() == tokens.len());
-        let rows = reported.ok_or_else(|| VindexError::Parse(NO_EXIT_ROWS.into()))?;
-        let mut logits = Vec::with_capacity(rows.len());
-        for row in &rows {
-            let final_hidden = match ops.final_norm() {
-                Some(norm) => norm.apply(*backend, row),
-                None => row.clone(),
-            };
-            let row_logits = ops.head_over_normed(*backend, &final_hidden)?;
-            logits.push(row_logits.ok_or_else(|| VindexError::Parse(NO_HEAD_LOGITS.into()))?);
-        }
-        // The last row went through the same exit the traversal ran itself.
-        // If the two ever disagree, the per-position exit is not the exit.
-        let agrees = out.logits.as_deref().map(bits) == logits.last().map(|row| bits(row));
-        agrees
-            .then_some(())
-            .ok_or_else(|| VindexError::Parse(EXIT_DISAGREES.into()))?;
-        // The provider is the position authority, and the traversal does
-        // not move it — the same contract `step_many` keeps.
-        state.set_position(base + tokens.len());
-        Ok(logits)
+        let outcome = block_logits(plan, ops.get(), tokens, *backend, &mut *state);
+        settle_block(state, base, tokens.len(), fault, outcome)
     }
 
     /// [`step`](Self::step) with a subscriber on the step's operation
@@ -562,11 +517,49 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
 const NO_EMBED_TABLE: &str = "this prepared image carries no embedding table — a layer-range \
      slice consumes hidden states, not token ids";
 const NO_EXIT_ROWS: &str = "the traversal did not report one final residual per position";
-const NO_HEAD_LOGITS: &str = "the output head produced no logits";
-const EXIT_DISAGREES: &str =
-    "the per-position exit disagrees with the traversal's own exit for the last position";
 
-/// A row's exact bit pattern, for comparisons that must not tolerate drift.
-fn bits(row: &[f32]) -> Vec<u32> {
-    row.iter().map(|value| value.to_bits()).collect()
+/// One traversal over `tokens` on top of `state`, and the exit applied to
+/// every position's own final residual. Changes `state` and does NOT move
+/// its position: the caller settles the outcome.
+fn block_logits<B: PlanBackend + ?Sized>(
+    plan: &ComponentOpPlan,
+    ops: &PreparedOperands,
+    tokens: &[u32],
+    backend: &B,
+    state: &mut dyn KvState,
+) -> Result<Vec<Vec<f32>>, VindexError> {
+    // Every position's residual as it leaves the stack: the plane after
+    // the last executed layer, or the embedded plane if none executed.
+    let mut exit_rows: Option<Vec<Vec<f32>>> = None;
+    let out = super::super::traverse(
+        plan,
+        ops,
+        tokens,
+        backend,
+        None,
+        &mut |event| {
+            match event {
+                PlaneEvent::Embedded(Plane::Rows(rows)) => exit_rows = Some(rows.clone()),
+                PlaneEvent::Layer { trace, .. } => {
+                    if let Plane::Rows(rows) = trace.post_layer {
+                        exit_rows = Some(rows);
+                    }
+                }
+                _ => {}
+            }
+            Ok(())
+        },
+        Some(state),
+        Mutation::None,
+    )?;
+    let reported = exit_rows.filter(|rows| rows.len() == tokens.len());
+    let rows = reported.ok_or_else(|| VindexError::Parse(NO_EXIT_ROWS.into()))?;
+    let logits = rows
+        .iter()
+        .map(|row| row_logits(ops, backend, row))
+        .collect::<Result<Vec<_>, _>>()?;
+    // The last row went through the same exit the traversal ran itself.
+    // If the two ever disagree, the per-position exit is not the exit.
+    same_as_exit(&logits[logits.len() - 1], out.logits.as_deref())?;
+    Ok(logits)
 }

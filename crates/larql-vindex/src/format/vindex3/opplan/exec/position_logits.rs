@@ -99,12 +99,7 @@ pub fn execute_slice_position_logits_with_rope_angles<'s, B: PlanBackend + ?Size
     let rows = exit_rows(exit_plane)?;
     let mut logits = Vec::with_capacity(positions.len());
     for &p in positions {
-        let hidden = match ops.final_norm() {
-            Some(norm) => norm.apply(backend, &rows[p]),
-            None => rows[p].clone(),
-        };
-        let row = ops.head_over_normed(backend, &hidden)?;
-        let row = row.ok_or_else(|| VindexError::Parse(NO_HEAD.into()))?;
+        let row = row_logits(&ops, backend, &rows[p])?;
         if p + 1 == tokens.len() {
             same_as_exit(&row, out.logits.as_deref())?;
         }
@@ -130,10 +125,35 @@ pub(super) fn exit_rows(plane: Option<Plane>) -> Result<Vec<Vec<f32>>, VindexErr
     }
 }
 
+/// The exit for ONE position: the final norm, then the head over the
+/// normed row. The single definition of the per-position exit, shared by
+/// the fresh-prefill form here and the cached block step
+/// (`DecodeSession::step_many_logits`), so the two cannot drift apart.
+pub(super) fn row_logits<B: PlanBackend + ?Sized>(
+    ops: &PreparedOperands,
+    backend: &B,
+    row: &[f32],
+) -> Result<Vec<f32>, VindexError> {
+    let hidden = match ops.final_norm() {
+        Some(norm) => norm.apply(backend, row),
+        None => row.to_vec(),
+    };
+    let logits = ops.head_over_normed(backend, &hidden)?;
+    logits.ok_or_else(|| VindexError::Parse(NO_HEAD.into()))
+}
+
 /// The fail-closed self-check: the last position's row is the traversal's
-/// own exit, bit for bit.
+/// own exit, bit for bit. Compared as bit patterns, so `-0.0` is not `0.0`
+/// and an identical non-finite value is still the same exit.
 pub(super) fn same_as_exit(row: &[f32], exit: Option<&[f32]>) -> Result<(), VindexError> {
-    match exit == Some(row) {
+    let same = exit.is_some_and(|exit| {
+        exit.len() == row.len()
+            && exit
+                .iter()
+                .zip(row)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+    });
+    match same {
         true => Ok(()),
         false => Err(VindexError::Parse(
             "the last position's logits differ from the traversal's own exit — the \

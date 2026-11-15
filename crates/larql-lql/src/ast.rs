@@ -244,6 +244,10 @@ pub enum Statement {
         contract: String,
         base: String,
     },
+    /// `DISCARD WEIGHT EDITS`: drop every stored-weight op staged directly in the session (`UPDATE WEIGHTS`,
+    /// `REMOVE DIRECTION`, `ADD LOW RANK`), and the copies an open `BEGIN PATCH` recording holds. Ops carried by
+    /// an applied patch are that patch's: `REMOVE PATCH` removes them. Nothing is written.
+    DiscardWeightEdits,
     Stats {
         vindex: Option<String>,
     },
@@ -284,6 +288,13 @@ pub enum Statement {
         layers: Option<Range>,
         positions: Option<TracePositionMode>,
         save: Option<String>,
+    },
+
+    // ── Help ──
+    /// `HELP;` prints every statement's syntax; `HELP <topic>;` prints one page of the help catalogue
+    /// (`crate::help`). `topic` is the words after `HELP`, as written. Read-only, and it needs no backend.
+    Help {
+        topic: Option<String>,
     },
 
     // ── Pipe ──
@@ -328,6 +339,7 @@ impl Statement {
             Statement::VerifyOperator { .. } => "VERIFY OPERATOR",
             Statement::VerifyPatch { .. } => "VERIFY PATCH",
             Statement::VerifyLedger { .. } => "VERIFY LEDGER",
+            Statement::DiscardWeightEdits => "DISCARD WEIGHT EDITS",
             Statement::Stats { .. } => "STATS",
             Statement::ShowCompactStatus => "SHOW COMPACT STATUS",
             Statement::CompactInto { .. } => "COMPACT INTO VINDEX",
@@ -339,6 +351,7 @@ impl Statement {
             Statement::ShowPatches => "SHOW PATCHES",
             Statement::RemovePatch { .. } => "REMOVE PATCH",
             Statement::Trace { .. } => "TRACE",
+            Statement::Help { .. } => "HELP",
             Statement::Pipe { .. } => "|> (pipe)",
         }
     }

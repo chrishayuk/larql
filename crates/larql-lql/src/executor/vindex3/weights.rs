@@ -165,6 +165,45 @@ impl Session {
         ])
     }
 
+    /// `DISCARD WEIGHT EDITS`: drop every stored-weight op staged directly in this session, and the copies an
+    /// open recording holds, so a mis-staged edit can be withdrawn without re-binding the container. Ops an
+    /// applied patch carries stay with that patch.
+    pub(crate) fn exec_discard_weight_edits(&mut self) -> Result<Vec<String>, LqlError> {
+        let overlay = match &mut self.backend {
+            Backend::Vindex3 { overlay, .. } => overlay,
+            Backend::Vindex { .. } => return Err(LqlError::Execution(
+                "DISCARD WEIGHT EDITS drops stored-weight edits staged on a VINDEX3 container; \
+                     this session is bound to a VINDEX2 vindex"
+                    .into(),
+            )),
+            _ => return Err(LqlError::NoBackend),
+        };
+        let discarded = overlay.discard_session_weight_ops();
+        let from_patches = overlay.weight_ops().len();
+        let mut unrecorded = 0;
+        if let Some(recording) = &mut self.patch_recording {
+            let before = recording.operations.len();
+            recording.operations.retain(|op| op.weight_op().is_none());
+            unrecorded = before - recording.operations.len();
+        }
+        let mut out = vec![if discarded == 0 {
+            "Nothing to discard: no stored-weight op is staged in this session".to_string()
+        } else {
+            format!("Discarded: {discarded} stored-weight op(s) staged in this session")
+        }];
+        if unrecorded > 0 {
+            out.push(format!(
+                "  {unrecorded} op(s) removed from the open patch recording"
+            ));
+        }
+        if from_patches > 0 {
+            out.push(format!(
+                "  {from_patches} stored-weight op(s) from applied patches remain pending; REMOVE PATCH removes them"
+            ));
+        }
+        Ok(out)
+    }
+
     /// `REMOVE DIRECTION`: stage a structured `remove_direction` on the bound container. Everything
     /// checkable is checked before anything is staged: the operand file, the profile, the tensor, the
     /// columns, and that the op, resolved by the frozen interpreter, edits at least one element.

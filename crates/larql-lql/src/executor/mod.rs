@@ -427,6 +427,7 @@ impl Session {
                 columns,
                 numerics,
             } => self.exec_add_low_rank(operands, tensor, columns, numerics),
+            Statement::DiscardWeightEdits => self.exec_discard_weight_edits(),
             Statement::Merge {
                 source,
                 target,
@@ -444,6 +445,7 @@ impl Session {
             Statement::ApplyPatch { path } => self.exec_apply_patch(path),
             Statement::ShowPatches => self.exec_show_patches(),
             Statement::RemovePatch { path } => self.exec_remove_patch(path),
+            Statement::Help { topic } => crate::help::help_lines(topic.as_deref()),
             // ── Trace commands ──
             Statement::Trace {
                 prompt,
@@ -503,6 +505,7 @@ impl Session {
             Statement::ApplyPatch { path } => self.remote_apply_patch(path),
             Statement::ShowPatches => self.remote_show_patches(),
             Statement::RemovePatch { path } => self.remote_remove_patch(path),
+            Statement::Help { topic } => crate::help::help_lines(topic.as_deref()),
             Statement::Pipe { left, right } => {
                 let mut out = self.execute(left)?;
                 out.extend(self.execute(right)?);

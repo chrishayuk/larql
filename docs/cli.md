@@ -72,8 +72,8 @@ VINDEX3 container verbs.
 
 | Command | Description |
 |---|---|
-| `repl` | Launch the LQL interactive REPL. |
-| `lql '<stmt>'` | Execute a one-shot LQL statement. |
+| `repl` | Launch the LQL interactive REPL (type `help`; it always exits 0). |
+| `lql '<stmts>'` | Run one or more `;`-separated LQL statements in one process and one session. Exit 0: all succeeded; 1: any failed; 2: a verification contract was violated and nothing failed. `larql lql 'HELP;'` lists the statements. |
 
 ## Research tooling and the `research` feature
 

@@ -57,6 +57,7 @@ const CASES: &[(&str, &str)] = &[
         "VERIFY LEDGER 'm' USING CONTRACT 'c' FROM 'b';",
         "VERIFY LEDGER",
     ),
+    ("DISCARD WEIGHT EDITS;", "DISCARD WEIGHT EDITS"),
     ("STATS;", "STATS"),
     ("SHOW COMPACT STATUS;", "SHOW COMPACT STATUS"),
     (
@@ -71,6 +72,7 @@ const CASES: &[(&str, &str)] = &[
     ("SHOW PATCHES;", "SHOW PATCHES"),
     (r#"REMOVE PATCH "p.vlp";"#, "REMOVE PATCH"),
     (r#"TRACE "[1] [2]" FOR "[5]";"#, "TRACE"),
+    ("HELP REMOVE DIRECTION;", "HELP"),
     ("SHOW MODELS |> SHOW LAYERS;", "|> (pipe)"),
 ];
 

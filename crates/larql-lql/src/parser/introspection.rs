@@ -119,7 +119,7 @@ impl Parser {
             }
             Token::Keyword(Keyword::Compact) => {
                 self.advance();
-                self.expect_keyword(Keyword::Status)?;
+                self.expect_keyword_after("SHOW", Keyword::Status)?;
                 self.eat_semicolon();
                 Ok(Statement::ShowCompactStatus)
             }
@@ -145,11 +145,7 @@ impl Parser {
                 self.eat_semicolon();
                 Ok(Statement::ShowAuthority)
             }
-            _ => Err(ParseError(format!(
-                "expected RELATIONS, LAYERS, FEATURES, ENTITIES, MODELS, PATCHES, COMPACT, \
-                 COMPONENTS, REPRESENTATIONS, PROVENANCE, or AUTHORITY after SHOW, got {:?}",
-                self.peek()
-            ))),
+            _ => Err(self.expected_after("SHOW")),
         }
     }
 
@@ -221,7 +217,9 @@ impl Parser {
                 base,
             });
         }
-        self.expect_word("REPRESENTATION")?;
+        if self.expect_word("REPRESENTATION").is_err() {
+            return Err(self.expected_after("VERIFY"));
+        }
         let container = self.expect_string()?;
         self.expect_word("USING")?;
         self.expect_word("CONTRACT")?;

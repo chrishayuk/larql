@@ -96,8 +96,11 @@ fn grouped_rows_are_the_single_row_transform_and_are_counted_as_grouping_only() 
                 // One transform per pair: grouping reorders the kernel's
                 // calls, it does not remove any.
                 transform_calls: pairs,
+                transform_ns: accounting.transform_ns,
             }
         );
+        // The transforms were timed because accounting was asked for.
+        assert!(accounting.transform_ns > 0);
         if count == rows.len() {
             assert!(accounting.distinct_experts < accounting.pairs);
         }

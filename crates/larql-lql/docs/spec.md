@@ -99,6 +99,23 @@ LQL is a query language for neural network weights treated as a graph database. 
 > Planned (not yet implemented): `TRACE ... DIFF`, boundary stores, tiered
 > context stores. See §11.
 
+### 2.8 Stored-weight edits and verification (VINDEX3)
+
+| Statement | Purpose |
+|---|---|
+| `UPDATE WEIGHTS` | Stage a delta on named elements of one stored matrix (§3.5.1) |
+| `REMOVE DIRECTION` | Stage the removal of a direction from chosen columns (§3.5.2) |
+| `ADD LOW RANK` | Stage a low-rank update of chosen columns (§3.5.3) |
+| `DISCARD WEIGHT EDITS` | Drop the stored-weight ops staged in the session (§3.5.4) |
+| `VERIFY REPRESENTATION / OPERATOR / PATCH / LEDGER` | Ask an external verifier about a container (§3.9) |
+
+### 2.9 Help
+
+| Statement | Purpose |
+|---|---|
+| `HELP` | Every statement's syntax, grouped in the order an editing loop uses them |
+| `HELP <topic>` | One page: a statement, a group of statements, or the process model (§3.10) |
+
 ---
 
 ## 3. Grammar
@@ -755,6 +772,9 @@ COMPILE {CURRENT | <vindex_path>} INTO VINDEX <output_path>
 -- place: a refused or failed statement leaves <output_path> as it was,
 -- and removes the parents it created (the stored-weight COMPILE below
 -- may leave created parent directories behind).
+-- The stored-weight COMPILE (§3.5.1) is stricter about one case: its
+-- <output_path> must be ABSENT. An existing empty directory is refused
+-- too (`output … already exists; containers are immutable`).
 -- EXTRACT … INTO checks its destination by the same rule, before any
 -- model bytes move, but writes in place: an EXTRACT that fails part-way
 -- leaves a partial directory, which a re-run refuses as non-empty (a
@@ -824,10 +844,19 @@ not see it.
   added as real numbers and rounded **once** to the nearest bfloat16, ties to even. The delta applies to
   the value in the bound container, so staging never accumulates. The delta's exact `f32` bits are what
   is recorded; the lexer reads the number as a double and narrows it.
-- **Bounded and restrictive.** One tensor per compile, at most 4096 elements, finite deltas, no
-  duplicate elements, no edits that overflow bfloat16. Anything else is refused by name, at staging, and
-  stages nothing. The source must be a canonical container with no alternate variants and no prior
-  weight-patch ledger.
+- **Bounded and restrictive.** One compile takes edits to several tensors, all held by one canonical
+  representation, and at most 262,144 (2^18, `MAX_PATCH_ELEMENTS`) listed elements across them. Deltas are
+  finite, no element is edited twice, and no edit overflows bfloat16. Anything else is refused by name, at
+  staging, and stages nothing. A delta of `0` is not refused: it stages, compiles and changes no bits.
+- **The source.** A canonical container with no alternate variants and no weight-patch ledger. A container
+  that a stored-weight `COMPILE` wrote carries a ledger and **cannot be edited again**: `UPDATE WEIGHTS` on
+  it is refused at staging, and a `REMOVE DIRECTION` or `ADD LOW RANK` staged on it is refused at
+  `COMPILE` (`the source already carries a weight-patch ledger`). Stage every op on the unedited base and
+  compile once.
+- **Staged ops stay staged.** `COMPILE` leaves the session bound to the source with its ops still pending:
+  a second `COMPILE` writes the same edit to a second path, and `INFER` after `COMPILE` still runs the
+  unedited weights. `USE "<out>"` binds the compiled container. A second `USE` of anything drops every
+  staged op.
 - **Conflicts.** Two edits to one element, whether staged directly or carried by applied patches, are
   refused. Edits are not composed.
 - **Not combined with knowledge edits.** `COMPILE` refuses to write stored-weight edits and
@@ -851,10 +880,21 @@ casual edits; it is not a signature. A VINDEX2 session refuses a patch that carr
 The edited canonical segment is rewritten; every other segment is hard-linked. Derived representations of
 that object (for example the Q8_0 pack) are re-derived from the **edited** weights by the compiler that
 made them, so a derived pack never describes weights the container does not hold. The result is
-inspected, then renamed into place: complete, or nothing. The `model` identity is unchanged.
+inspected, then renamed into place: complete, or nothing. The output path must not exist: this compile
+refuses an existing directory even when it is empty. The `model` identity is unchanged.
 `weight_patches.json` (named by the index's `weight_patches` field) records the source, every edit with
 its exact old and new bits, the digests of the edited canonical and re-derived representations, and the
 digests of the patch operations the edit came from.
+
+The ledger's schema follows the kinds of op compiled:
+
+| Ops in the compile | Schema | How a tensor is recorded |
+|---|---|---|
+| `UPDATE WEIGHTS` only | `weight-patches/v2` | By element: old and new bits |
+| A `REMOVE DIRECTION`, and no `ADD LOW RANK` | `weight-patches/v3` | By element, with the exact result bits |
+| Any `ADD LOW RANK` | `weight-patches/v4` | A tensor an `ADD LOW RANK` edits is recorded by its operations (with any `REMOVE DIRECTION` on it); other tensors keep the element form |
+
+A `COMPILE` with no pending edit writes a clean container with no ledger.
 
 `inspect_container` checks the ledger against the catalogue and the stored bytes at the edited elements.
 That is **consistency of the description**, not a verdict on the patch. Whether the container implements
@@ -881,11 +921,15 @@ exactly.
 - **Scale** is the literal's exact f64; an integer beyond 2^53 is refused rather than rounded. Negative
   scales are allowed.
 - **Numerics** is a profile id, `f64-seq-rne1/v1` or `f64-seq-rne2/v1`. The f32 working profile is refused.
+- **Columns** are a non-empty, strictly increasing list of column indices inside the tensor.
 - **Conflicts are by declared footprint, not by what changes after rounding.** Two structured ops sharing a
   column are refused. A structured op and an `UPDATE WEIGHTS` delta on one tensor are refused as mixed forms,
-  whichever came first. An op that changes nothing is refused at resolve and compile.
-- **Ledger.** A compile with any structured op writes `weight-patches/v3` with the exact result bits. A
-  delta-only compile still writes `weight-patches/v2`, unchanged.
+  whichever came first. An op that changes nothing (for example `SCALE 0`) is refused at resolve and compile.
+- **Ledger.** A compile with a `REMOVE DIRECTION` and no `ADD LOW RANK` writes `weight-patches/v3` with the
+  exact result bits; with any `ADD LOW RANK` it writes `weight-patches/v4` (§3.5.3). A delta-only compile
+  writes `weight-patches/v2`. The changed elements count against `MAX_PATCH_ELEMENTS` unless the tensor is
+  recorded by its operations.
+- **On a container that already carries a ledger** the op stages and `COMPILE` then refuses (§3.5.1).
 - **Verification.** The ledger and `check_ledger` establish consistency only. Whether the compiled container
   implements the op is for `VERIFY PATCH` (section 3.9), which recomputes it from the operands.
 
@@ -914,6 +958,8 @@ is declared by its operands and `COMPILE` writes the exact BF16 results; no f32 
   element (one whose results all round back to the stored bits) is refused. Elements outside `COLUMNS` are never
   read.
 - **Numerics** is any v2 profile: `f64-seq-rne1/v1`, `f64-seq-rne2/v1` or `f32-seq-rne1/v1`.
+- **Columns** are a non-empty, strictly increasing list; `b`'s columns follow that order. The rank is at most
+  256 (`MAX_STRUCTURED_RANK`).
 - **Conflicts** are by declared footprint, the columns over every row, exactly as for `REMOVE DIRECTION`: the two
   kinds of structured op may share a tensor only on disjoint columns, and either kind beside an `UPDATE WEIGHTS`
   delta on one tensor is refused as mixed forms.
@@ -926,6 +972,21 @@ is declared by its operands and `COMPILE` writes the exact BF16 results; no f32 
   rank, operand size, tensor size and total work (`MAX_STRUCTURED_*`), not by `MAX_PATCH_ELEMENTS`.
 - **Verification.** The ledger and `check_ledger` establish consistency only. Whether the compiled container holds
   what the ledger's ops compute is for `VERIFY LEDGER` (section 3.9), which recomputes them from the base.
+
+### 3.5.4 Withdrawing staged weight edits: `DISCARD WEIGHT EDITS` (VINDEX3)
+
+```sql
+DISCARD WEIGHT EDITS;
+```
+
+Drops every stored-weight op staged directly in the session (`UPDATE WEIGHTS`, `REMOVE DIRECTION`,
+`ADD LOW RANK`), so a mis-staged edit can be withdrawn without re-binding the container. Nothing is written.
+
+- **An open recording forgets them too.** The copies a `BEGIN PATCH` recording holds are removed, so `SAVE PATCH`
+  does not write a discarded edit.
+- **An applied patch's ops stay with the patch.** `REMOVE PATCH` removes those; the reply says how many remain.
+- **The elements and columns are free again.** A discarded op no longer conflicts with a later one.
+- With nothing staged it says so and is not an error. It is all or nothing: there is no form that drops one op.
 
 ### 3.6 Schema Introspection Statements
 
@@ -1180,6 +1241,18 @@ status is not the one its halves make is refused. A ledger of another schema (`v
 a `REMOVE DIRECTION`-only compile is verified with `VERIFY PATCH`. It judges the canonical BF16 weights only: **the
 re-derived (quantised) representations, which inference may execute, are not judged**, and the output says so.
 
+**LQL passes no patch file to the verifier for `VERIFY LEDGER`.** The statement has no patch operand, and the
+verifier is invoked as `ledger --contract <id> --base <dir> --container <dir>` and nothing else. If a verifier
+can also take a patch for this question, LQL does not offer a way to give it one.
+
+Which statement fits a compiled weight edit follows from the ledger it wrote (§3.5.1):
+
+| Ledger | Compiled from | Verified by |
+|---|---|---|
+| `weight-patches/v4` | any `ADD LOW RANK` | `VERIFY LEDGER … USING CONTRACT "WEIGHT_PATCHES_V4"` |
+| `weight-patches/v3` | a `REMOVE DIRECTION`, no `ADD LOW RANK` | `VERIFY PATCH … USING CONTRACT "STRUCTURED_REMOVE_DIRECTION"`, with the saved `.vlp`, when the patch holds only `REMOVE DIRECTION` ops |
+| `weight-patches/v2` | `UPDATE WEIGHTS` only | Neither statement: `VERIFY LEDGER` judges v4 only, and `STRUCTURED_REMOVE_DIRECTION` answers `could_not_evaluate` for a patch that holds a `weight_delta` op |
+
 **`larql lql` exit status:**
 
 | Exit | Meaning |
@@ -1190,7 +1263,9 @@ re-derived (quantised) representations, which inference may execute, are not jud
 
 An error outranks a violation, so a script with both exits 1. A script keeps running after a failed
 statement, as it always has, and the status reflects all of them. So a contract that could not be
-evaluated never reads as satisfied, even when the statement after it succeeds. The REPL is unaffected.
+evaluated never reads as satisfied, even when the statement after it succeeds. The REPL is unaffected:
+`larql repl` does not report failure through its exit status and exits 0. `larql lql --help` states this
+table, and `HELP EXIT CODES;` prints it from inside the language.
 
 **After a failure, a script writes nothing.** Once any statement has failed, every later statement that
 would write an artifact (`EXTRACT`, `COMPILE`, `COMPACT INTO`, `COMPACT MAJOR`, which persists the MEMIT
@@ -1310,6 +1385,64 @@ annotations; DELETE / UPDATE with both `entity` and `relation` is refused;
 token; write `token = …`); and conditions that used to be ignored are
 refused.
 
+### 3.10 Help
+
+```sql
+HELP;
+HELP <topic>;
+
+HELP REMOVE DIRECTION;     -- one statement
+HELP WEIGHTS;              -- one group of statements
+HELP BATCH;                -- the process model
+HELP "exit codes";         -- a topic may be quoted
+```
+
+`HELP;` prints every statement's syntax skeleton, one line each, under ten groups in the order an editing
+loop uses them: bind, inspect, run, edit weights, patches, compile, verify, abandon, knowledge edits, process
+model. `HELP <topic>;` prints one page.
+
+- **A statement page** gives the exact syntax of every form, what the statement does, examples, what it
+  requires (a bound VINDEX3 container, a tokenizer, an external verifier), when its effect becomes visible,
+  the format of any file it reads, and the refusals a caller is likely to hit.
+- **A group page** (`BIND`, `INSPECT`, `RUN`, `WEIGHTS`, `PATCHES`, `COMPILING`, `VERIFY`, `ABANDON`,
+  `KNOWLEDGE`, `PROCESS`) gives what the group's statements have in common and lists them.
+- **A process page** (`BATCH`, `EXIT CODES`, `VERIFIER`) describes how `larql lql` runs statements, its
+  exit status and how a verifier is found.
+
+A topic is a statement's leading keywords (`HELP COMPILE;`, `HELP VERIFY LEDGER;`), a group name or a process
+topic. It is case-insensitive. Leading words that only one page's names start with find that page
+(`HELP ADD;` is `ADD LOW RANK`). **An unknown topic is an error** that lists the nearest topics; it is never
+the overview:
+
+```
+larql> HELP REMOVE DIRECTON;
+Error: no help topic "REMOVE DIRECTON". Nearest: REMOVE DIRECTION. Run HELP; for every topic.
+```
+
+`HELP` reads no session state and writes nothing. It needs no bound backend, is answered locally on a
+`USE REMOTE` session, is permitted by every capability profile (§4.5), and runs after an earlier statement
+of a batch has failed. In the REPL, `help` without a semicolon prints the same overview.
+
+**The help cannot fall behind the grammar.** `Statement::help_topic` is an exhaustive match, so a new
+statement does not compile until it names a topic; the catalogue's lookup is an exhaustive match, so a
+topic does not compile until it has a page; and the crate's tests parse every example on every page with
+the real parser, check it is the statement the page documents, check every page is listed by `HELP;`, and
+run each page's first example on a container to check that what the page says the statement needs is what
+the executor refuses without. Two other surfaces are built from the same entries: the `Supported:` line
+`USE` prints for a VINDEX3 container, and parse errors.
+
+**Parse errors name what was expected.** Text that begins no statement lists the keywords that do. A wrong
+word after a keyword with several continuations names them, guesses the one meant, and points at its page:
+
+```
+larql> FOOBAR;
+Error: Parse error: expected statement keyword, got FOOBAR. Statements start with: ADD, APPLY, BEGIN,
+COMPACT, COMPILE, … Run HELP; for the syntax of each.
+larql> REMOVE DIRECTON "u.json" FROM "t";
+Error: Parse error: after REMOVE expected DIRECTION or PATCH, got DIRECTON. Did you mean REMOVE DIRECTION?
+Run HELP REMOVE DIRECTION; for the syntax.
+```
+
 ---
 
 ## 4. Backend Architecture
@@ -1381,6 +1514,10 @@ family metadata.
 | MERGE | ✅ | ❌ Error: "requires vindex" | ✅ V2 source into the overlay |
 | COMPACT MINOR/MAJOR | ✅ LSM tier promotion | ❌ | ❌ tier model is V2's; later |
 | COMPACT INTO VINDEX | — (V3 statement) | ❌ | ✅ physical reorganisation⁴ |
+| UPDATE WEIGHTS / REMOVE DIRECTION / ADD LOW RANK | ❌ Error: bound to a VINDEX2 vindex | ❌ | ✅ staged, written by COMPILE (§3.5.1–3.5.3) |
+| DISCARD WEIGHT EDITS | ❌ Error: bound to a VINDEX2 vindex | ❌ | ✅ (§3.5.4) |
+| VERIFY … | ✅ takes paths; needs no binding | ✅ | ✅ (§3.9) |
+| HELP | ✅ needs no binding | ✅ | ✅ (§3.10) |
 
 A VINDEX3 refusal is a *capability* statement, not a format apology:
 the error names what the binding supports. Since V3-LQL-3A the browse
@@ -1404,7 +1541,7 @@ program, and REMOVE PATCH returns execution bit-for-bit to baseline.
 captures, probability-band balance, and the cross-fact regression
 check — with V2 as the staged parity oracle (identical scripts emit
 equivalent patches; directions within 1e-5, identical balance
-decisions). Remaining refusals: COMPILE/DIFF/COMPACT (lifecycle). The
+decisions).
 ² `COMPILE CURRENT INTO VINDEX` on V3 materialises the overlay's
 effective operands into rewritten segments (untouched segments
 hard-linked), carries L0 knowledge as `knn_store.bin`, and the result
@@ -1434,7 +1571,21 @@ and is carried, and so is a weight-patched container's ledger
 The whole-language sweep test
 (`tests/vindex3_lql.rs::every_statement_is_sensible_on_a_v3_binding`)
 pins that every statement either executes or refuses this way — never
-a panic, never a misleading "no backend loaded".
+a panic, never a misleading "no backend loaded". Two forms that name a
+path instead of the binding are outside that sweep and do answer
+`No backend loaded` for a VINDEX3 container: `COMPILE "<container>" INTO …`
+(the path form reads a VINDEX2 vindex; bind the container with `USE` and
+compile `CURRENT`) and `STATS "<path>"` with nothing bound (the path is
+parsed and ignored; `STATS` describes the bound session).
+
+The capability list a VINDEX3 binding prints (the `Supported:` line of
+`USE`, `Capabilities:` in `STATS`, and the refusal above) is not a list
+kept beside the executor. It is every statement of the help catalogue
+(§3.10) whose page does not require a VINDEX2 vindex, so it names
+`REMOVE DIRECTION`, `ADD LOW RANK`, `DISCARD WEIGHT EDITS`, the `VERIFY`
+statements and `HELP` with everything else, and `USE` follows it with
+where the syntax is (`HELP;`). On a container without `tokenizer.json`,
+`USE` also names the statements that will be refused for that reason.
 
 ### 4.3 Promotion: Weights → Vindex
 
@@ -1537,6 +1688,7 @@ Two profiles exist:
   | `SHOW RELATIONS / LAYERS / FEATURES / ENTITIES / MODELS` | `USE / EXTRACT / COMPILE / DIFF` (filesystem paths) |
   | `DESCRIBE / WALK / SELECT / EXPLAIN / STATS` | `BEGIN / SAVE / APPLY / REMOVE PATCH`, `SHOW PATCHES` |
   | `INFER [TOP n]`, `INFER GENERATE ≤ 32` | `COMPACT` family, `SHOW COMPACT STATUS`, `TRACE` |
+  | `HELP`, `HELP <topic>` (documentation: reads no session state) | `UPDATE WEIGHTS`, `REMOVE DIRECTION`, `ADD LOW RANK`, `DISCARD WEIGHT EDITS`, `VERIFY …` |
 
   The binding sequence is the embedding surface's: bind the published
   container under `FULL` (USE is a lifecycle statement the public
@@ -1841,6 +1993,7 @@ src/
   lexer.rs                  Tokenizer (90+ keywords)
   relations.rs              Relation classifier + label loader
   repl.rs                   REPL & batch runner
+  help/                     HELP: topics, the catalogue (one file per group), lookup, rendering
   parser/
     mod.rs                  Parser struct, dispatch, parse()
     lifecycle.rs            EXTRACT, COMPILE, DIFF, USE, COMPACT
@@ -1849,6 +2002,8 @@ src/
     patch.rs                BEGIN/SAVE/APPLY/REMOVE PATCH + DIFF INTO PATCH
     trace.rs                TRACE
     introspection.rs        SHOW + STATS (includes COMPACT STATUS, ENTITIES)
+    help.rs                 HELP [<topic>]
+    expected.rs             Parse errors that name what was expected (from the help catalogue)
     helpers.rs              Token utilities, value/field/condition parsers
     tests.rs                Parser tests (146)
   executor/
@@ -1965,6 +2120,9 @@ pub enum Statement {
             save: Option<String> },
 
     // ── Pipe ──
+    // ── Help ──
+    Help { topic: Option<String> },
+
     Pipe { left: Box<Statement>, right: Box<Statement> },
 }
 
@@ -2034,6 +2192,7 @@ pub enum ExtractLevel {
 |---|---|
 | LQL Parser | ✅ Done — recursive descent, 90+ keywords, modular subfiles |
 | REPL | ✅ Done — rustyline, history, multi-line, help |
+| HELP / HELP <topic> | ✅ Done — catalogue checked against the parser; drives the `USE` banner and parse errors (§3.10) |
 | USE / STATS | ✅ Done — vindex loading, stats display |
 | SHOW (RELATIONS, LAYERS, FEATURES, MODELS) | ✅ Done |
 | SELECT / DESCRIBE | ✅ Done — vindex edge query, layer band grouping |
@@ -2142,6 +2301,11 @@ larql> COMPILE CURRENT INTO MODEL "edited/" FORMAT safetensors;
 Compiling 348,161 features across 34 layers...
 Written: edited/model.safetensors (8.1 GB)
 ```
+
+`help` (no semicolon) prints the statement overview `HELP;` prints, followed by the REPL's own commands
+(`clear`, `exit`). `HELP <topic>;` is an ordinary statement and works at the prompt (§3.10). The REPL keeps
+running after a failed statement, does not refuse writes after one, and exits 0 whatever happened: use
+`larql lql` when a script must act on failure (§3.9, exit status).
 
 ---
 

@@ -75,6 +75,8 @@ pub const IDENTITY_REVISION: u32 = 1;
 /// conversation state crossing the `larql-kv` boundary intact.
 pub struct CanonicalKvState {
     cache: KvCache,
+    /// Why this state can no longer be continued, once a failed advance could not be put back.
+    invalid: Option<String>,
     /// Per layer, ABSOLUTE index: `Some` where the plan declares KV rows,
     /// `None` on a recurrent layer (whose state lives in
     /// [`Self::recurrent`] instead). Absolute indexing is load-bearing —
@@ -108,6 +110,7 @@ impl CanonicalKvState {
             geometry: Vec::new(),
             recurrent: Vec::new(),
             latent: Vec::new(),
+            invalid: None,
         }
     }
 
@@ -137,6 +140,7 @@ impl CanonicalKvState {
             geometry: Vec::new(),
             recurrent: Vec::new(),
             latent: Vec::new(),
+            invalid: None,
         }
     }
 
@@ -327,6 +331,12 @@ impl KvState for CanonicalKvState {
 
     fn set_position(&mut self, position: usize) {
         self.cache.next_position = position;
+    }
+    fn invalidate(&mut self, reason: &str) {
+        self.invalid = Some(reason.to_string());
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.invalid.as_deref()
     }
 
     /// The layer's durable recurrent buffers (SERVE-HYBRID) — allocated

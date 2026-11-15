@@ -77,6 +77,8 @@ impl Layer {
 pub struct WindowKvState {
     layers: Vec<Layer>,
     position: usize,
+    /// Why this state can no longer be continued, once a failed advance could not be put back.
+    invalid: Option<String>,
 }
 
 impl WindowKvState {
@@ -138,6 +140,12 @@ impl KvState for WindowKvState {
 
     fn set_position(&mut self, position: usize) {
         self.position = position;
+    }
+    fn invalidate(&mut self, reason: &str) {
+        self.invalid = Some(reason.to_string());
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.invalid.as_deref()
     }
 
     fn recurrent_state(&mut self, layer: usize) -> Result<&mut RecurrentState, ContinuationError> {
