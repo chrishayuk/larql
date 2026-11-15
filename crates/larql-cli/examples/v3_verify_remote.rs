@@ -20,9 +20,14 @@
 //! session's own continuation (the single-row route), so both arms share
 //! one prefill method.
 //!
-//! `--corrupt first|middle|last` is a negative control: every proposal has
-//! one token changed at that offset. The ids must still equal
-//! `sequential`'s and acceptance must fall. Its timing is not a result.
+//! `--corrupt first|middle|last` is a negative control: every proposal,
+//! once cut before any stop id as the loop would cut it, has one token
+//! changed at that offset to a non-stop id, and `corrupted_offsets` records
+//! the offset per block. The ids must still equal `sequential`'s and
+//! acceptance must fall. Its timing is not a result.
+//!
+//! One worker only (`--shards` takes exactly one url), so every exchange
+//! recorded is with the configured worker.
 //!
 //! Protocol: `bench/v3-routed-experts/VERIFY-REMOTE-1.md`.
 //!
@@ -50,7 +55,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use support::timing::{Exchange, Recorder, Timed, MULTI_ROW, SINGLE_ROW};
-use support::verify::{ledger_json, sequential, Corrupt, Tagged, Unit};
+use support::verify::{ledger_json, sequential, Corrupt, Tagged, TrialProposer, Unit};
 
 type BoxErr = Box<dyn std::error::Error>;
 
@@ -147,6 +152,10 @@ fn main() -> Result<(), BoxErr> {
         })
         .collect::<Result<_, _>>()?;
     let stop: HashSet<u32> = args.stop.iter().copied().collect();
+    // Gate 3 names the one configured worker; a record of several could not show which was contacted.
+    if args.shards.len() != 1 {
+        return Err("VERIFY-REMOTE-1 runs one worker: give exactly one --shards url".into());
+    }
 
     let recorder = Recorder::install(args.profile)?;
     let policy = OpenPolicy {
@@ -188,14 +197,18 @@ fn main() -> Result<(), BoxErr> {
     // single step, commits, argmax and the loop itself. The first id is
     // prefill's and was produced untimed.
     let started = Instant::now();
-    let (ids, ledger) = match args.width {
-        None => (sequential(&mut target, first, args.generate, &stop)?, None),
+    let (ids, ledger, changed) = match args.width {
+        None => (
+            sequential(&mut target, first, args.generate, &stop)?,
+            None,
+            None,
+        ),
         Some(width) => {
-            let corrupt = args.corrupt;
-            let mut proposer = |ctx: &[u32], source_len: usize, max: usize| {
-                let mut guess = propose(ctx, source_len, max);
-                corrupt.apply(&mut guess);
-                guess
+            let mut proposer = TrialProposer {
+                lookup: propose,
+                corrupt: args.corrupt,
+                stop: &stop,
+                changed: Vec::new(),
             };
             let run = greedy_speculate(
                 &mut target,
@@ -206,7 +219,7 @@ fn main() -> Result<(), BoxErr> {
                 &stop,
                 &mut proposer,
             )?;
-            (run.ids.clone(), Some(run))
+            (run.ids.clone(), Some(run), Some(proposer.changed))
         }
     };
     let wall_ns = started.elapsed().as_nanos() as u64;
@@ -238,8 +251,9 @@ fn main() -> Result<(), BoxErr> {
         "prefill_width": PREFILL_WIDTH,
         "generate": args.generate,
         "stop": args.stop,
+        "timed_ids": ids.len().saturating_sub(1),
         "ids": ids,
-        "first_id_source": "prefill, untimed",
+        "first_id_source": "prefill, untimed; the clock covers the other `timed_ids`",
         "clock": "monotonic wall time from after prefill to the last generated id; load, \
                   prefill and writing excluded",
         "wall_ns": wall_ns,
@@ -251,6 +265,8 @@ fn main() -> Result<(), BoxErr> {
         },
         "units": target.units.iter().map(Unit::json).collect::<Vec<_>>(),
         "ledger": ledger.as_ref().map(ledger_json),
+        // Per verify block, in order: the proposal offset the control changed.
+        "corrupted_offsets": changed,
         "frames": {
             "whole_run": { SINGLE_ROW: count(0, SINGLE_ROW), MULTI_ROW: count(0, MULTI_ROW) },
             "generation": {

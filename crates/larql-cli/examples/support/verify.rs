@@ -6,7 +6,7 @@
 use super::timing::{Exchange, Recorder};
 use larql_inference::error::InferenceError;
 use larql_inference::speculation::greedy_id;
-use larql_inference::vindex3::speculate::{BlockTarget, Source, SpeculativeRun};
+use larql_inference::vindex3::speculate::{BlockTarget, Proposer, Source, SpeculativeRun};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -56,12 +56,47 @@ impl Corrupt {
         }
     }
 
-    /// Change one token of `guess` to the id below it (above it for id 0),
-    /// so it differs and stays in the vocabulary.
-    pub fn apply(self, guess: &mut [u32]) {
-        if let Some(at) = self.offset(guess.len()) {
-            guess[at] = if guess[at] == 0 { 1 } else { guess[at] - 1 };
+    /// Prepare a proposal as the loop will verify it, then change one token.
+    ///
+    /// The proposal is first cut before its first stop id, as
+    /// `greedy_speculate` would cut it, so the changed token is always one
+    /// the target verifies. The replacement is the nearest id below (then
+    /// above) that is not a stop id, so it differs, stays in the vocabulary
+    /// and cannot itself shorten the proposal. Returns the changed offset.
+    pub fn apply(self, guess: &mut Vec<u32>, stop: &HashSet<u32>) -> Option<usize> {
+        if let Some(at) = guess.iter().position(|token| stop.contains(token)) {
+            guess.truncate(at);
         }
+        let at = self.offset(guess.len())?;
+        let original = guess[at];
+        guess[at] = (0..original)
+            .rev()
+            .chain(original.saturating_add(1)..=u32::MAX)
+            .find(|candidate| !stop.contains(candidate))
+            .expect("the vocabulary is larger than the stop set");
+        Some(at)
+    }
+}
+
+/// The proposer a trial runs: prompt lookup, with the control's change if
+/// any. Records, per non-empty proposal (one per verify block, in order),
+/// the offset it changed.
+pub struct TrialProposer<'a, P> {
+    pub lookup: P,
+    pub corrupt: Corrupt,
+    pub stop: &'a HashSet<u32>,
+    pub changed: Vec<Option<usize>>,
+}
+
+impl<P: FnMut(&[u32], usize, usize) -> Vec<u32>> Proposer for TrialProposer<'_, P> {
+    fn propose(&mut self, ctx: &[u32], source_len: usize, max: usize) -> Vec<u32> {
+        let mut guess = (self.lookup)(ctx, source_len, max);
+        guess.truncate(max);
+        let changed = self.corrupt.apply(&mut guess, self.stop);
+        if !guess.is_empty() {
+            self.changed.push(changed);
+        }
+        guess
     }
 }
 

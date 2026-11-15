@@ -1,7 +1,8 @@
 //! The VERIFY-REMOTE trial's own pieces (`examples/support/verify.rs`),
 //! against a fake target: a deterministic "model" whose greedy next id
 //! depends only on the token fed, so prompt lookup can propose correctly,
-//! and which logs one exchange per unit of work like the timed transport.
+//! and which logs one exchange per routed layer for every unit of work,
+//! like the timed transport.
 
 #[allow(dead_code)]
 #[path = "../examples/support/mod.rs"]
@@ -13,12 +14,14 @@ use larql_inference::vindex3::speculate::{greedy_speculate, prefill, BlockTarget
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use support::timing::{Exchange, Recorder, MULTI_ROW, SINGLE_ROW};
-use support::verify::{ledger_json, sequential, Corrupt, Tagged, STEP, VERIFY};
+use support::verify::{ledger_json, sequential, Corrupt, Tagged, TrialProposer, STEP, VERIFY};
 
 const VOCAB: u32 = 16;
 const GENERATE: usize = 24;
 const WIDTHS: [usize; 3] = [2, 4, 8];
 const PREFILL_WIDTH: usize = 8;
+/// Routed layers the fake contacts per unit of work.
+const LAYERS: usize = 3;
 
 /// The fake model's greedy next id after `token`.
 fn next(token: u32) -> u32 {
@@ -39,15 +42,18 @@ struct Fake {
 
 impl Fake {
     fn log(&self, route: &'static str, rows: usize) {
-        self.exchanges.lock().unwrap().push(Exchange {
-            route,
-            layer: 0,
-            rows,
-            pairs: rows,
-            request_bytes: 0,
-            response_bytes: 0,
-            roundtrip_ns: 0,
-        });
+        let mut exchanges = self.exchanges.lock().unwrap();
+        for layer in 0..LAYERS {
+            exchanges.push(Exchange {
+                route,
+                layer,
+                rows,
+                pairs: rows,
+                request_bytes: 0,
+                response_bytes: 0,
+                roundtrip_ns: 0,
+            });
+        }
     }
 }
 
@@ -103,6 +109,18 @@ fn prompt() -> Vec<u32> {
     ids
 }
 
+/// Prompt lookup, as a plain function pointer.
+type Lookup = fn(&[u32], usize, usize) -> Vec<u32>;
+
+fn trial_proposer(corrupt: Corrupt, stop: &HashSet<u32>) -> TrialProposer<'_, Lookup> {
+    TrialProposer {
+        lookup: propose,
+        corrupt,
+        stop,
+        changed: Vec::new(),
+    }
+}
+
 fn reference(prompt: &[u32], n: usize) -> Vec<u32> {
     let mut ids = vec![next(*prompt.last().unwrap())];
     while ids.len() < n {
@@ -152,11 +170,8 @@ fn every_arm_and_control_matches_sequential() {
         ] {
             let mut target = tagged();
             let first = prefill(&mut target, &prompt(), PREFILL_WIDTH).unwrap();
-            let mut proposer = |ctx: &[u32], source_len: usize, max: usize| {
-                let mut guess = propose(ctx, source_len, max);
-                corrupt.apply(&mut guess);
-                guess
-            };
+            let none = HashSet::new();
+            let mut proposer = trial_proposer(corrupt, &none);
             let run = greedy_speculate(
                 &mut target,
                 &prompt(),
@@ -172,12 +187,14 @@ fn every_arm_and_control_matches_sequential() {
             assert_eq!(ledger_json(&run)["reconcile"], "ok", "{label}");
             assert!(!run.blocks.is_empty(), "{label}: lookup must propose");
             // A clean lookup can itself be wrong (it copies across the
-            // prompt's break), so a corrupted block rejects at its changed
-            // offset or earlier, never later, and acceptance falls.
-            for block in &run.blocks {
-                if let Some(at) = corrupt.offset(block.proposed) {
+            // prompt's break), so a corrupted block rejects at its recorded
+            // changed offset or earlier, never later, and acceptance falls.
+            assert_eq!(proposer.changed.len(), run.blocks.len(), "{label}");
+            for (block, changed) in run.blocks.iter().zip(&proposer.changed) {
+                assert_eq!(*changed, corrupt.offset(block.proposed), "{label}");
+                if let Some(at) = changed {
                     assert!(
-                        block.rejected_at.is_some_and(|r| r <= at),
+                        block.rejected_at.is_some_and(|r| r <= *at),
                         "{label}: {block:?}"
                     );
                 }
@@ -199,11 +216,8 @@ fn units_chain_and_own_their_exchanges() {
     for width in WIDTHS {
         let mut target = tagged();
         let first = prefill(&mut target, &prompt(), PREFILL_WIDTH).unwrap();
-        let mut proposer = |ctx: &[u32], source_len: usize, max: usize| {
-            let mut guess = propose(ctx, source_len, max);
-            Corrupt::Middle.apply(&mut guess);
-            guess
-        };
+        let none = HashSet::new();
+        let mut proposer = trial_proposer(Corrupt::Middle, &none);
         let run = greedy_speculate(
             &mut target,
             &prompt(),
@@ -222,16 +236,17 @@ fn units_chain_and_own_their_exchanges() {
             let committed = unit.committed.expect("every unit is committed");
             assert!(committed >= 1 && committed <= unit.width);
             position += committed;
-            assert_eq!(unit.exchanges, (exchange, exchange + 1));
-            exchange += 1;
-            let logged = &exchanges[unit.exchanges.0];
-            assert_eq!(logged.rows, unit.width);
+            assert_eq!(unit.exchanges, (exchange, exchange + LAYERS));
+            exchange += LAYERS;
             let route = if unit.kind == VERIFY {
                 MULTI_ROW
             } else {
                 SINGLE_ROW
             };
-            assert_eq!(logged.route, route);
+            for logged in &exchanges[unit.exchanges.0..unit.exchanges.1] {
+                assert_eq!(logged.rows, unit.width);
+                assert_eq!(logged.route, route);
+            }
         }
         assert_eq!(exchange, exchanges.len());
         assert_eq!(position, target.position());
@@ -257,25 +272,26 @@ fn a_commit_needs_a_pending_verify_block() {
 
 #[test]
 fn corruption_changes_exactly_one_token_and_stays_in_range() {
-    let base = [5u32, 0, 9];
+    let none = HashSet::new();
+    let base = vec![5u32, 0, 9];
     for (corrupt, at) in [
         (Corrupt::First, 0),
         (Corrupt::Middle, 1),
         (Corrupt::Last, 2),
     ] {
-        let mut guess = base;
-        corrupt.apply(&mut guess);
+        let mut guess = base.clone();
+        assert_eq!(corrupt.apply(&mut guess, &none), Some(at));
         for (i, (a, b)) in base.iter().zip(&guess).enumerate() {
             assert_eq!(a != b, i == at, "{}", corrupt.name());
         }
     }
-    let mut zero = [0u32];
-    Corrupt::First.apply(&mut zero);
+    let mut zero = vec![0u32];
+    Corrupt::First.apply(&mut zero, &none);
     assert_eq!(zero, [1]);
-    let mut empty: [u32; 0] = [];
-    Corrupt::Last.apply(&mut empty);
-    let mut untouched = base;
-    Corrupt::None.apply(&mut untouched);
+    let mut empty = Vec::new();
+    assert_eq!(Corrupt::Last.apply(&mut empty, &none), None);
+    let mut untouched = base.clone();
+    assert_eq!(Corrupt::None.apply(&mut untouched, &none), None);
     assert_eq!(untouched, base);
     for name in ["none", "first", "middle", "last"] {
         assert_eq!(Corrupt::parse(name).unwrap().name(), name);
@@ -284,14 +300,70 @@ fn corruption_changes_exactly_one_token_and_stays_in_range() {
 }
 
 #[test]
+fn corruption_lands_on_a_verified_token_and_never_makes_a_stop() {
+    // The proposal is cut before its stop id first, as the loop would cut
+    // it, so the changed offset is one the target verifies.
+    let stop: HashSet<u32> = [7].into();
+    let mut guess = vec![3, 4, 7, 9];
+    assert_eq!(Corrupt::Last.apply(&mut guess, &stop), Some(1));
+    assert_eq!(guess, [3, 3]);
+    // The replacement skips stop ids: 8's neighbour below is a stop.
+    let mut guess = vec![8];
+    Corrupt::First.apply(&mut guess, &stop);
+    assert_eq!(guess, [6]);
+    // A clean proposal is cut the same way and left otherwise unchanged.
+    let mut guess = vec![3, 7, 9];
+    assert_eq!(Corrupt::None.apply(&mut guess, &stop), None);
+    assert_eq!(guess, [3]);
+    // A proposal that starts with a stop id becomes empty: no block, no record.
+    let mut proposer = TrialProposer {
+        lookup: |_: &[u32], _: usize, _: usize| vec![7, 1],
+        corrupt: Corrupt::First,
+        stop: &stop,
+        changed: Vec::new(),
+    };
+    use larql_inference::vindex3::speculate::Proposer;
+    assert!(proposer.propose(&[1], 1, 4).is_empty());
+    assert!(proposer.changed.is_empty());
+}
+
+#[test]
+fn a_control_with_stop_ids_still_matches_sequential() {
+    let full = reference(&prompt(), GENERATE);
+    let stop: HashSet<u32> = [full[GENERATE - 4]].into();
+    let end = full.iter().position(|id| stop.contains(id)).unwrap();
+    for width in WIDTHS {
+        for corrupt in [Corrupt::None, Corrupt::Middle, Corrupt::Last] {
+            let mut target = tagged();
+            let first = prefill(&mut target, &prompt(), PREFILL_WIDTH).unwrap();
+            let mut proposer = trial_proposer(corrupt, &stop);
+            let run = greedy_speculate(
+                &mut target,
+                &prompt(),
+                first,
+                GENERATE,
+                width,
+                &stop,
+                &mut proposer,
+            )
+            .unwrap();
+            let label = format!("width {width} corrupt {}", corrupt.name());
+            assert_eq!(run.ids, full[..=end], "{label}");
+            assert_eq!(ledger_json(&run)["reconcile"], "ok", "{label}");
+            assert_eq!(proposer.changed.len(), run.blocks.len(), "{label}");
+            for (block, changed) in run.blocks.iter().zip(&proposer.changed) {
+                assert_eq!(*changed, corrupt.offset(block.proposed), "{label}");
+            }
+        }
+    }
+}
+
+#[test]
 fn the_ledger_names_every_source() {
     let mut target = tagged();
     let first = prefill(&mut target, &prompt(), PREFILL_WIDTH).unwrap();
-    let mut proposer = |ctx: &[u32], source_len: usize, max: usize| {
-        let mut guess = propose(ctx, source_len, max);
-        Corrupt::Last.apply(&mut guess);
-        guess
-    };
+    let none = HashSet::new();
+    let mut proposer = trial_proposer(Corrupt::Last, &none);
     let run = greedy_speculate(
         &mut target,
         &prompt(),
