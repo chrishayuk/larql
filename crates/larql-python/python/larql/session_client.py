@@ -97,11 +97,12 @@ class RemoteSession:
         self._sock.sendall(json.dumps(request).encode("utf-8") + b"\n")
         response = json.loads(self._read_line())
         self.last_response = response
+        error = response.get("error") or {}
+        if response.get("id") != self._next_id and error.get("kind") != "busy":
+            # Every answer names the request it answers; one that does not is not trusted.
+            raise ServiceError("failed", "the service answered a different request", response)
         if not response.get("ok"):
-            error = response.get("error") or {}
             raise ServiceError(error.get("kind", "failed"), error.get("reason", "no reason given"), response)
-        if response.get("id") != self._next_id:
-            raise ServiceError("failed", "the service answered a different request")
         return response["result"]
 
     def _readout(self, result):

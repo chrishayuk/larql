@@ -93,6 +93,7 @@ impl Fixture {
             "audit_log": self.log(),
             "operations": Op::names(),
             "budget": {"edited_executions": budget},
+            "staging_dir": self.logs.path(),
         })
     }
 
@@ -133,6 +134,14 @@ impl Fixture {
         s.save_patch().unwrap();
         path
     }
+}
+
+/// A provenance record as the service sends it: the container's path replaced by its label.
+pub(super) fn redacted(mut provenance: Value) -> Value {
+    if provenance.get("container").is_some() {
+        provenance["container"] = json!(super::service::CONTAINER_LABEL);
+    }
+    provenance
 }
 
 /// A request line.

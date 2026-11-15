@@ -231,6 +231,34 @@ impl Workdir {
     }
 }
 
+impl Workdir {
+    /// Make `name` absent, its directories present: the state from which only the next create makes it. A
+    /// symlink at `name` is removed, never followed.
+    pub fn clear(&self, name: &str) -> Result<(), Failure> {
+        let (dir, c) = self.walk(name, true)?;
+        // SAFETY: `dir` is an open directory descriptor and `c` NUL-terminated.
+        if unsafe { libc::unlinkat(dir.as_raw_fd(), c.as_ptr(), 0) } < 0 && errno() != libc::ENOENT
+        {
+            return Err(open_refusal(name, errno()));
+        }
+        Ok(())
+    }
+
+    /// Create `name`, which must not exist (`O_EXCL`, no symlink followed), its directories created.
+    pub fn create_new(&self, name: &str) -> Result<File, Failure> {
+        let (dir, c) = self.walk(name, true)?;
+        let flags =
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+        // SAFETY: `dir` is an open directory descriptor and `c` NUL-terminated.
+        let fd = unsafe { libc::openat(dir.as_raw_fd(), c.as_ptr(), flags, NEW_FILE_MODE) };
+        if fd < 0 {
+            return Err(open_refusal(name, errno()));
+        }
+        // SAFETY: `fd` was just returned by `openat` and is owned by nothing else.
+        Ok(unsafe { File::from_raw_fd(fd) })
+    }
+}
+
 fn cstring(part: &OsStr) -> Result<CString, Failure> {
     CString::new(part.as_bytes()).map_err(|_| Failure::refused("the path holds a NUL byte"))
 }

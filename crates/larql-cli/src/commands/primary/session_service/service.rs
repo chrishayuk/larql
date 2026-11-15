@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 
 use larql_lql::Session;
 
-use super::audit::{AuditLog, EVENT_REQUEST, EVENT_START, EVENT_STOP};
+use super::audit::{AuditLog, EVENT_ADMITTED, EVENT_REQUEST, EVENT_START, EVENT_STOP};
 use super::paths::Workdir;
 use super::policy::{CheckedPolicy, Limits};
 use super::protocol::{
@@ -18,6 +18,10 @@ use super::protocol::{
 };
 use crate::commands::primary::lql_session::parse_representation_source;
 
+/// What a response says in place of the container's path. The container is identified by its index digest.
+pub const CONTAINER_LABEL: &str = "<bound container>";
+/// Argument strings longer than this are logged by digest.
+pub const MAX_LOGGED_STRING_BYTES: usize = 1024;
 /// The prefix of the service's private staging directory.
 const STAGING_PREFIX: &str = "larql-session-";
 /// The container file whose digest identifies the container in the audit log.
@@ -34,6 +38,11 @@ pub(super) struct Turn {
     pub counted: bool,
     /// The arrays returned: their digests, dtypes and shapes.
     pub arrays: Vec<Value>,
+    /// The request's id and op, for the `admitted` record.
+    pub id: Value,
+    pub op: Value,
+    /// The sequence number of the `admitted` record, when the request was charged.
+    pub admitted: Option<u64>,
 }
 
 pub struct Service {
@@ -43,9 +52,14 @@ pub struct Service {
     pub(super) budget_limit: u64,
     pub(super) budget_used: u64,
     pub(super) workdir: Workdir,
+    /// The private staging directory; dropped (and removed) with the service.
     pub(super) staging: tempfile::TempDir,
+    /// The same directory, for confined opens.
+    pub(super) staged: Workdir,
     /// The staging directory's path, with a trailing separator: removed from everything sent back.
     pub(super) staging_prefix: String,
+    /// The container's paths as the service knows them, longest first: replaced in everything sent back.
+    container_texts: Vec<String>,
     /// The workdir name of the open recording, if one was begun.
     pub(super) recording: Option<String>,
     pub(super) turn: Turn,
@@ -107,13 +121,14 @@ impl Service {
                 log_path.display()
             ));
         }
-        let staging_base = match &policy.staging_dir {
-            Some(dir) => canonical_dir("staging directory", dir)?,
-            None => canonical_dir("staging directory", &std::env::temp_dir())?,
-        };
-        if inside(&staging_base, &work) || inside(&staging_base, &container) {
+        let staging_base = canonical_dir("staging directory", &policy.staging_dir)?;
+        if inside(&staging_base, &work)
+            || inside(&work, &staging_base)
+            || inside(&staging_base, &container)
+        {
             return Err(format!(
-                "the staging directory {} must be outside the workdir and the container",
+                "the staging directory {} must be outside the workdir and the container, and not contain the \
+                 workdir",
                 staging_base.display()
             ));
         }
@@ -123,6 +138,14 @@ impl Service {
             .map_err(|e| format!("create the staging directory: {e}"))?;
         let staging_path = canonical_dir("staging directory", staging.path())?;
         let staging_prefix = format!("{}{}", staging_path.display(), std::path::MAIN_SEPARATOR);
+        let staged = Workdir::open(&staging_path)?;
+        let mut container_texts: Vec<String> = [container.clone(), policy.container.clone()]
+            .iter()
+            .map(|p| p.display().to_string())
+            .filter(|t| !t.is_empty())
+            .collect();
+        container_texts.sort_by_key(|t| std::cmp::Reverse(t.len()));
+        container_texts.dedup();
 
         let index = std::fs::read(container.join(INDEX_JSON)).map_err(|e| {
             format!(
@@ -144,7 +167,9 @@ impl Service {
             budget_used: resumed.budget_used,
             workdir,
             staging,
+            staged,
             staging_prefix,
+            container_texts,
             recording: None,
             turn: Turn::default(),
             audit,
@@ -213,8 +238,17 @@ impl Service {
     pub fn handle_line(&mut self, line: &[u8]) -> Vec<u8> {
         self.turn = Turn::default();
         let (id, op, args, outcome) = match parse_request(line) {
-            Err((id, failure)) => (id, Value::Null, Value::Null, Err(failure)),
+            Err((id, failure)) => {
+                // What could not be read as a request is logged by digest, never verbatim.
+                let digest = json!({
+                    "unparsed_line_sha256": format!("{:x}", Sha256::digest(line)),
+                    "bytes": line.len(),
+                });
+                (id, Value::Null, digest, Err(failure))
+            }
             Ok(request) => {
+                self.turn.id = request.id.clone();
+                self.turn.op = Value::String(request.op.clone());
                 let outcome = match &self.fatal {
                     Some(why) => Err(Failure::failed(why.clone())),
                     None => self.dispatch(&request.op, &request.args),
@@ -263,6 +297,8 @@ impl Service {
             "error": outcome.as_ref().err().map(|f| json!({"kind": f.kind.label(), "reason": f.reason})),
             "edited": self.turn.edited,
             "counted": self.turn.counted,
+            "admitted_seq": self.turn.admitted,
+            "outcome": outcome_label(self.turn.admitted.is_some(), outcome.is_ok()),
             "budget_remaining": self.remaining(),
             "arrays": self.turn.arrays,
             "response_sha256": format!("{:x}", Sha256::digest(&line)),
@@ -314,16 +350,19 @@ impl Service {
     /// Whether what the session executes now is not the stored model: a patch applied, a weight op staged, or
     /// an override in the session overlay.
     pub(super) fn model_is_edited(&self) -> Result<bool, Failure> {
+        let pending = self.session.has_pending_edits().map_err(Failure::failed)?;
         let report = self.session.patches().map_err(Failure::failed)?;
-        Ok(report.weight_ops > 0 || !report.applied.is_empty() || report.session_overrides > 0)
+        Ok(pending || !report.applied.is_empty() || report.weight_ops > 0)
     }
 
-    /// Refuse an execution of an edited model once the budget is spent. Returns whether the model is edited.
+    /// Gate an execution: when the model is edited, refuse it once the budget is spent, and otherwise charge
+    /// it now, before it runs, so nothing that happens during or after the run leaves it uncharged. Returns
+    /// whether the model is edited.
     pub(super) fn gate(&mut self) -> Result<bool, Failure> {
         let edited = self.model_is_edited()?;
         self.turn.edited = edited;
-        if edited && self.remaining() == 0 {
-            return Err(self.exhausted());
+        if edited {
+            self.charge()?;
         }
         Ok(edited)
     }
@@ -339,34 +378,54 @@ impl Service {
         )
     }
 
-    /// Charge an execution that ran an edited model.
-    pub(super) fn charge(&mut self, ran_edited: bool) -> Result<(), Failure> {
-        if !ran_edited {
+    /// Charge one execution of an edited model, or refuse it when the budget is spent. The charge is made
+    /// durable first: an `admitted` record carrying the budget after it is appended and synced, and only then
+    /// may the model run. A resumed log recounts the budget from these records.
+    pub(super) fn charge(&mut self) -> Result<(), Failure> {
+        self.turn.edited = true;
+        if self.turn.counted {
             return Ok(());
         }
-        self.turn.edited = true;
         if self.remaining() == 0 {
             return Err(self.exhausted());
         }
-        self.budget_used += 1;
+        let used = self.budget_used + 1;
+        let record = json!({
+            "id": self.turn.id,
+            "op": self.turn.op,
+            "budget_remaining": self.budget_limit.saturating_sub(used),
+        });
+        match self.audit.append(EVENT_ADMITTED, used, record) {
+            Ok(seq) => self.turn.admitted = Some(seq),
+            Err(e) => {
+                let why = format!("the audit log could not be written: {e}");
+                self.fatal = Some(why.clone());
+                return Err(Failure::failed(why));
+            }
+        }
+        self.budget_used = used;
         self.turn.counted = true;
         Ok(())
     }
 
     /// The staging path of a workdir name.
-    pub(super) fn staged(&self, name: &str) -> PathBuf {
+    pub(super) fn staged_path(&self, name: &str) -> PathBuf {
         self.staging.path().join(name)
     }
 
     /// `text` with every mention of the staging directory removed, so a staged copy reads as its workdir
-    /// name.
+    /// name, and the container's path replaced by [`CONTAINER_LABEL`].
     pub(super) fn unstage_text(&self, text: &str) -> String {
         let raw = format!(
             "{}{}",
             self.staging.path().display(),
             std::path::MAIN_SEPARATOR
         );
-        text.replace(&self.staging_prefix, "").replace(&raw, "")
+        let mut out = text.replace(&self.staging_prefix, "").replace(&raw, "");
+        for path in &self.container_texts {
+            out = out.replace(path.as_str(), CONTAINER_LABEL);
+        }
+        out
     }
 
     fn unstage(&self, value: Value) -> Value {
@@ -380,6 +439,17 @@ impl Service {
             }
             other => other,
         }
+    }
+}
+
+/// What a request record says happened: an edited execution that was admitted (charged) and then
+/// `completed` or `failed`, or a request that was `answered` or `rejected` without one.
+fn outcome_label(admitted: bool, ok: bool) -> &'static str {
+    match (admitted, ok) {
+        (true, true) => "completed",
+        (true, false) => "failed",
+        (false, true) => "answered",
+        (false, false) => "rejected",
     }
 }
 
@@ -425,6 +495,10 @@ fn summarise_args(args: &Value) -> Value {
             )
         }
         Value::Array(items) => Value::Array(items.iter().map(summarise_args).collect()),
+        Value::String(text) if text.len() > MAX_LOGGED_STRING_BYTES => json!({
+            "sha256": format!("{:x}", Sha256::digest(text.as_bytes())),
+            "bytes": text.len(),
+        }),
         other => other.clone(),
     }
 }

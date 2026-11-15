@@ -231,3 +231,109 @@ fn a_service_whose_log_fails_stops_answering() {
     assert_eq!(r["error"]["kind"], "failed");
     assert!(r["error"]["reason"].as_str().unwrap().contains("disk full"));
 }
+
+#[test]
+fn the_staging_dir_is_required() {
+    let fx = Fixture::new();
+    let mut p = fx.policy(1);
+    p.as_object_mut().unwrap().remove("staging_dir");
+    let e = fx.start_with(&p).err().unwrap();
+    assert!(e.contains("staging_dir"), "{e}");
+    let mut p = fx.policy(1);
+    p["staging_dir"] = json!(fx.workdir().parent().unwrap());
+    let e = fx.start_with(&p).err().unwrap();
+    assert!(e.contains("not contain the workdir"), "{e}");
+}
+
+#[test]
+fn a_resume_counts_admitted_records_not_a_stated_budget() {
+    let fx = Fixture::new();
+    let mut p = fx.policy(5);
+    p["resume"] = json!(true);
+    let index = std::fs::read(fx.container.join("index.json")).unwrap();
+    use sha2::{Digest, Sha256};
+    let sha = format!("{:x}", Sha256::digest(&index));
+    let log = [
+        json!({"seq": 1, "event": "start", "budget_used": 0, "container_index_sha256": sha}),
+        json!({"seq": 2, "event": "admitted", "budget_used": 1}),
+        json!({"seq": 3, "event": "admitted", "budget_used": 2}),
+        // The service was killed: the last record claims nothing was spent.
+        json!({"seq": 4, "event": "connect", "budget_used": 0}),
+    ]
+    .iter()
+    .map(|r| r.to_string() + "\n")
+    .collect::<String>();
+    std::fs::write(fx.log(), log).unwrap();
+    let mut svc = fx.start_with(&p).unwrap();
+    assert_eq!(
+        ok(&mut svc, "budget", json!({})),
+        json!({"limit": 5, "used": 2, "remaining": 3})
+    );
+}
+
+#[test]
+fn the_log_caps_what_a_client_sends() {
+    let fx = Fixture::new();
+    let mut svc = fx.start(1);
+    let long = "x ".repeat(2000);
+    call(&mut svc, "tokenize", json!({"text": long}));
+    let r: Value = serde_json::from_slice(
+        &svc.handle_line(
+            format!(
+                "{{\"protocol\": \"larql-session/v1\", \"id\": \"{}\", \"op\": \"budget\"}}",
+                "i".repeat(300)
+            )
+            .as_bytes(),
+        ),
+    )
+    .unwrap();
+    svc.handle_line(b"secret words that are not JSON");
+    let records = fx.records();
+    let n = records.len();
+    assert_eq!(records[n - 3]["args"]["text"]["bytes"], long.len());
+    assert!(records[n - 3]["args"]["text"]["sha256"].is_string());
+    assert_eq!(r["error"]["kind"], "invalid_request");
+    assert_eq!(r["id"], Value::Null);
+    assert_eq!(records[n - 1]["args"]["bytes"], 30);
+    assert!(!std::fs::read_to_string(fx.log())
+        .unwrap()
+        .contains("secret words"));
+}
+
+#[test]
+fn the_container_path_is_never_sent() {
+    let fx = Fixture::new();
+    let mut svc = fx.start(1);
+    let c = fx.container.canonicalize().unwrap();
+    let r = ok(
+        &mut svc,
+        "capture",
+        json!({"site": "logits", "prompt": PROMPT}),
+    );
+    assert_eq!(
+        r["provenance"]["container"],
+        super::super::service::CONTAINER_LABEL
+    );
+    let r = ok(&mut svc, "tensor", json!({"name": TENSOR, "rows": [0]}));
+    assert_eq!(
+        r["provenance"]["container"],
+        super::super::service::CONTAINER_LABEL
+    );
+    let text = svc.unstage_text(&format!("failed to read {}/segments/x", c.display()));
+    assert_eq!(text, "failed to read <bound container>/segments/x");
+    let given = svc.unstage_text(&format!("{}", fx.container.display()));
+    assert_eq!(given, "<bound container>");
+}
+
+#[test]
+fn the_applied_patches_are_limited() {
+    let fx = Fixture::new();
+    fx.patch("one.vlp");
+    let mut p = fx.policy(1);
+    p["limits"] = json!({"max_applied_patches": 1});
+    let mut svc = fx.start_with(&p).unwrap();
+    ok(&mut svc, "apply_patch", json!({"path": "one.vlp"}));
+    let (kind, reason) = err(&mut svc, "apply_patch", json!({"path": "one.vlp"}));
+    assert_eq!(kind, "refused");
+    assert!(reason.contains("max_applied_patches"), "{reason}");
+}

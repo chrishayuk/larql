@@ -115,7 +115,7 @@ fn the_response_bytes_limit_refuses_reads_and_captures_without_charging() {
     assert_eq!(r["error"]["kind"], "refused");
     assert_eq!(
         (r["edited"].clone(), r["counted"].clone()),
-        (json!(true), json!(false))
+        (json!(false), json!(false))
     );
     assert_eq!(r["budget"]["remaining"], 5);
 }

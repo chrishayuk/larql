@@ -23,6 +23,9 @@ use super::service::Service;
 
 /// How often the loop looks at the shutdown flag and for a second client.
 pub const POLL: Duration = Duration::from_millis(50);
+/// The longest a response may take to write: a client that stops reading is hung up on, so it cannot hold
+/// the service (or its shutdown).
+pub const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Bytes read from the socket at a time.
 const READ_CHUNK: usize = 64 * 1024;
 
@@ -88,6 +91,16 @@ impl BoundSocket {
 
 /// Serve `listener` until `shutdown` is set or the audit log fails.
 pub fn serve(service: &mut Service, listener: &UnixListener, shutdown: &AtomicBool) -> Stopped {
+    serve_with(service, listener, shutdown, WRITE_TIMEOUT)
+}
+
+/// [`serve`], with the write timeout given.
+pub fn serve_with(
+    service: &mut Service,
+    listener: &UnixListener,
+    shutdown: &AtomicBool,
+    write_timeout: Duration,
+) -> Stopped {
     loop {
         if let Some(why) = service.fatal() {
             return Stopped::AuditFailed(why.to_string());
@@ -97,14 +110,77 @@ pub fn serve(service: &mut Service, listener: &UnixListener, shutdown: &AtomicBo
         }
         match listener.accept() {
             Ok((stream, _)) => {
-                service.record(EVENT_CONNECT, json!({}));
-                let outcome = converse(service, listener, stream, shutdown);
+                service.record(EVENT_CONNECT, peer(&stream));
+                let outcome = converse(service, listener, stream, shutdown, write_timeout);
                 service.record(EVENT_DISCONNECT, json!({"how": outcome}));
             }
             Err(e) if e.kind() == IoKind::WouldBlock => std::thread::sleep(POLL),
             Err(_) => std::thread::sleep(POLL),
         }
     }
+}
+
+/// Who connected: the peer's uid and gid, and its pid where the platform reports it.
+fn peer(stream: &UnixStream) -> Value {
+    use std::os::fd::AsRawFd;
+    match peer_credentials(stream.as_raw_fd()) {
+        Some((uid, gid, pid)) => json!({"peer": {"uid": uid, "gid": gid, "pid": pid}}),
+        None => json!({"peer": Value::Null}),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn peer_credentials(fd: std::os::fd::RawFd) -> Option<(u32, u32, Option<i32>)> {
+    let mut cred = libc::ucred {
+        pid: 0,
+        uid: 0,
+        gid: 0,
+    };
+    let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    // SAFETY: SO_PEERCRED writes one ucred into `cred`.
+    let ok = unsafe {
+        libc::getsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            (&mut cred as *mut libc::ucred).cast(),
+            &mut len,
+        )
+    } == 0;
+    ok.then_some((cred.uid, cred.gid, Some(cred.pid)))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn peer_credentials(fd: std::os::fd::RawFd) -> Option<(u32, u32, Option<i32>)> {
+    let mut uid: libc::uid_t = 0;
+    let mut gid: libc::gid_t = 0;
+    // SAFETY: `fd` is a connected Unix socket and the out-pointers are valid.
+    if unsafe { libc::getpeereid(fd, &mut uid, &mut gid) } != 0 {
+        return None;
+    }
+    Some((uid, gid, peer_pid(fd)))
+}
+
+#[cfg(target_os = "macos")]
+fn peer_pid(fd: std::os::fd::RawFd) -> Option<i32> {
+    let mut pid: libc::pid_t = 0;
+    let mut len = std::mem::size_of::<libc::pid_t>() as libc::socklen_t;
+    // SAFETY: LOCAL_PEERPID writes one pid_t into `pid`.
+    let ok = unsafe {
+        libc::getsockopt(
+            fd,
+            libc::SOL_LOCAL,
+            libc::LOCAL_PEERPID,
+            (&mut pid as *mut libc::pid_t).cast(),
+            &mut len,
+        )
+    } == 0;
+    ok.then_some(pid)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn peer_pid(_: std::os::fd::RawFd) -> Option<i32> {
+    None
 }
 
 /// Turn away every client waiting to connect.
@@ -123,6 +199,7 @@ fn reject_waiting(service: &mut Service, listener: &UnixListener) {
         let mut line = response(&Value::Null, &meta, &Err(busy));
         line.push(b'\n');
         let _ = stream.set_nonblocking(false);
+        let _ = stream.set_write_timeout(Some(POLL));
         let _ = stream.write_all(&line);
         service.record(EVENT_REJECTED, json!({}));
     }
@@ -134,11 +211,14 @@ fn converse(
     listener: &UnixListener,
     mut stream: UnixStream,
     shutdown: &AtomicBool,
+    write_timeout: Duration,
 ) -> &'static str {
-    // An accepted socket can inherit the listener's non-blocking mode; reads here wait, up to POLL.
-    if stream.set_nonblocking(false).is_err() || stream.set_read_timeout(Some(POLL)).is_err() {
-        return "socket_error";
-    }
+    // An accepted socket can inherit the listener's non-blocking mode; reads here wait, up to POLL. A peer
+    // that has already hung up makes these calls fail (macOS refuses socket options on a shut-down
+    // socket); its request is still read and answered, and the write then fails.
+    let _ = stream.set_nonblocking(false);
+    let _ = stream.set_read_timeout(Some(POLL));
+    let _ = stream.set_write_timeout(Some(write_timeout));
     let max_line = service.limits.max_request_bytes as usize;
     let mut pending: Vec<u8> = Vec::new();
     let mut chunk = vec![0u8; READ_CHUNK];

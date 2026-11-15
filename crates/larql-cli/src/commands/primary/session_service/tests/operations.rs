@@ -67,7 +67,7 @@ fn tensor_reads_equal_read_weight_bit_for_bit() {
         );
         assert_eq!(got["array"]["dtype"], want.descr.label());
         assert_eq!(got["array"]["shape"], json!(want.shape));
-        assert_eq!(got["provenance"], want.provenance);
+        assert_eq!(got["provenance"], redacted(want.provenance.clone()));
         assert_eq!(got["array"]["sha256"], want.provenance["npy_sha256"]);
     }
     let (kind, reason) = err(&mut svc, "tensor", json!({"name": "no.such.tensor"}));
@@ -174,7 +174,11 @@ fn captures_equal_the_typed_capture_bit_for_bit() {
             })
             .unwrap();
         assert_eq!(npy_bytes(&got["array"]), capture_bytes(&want), "{args}");
-        assert_eq!(got["provenance"], want.provenance, "{args}");
+        assert_eq!(
+            got["provenance"],
+            redacted(want.provenance.clone()),
+            "{args}"
+        );
         assert_eq!(got["array"]["sha256"], want.provenance["npy_sha256"]);
     }
 }
@@ -206,8 +210,8 @@ fn bad_capture_arguments_are_refused_before_running() {
         "capture",
         json!({"site": "residual", "prompt": PROMPT}),
     );
-    assert_eq!(kind, "failed");
-    assert!(reason.contains("CAPTURE refused"), "{reason}");
+    assert_eq!(kind, "invalid_request");
+    assert!(reason.contains("inside a layer"), "{reason}");
 }
 
 #[test]

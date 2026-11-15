@@ -15,6 +15,8 @@ use serde_json::{json, Value};
 
 /// The protocol every request and response names.
 pub const PROTOCOL: &str = "larql-session/v1";
+/// The longest `id` echoed, as JSON.
+pub const MAX_ID_BYTES: usize = 256;
 
 /// An operation the policy can allow. `hello` and `budget` are not here: they are always answered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,6 +170,12 @@ pub fn parse_request(line: &[u8]) -> Result<Request, (Value, Failure)> {
     let value: Value = serde_json::from_slice(line)
         .map_err(|e| (Value::Null, Failure::invalid(format!("not JSON: {e}"))))?;
     let id = value.get("id").cloned().unwrap_or(Value::Null);
+    if id.to_string().len() > MAX_ID_BYTES {
+        return Err((
+            Value::Null,
+            Failure::invalid(format!("`id` is longer than {MAX_ID_BYTES} bytes as JSON")),
+        ));
+    }
     let envelope: Envelope = serde_json::from_value(value)
         .map_err(|e| (id.clone(), Failure::invalid(format!("not a request: {e}"))))?;
     match envelope.protocol.as_deref() {

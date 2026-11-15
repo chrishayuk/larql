@@ -189,3 +189,101 @@ fn a_socket_path_that_exists_is_not_bound_or_removed() {
     assert!(path.exists());
     assert!(BoundSocket::bind(&fx.logs.path().join("no/dir/s.sock")).is_err());
 }
+
+#[test]
+fn a_client_that_stops_reading_is_hung_up_on() {
+    let fx = Fixture::new();
+    let mut svc = fx.start(1);
+    let path = socket_path(&fx);
+    let socket = BoundSocket::bind(&path).unwrap();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let flag = shutdown.clone();
+    let client = std::thread::spawn(move || {
+        let mut stream = UnixStream::connect(&path).unwrap();
+        let request = format!(
+            "{}\n",
+            json!({"protocol": "larql-session/v1", "op": "tensor", "args": {"name": TENSOR}})
+        );
+        // Ask for far more than the socket buffers, and never read.
+        for _ in 0..400 {
+            if stream.write_all(request.as_bytes()).is_err() {
+                break;
+            }
+        }
+        let started = std::time::Instant::now();
+        while started.elapsed() < std::time::Duration::from_secs(20) {
+            if !fx_disconnected(&stream) {
+                std::thread::sleep(super::super::server::POLL);
+            } else {
+                break;
+            }
+        }
+        flag.store(true, Ordering::SeqCst);
+        drop(stream);
+    });
+    let stopped = super::super::server::serve_with(
+        &mut svc,
+        &socket.listener,
+        &shutdown,
+        std::time::Duration::from_millis(200),
+    );
+    client.join().unwrap();
+    assert_eq!(stopped, Stopped::Shutdown);
+    let how: Vec<Value> = fx
+        .records()
+        .into_iter()
+        .filter(|r| r["event"] == "disconnect")
+        .map(|r| r["how"].clone())
+        .collect();
+    assert_eq!(how, [json!("client_gone")]);
+    assert!(socket.remove());
+}
+
+/// Whether the service has hung up on `stream`'s connection.
+fn fx_disconnected(stream: &UnixStream) -> bool {
+    let mut probe = [0u8; 1];
+    stream.set_nonblocking(true).unwrap();
+    // The service never wrote less than a whole buffer; a hang-up shows as a reset or EOF once drained.
+    let mut s = stream;
+    let gone = loop {
+        match std::io::Read::read(&mut s, &mut probe) {
+            Ok(0) => break true,
+            Ok(_) => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break false,
+            Err(_) => break true,
+        }
+    };
+    stream.set_nonblocking(false).unwrap();
+    gone
+}
+
+#[test]
+fn a_client_that_disconnects_mid_request_is_still_charged() {
+    let fx = Fixture::new();
+    fx.patch("edit.vlp");
+    let mut svc = fx.start(3);
+    ok(&mut svc, "apply_patch", json!({"path": "edit.vlp"}));
+    let (_, _) = with_client(&fx, &mut svc, |path, _| {
+        let mut stream = UnixStream::connect(&path).unwrap();
+        stream
+            .write_all(
+                format!(
+                    "{}\n",
+                    json!({"protocol": "larql-session/v1", "id": 9, "op": "generate",
+                           "args": {"prompt": PROMPT, "n": 4}})
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        drop(stream);
+        std::thread::sleep(super::super::server::POLL * 10);
+    });
+    let records = fx.records();
+    let admitted: Vec<&Value> = records
+        .iter()
+        .filter(|r| r["event"] == "admitted")
+        .collect();
+    assert_eq!(admitted.len(), 1, "{records:#?}");
+    assert_eq!(admitted[0]["id"], 9);
+    assert_eq!(svc.budget_used, 1);
+}

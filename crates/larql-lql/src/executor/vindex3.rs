@@ -31,7 +31,7 @@ mod session;
 mod tensors;
 mod weights;
 pub(crate) use capture::{AppliedPatchFile, CaptureRequest};
-pub use capture::{CaptureSpec, Captured};
+pub use capture::{CaptureGeometry, CaptureSpec, Captured};
 pub use export_weight::WeightRead;
 pub(crate) use live::{live_weight_lines, nothing_in_effect_line};
 pub use low_rank::{operand_bits_from_values, operand_origin, OperandValues, StagedLowRank};

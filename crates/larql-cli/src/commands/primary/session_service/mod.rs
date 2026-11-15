@@ -40,20 +40,21 @@ pub struct ServeSessionArgs {
     pub socket: PathBuf,
 }
 
-/// Set by SIGTERM and SIGINT.
+/// Set by SIGTERM, SIGINT and SIGHUP.
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
 extern "C" fn on_signal(_: libc::c_int) {
     SHUTDOWN.store(true, Ordering::SeqCst);
 }
 
-/// Route SIGTERM and SIGINT to [`SHUTDOWN`].
+/// Route SIGTERM, SIGINT and SIGHUP to [`SHUTDOWN`].
 pub fn install_signal_handlers() {
     let handler = on_signal as extern "C" fn(libc::c_int) as libc::sighandler_t;
     // SAFETY: the handler only stores to an atomic, which is async-signal-safe.
     unsafe {
         libc::signal(libc::SIGTERM, handler);
         libc::signal(libc::SIGINT, handler);
+        libc::signal(libc::SIGHUP, handler);
     }
 }
 

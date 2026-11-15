@@ -67,10 +67,12 @@ class Service:
         os.makedirs(self.workdir, exist_ok=True)
         self.log = os.path.join(self.root, "audit.jsonl")
         self.socket = os.path.join(self.root, "s.sock")
+        self.staging = os.path.join(self.root, "staging")
+        os.makedirs(self.staging, exist_ok=True)
         policy = {
             "policy": "larql-session-policy/v1", "container": container, "workdir": self.workdir,
             "audit_log": self.log, "operations": operations, "budget": {"edited_executions": budget},
-            "resume": resume,
+            "resume": resume, "staging_dir": self.staging,
         }
         if limits:
             policy["limits"] = limits
@@ -112,6 +114,17 @@ def svc(container):
     shutil.rmtree(service.root, ignore_errors=True)
 
 
+CONTAINER_LABEL = "<bound container>"
+
+
+def redacted(provenance):
+    """The provenance as the service sends it: the container's path replaced by its label."""
+    out = dict(provenance)
+    if "container" in out:
+        out["container"] = CONTAINER_LABEL
+    return out
+
+
 def same_bits(a, b):
     assert a.dtype == b.dtype, (a.dtype, b.dtype)
     assert a.shape == b.shape, (a.shape, b.shape)
@@ -141,7 +154,7 @@ class TestEquality:
             got, want = r.tensor(TENSOR, rows=rows, cols=cols, bits=bits), s.tensor(TENSOR, rows=rows, cols=cols, bits=bits)
             assert isinstance(got, Readout)
             assert same_bits(got.array, want.array)
-            assert got.provenance == want.provenance
+            assert got.provenance == redacted(want.provenance)
 
     def test_update_weights(self, svc, container):
         s = larql.session(container)
@@ -167,7 +180,7 @@ class TestEquality:
         got = svc.client.capture(site, PROMPT, **kwargs)
         want = larql.session(container).capture(site, PROMPT, **kwargs)
         assert same_bits(got.array, want.array)
-        assert got.provenance == want.provenance
+        assert got.provenance == redacted(want.provenance)
 
     def test_infer_and_generate(self, svc, container):
         s, r = larql.session(container), svc.client
@@ -326,3 +339,16 @@ def test_the_client_imports_without_the_native_extension():
         "assert 'larql._native' not in sys.modules\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_an_answer_to_another_request_is_refused(svc):
+    real = svc.client._read_line
+
+    def answer_with_another_id():
+        response = json.loads(real())
+        response["id"] = -1
+        return json.dumps(response).encode()
+
+    svc.client._read_line = answer_with_another_id
+    with pytest.raises(ServiceError, match="different request"):
+        svc.client.budget()

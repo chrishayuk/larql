@@ -31,6 +31,8 @@ pub const DEFAULT_MAX_SEQUENCE_TOKENS: u64 = 4096;
 pub const DEFAULT_MAX_PATCH_BYTES: u64 = 64 * MIB;
 /// Default: the largest `top` an `infer` may ask for.
 pub const DEFAULT_MAX_INFER_TOP: u64 = 1000;
+/// Default: the most patches applied at once.
+pub const DEFAULT_MAX_APPLIED_PATCHES: u64 = 16;
 
 /// The policy file, as written.
 #[derive(Debug, Clone, Deserialize)]
@@ -55,10 +57,10 @@ pub struct Policy {
     /// `stored` (the default), `auto` or `transient`, as `larql lql --representation-source` spells it.
     #[serde(default)]
     pub representation_source: Option<String>,
-    /// Where the service keeps its private copies of patch files. A fresh directory is created inside it;
-    /// the default is the system temporary directory.
-    #[serde(default)]
-    pub staging_dir: Option<PathBuf>,
+    /// Where the service keeps its private copies of patch files: a fresh directory (mode 0700) is created
+    /// inside it. Required, and must be outside the workdir and the container; it should be a directory the
+    /// client cannot write.
+    pub staging_dir: PathBuf,
 }
 
 /// The evaluation budget.
@@ -82,6 +84,7 @@ pub struct Limits {
     pub max_sequence_tokens: u64,
     pub max_patch_bytes: u64,
     pub max_infer_top: u64,
+    pub max_applied_patches: u64,
 }
 
 impl Default for Limits {
@@ -95,6 +98,7 @@ impl Default for Limits {
             max_sequence_tokens: DEFAULT_MAX_SEQUENCE_TOKENS,
             max_patch_bytes: DEFAULT_MAX_PATCH_BYTES,
             max_infer_top: DEFAULT_MAX_INFER_TOP,
+            max_applied_patches: DEFAULT_MAX_APPLIED_PATCHES,
         }
     }
 }

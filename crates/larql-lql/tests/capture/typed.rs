@@ -420,6 +420,7 @@ fn the_typed_operations_refuse_without_a_binding() {
         .is_err());
     assert!(s.stage_weight_delta(TENSOR, 0, &[0], 1.0).is_err());
     assert!(s.discard_weight_edits().is_err());
+    assert!(s.has_pending_edits().is_err());
 }
 
 #[test]
@@ -427,6 +428,7 @@ fn discard_weight_edits_drops_what_was_staged_and_keeps_applied_patches() {
     let fx = Fixture::new();
     let vlp = fx.patch("applied.vlp");
     let mut s = fx.session();
+    assert!(!s.has_pending_edits().unwrap());
     run(&mut s, &format!("APPLY PATCH \"{}\";", q(&vlp)));
     s.begin_patch(fx.path("open.vlp").to_str().unwrap())
         .unwrap();
@@ -438,6 +440,7 @@ fn discard_weight_edits_drops_what_was_staged_and_keeps_applied_patches() {
     assert_eq!(s.patches().unwrap().weight_ops, 1);
     assert_eq!(s.patches().unwrap().recording.unwrap().1, 0);
 
+    assert!(s.has_pending_edits().unwrap());
     let again = s.discard_weight_edits().unwrap();
     assert_eq!((again.discarded, again.unrecorded), (0, 0));
     assert_eq!(
@@ -473,4 +476,46 @@ fn npy_file_bytes_are_the_file_capture_writes() {
     let bytes = npy_file_bytes(NpyDescr::F4, &captured.shape, &body).unwrap();
     assert_eq!(bytes, std::fs::read(&out).unwrap());
     assert_eq!(captured.provenance["npy_sha256"], sha256_hex(&bytes));
+}
+
+#[test]
+fn capture_geometry_is_the_width_every_site_captures() {
+    let fx = Fixture::new();
+    let s = fx.session();
+    for site in CaptureSite::ALL {
+        let layers = if site.per_layer() {
+            Some(CaptureLayers::One(1))
+        } else {
+            None
+        };
+        let listed: Vec<usize> = if site.per_layer() { vec![1] } else { vec![] };
+        let geometry = s.capture_geometry(site, &listed).unwrap();
+        assert_eq!(geometry.plan_layers, LAYERS);
+        assert_eq!(geometry.vocab, Some(VOCAB));
+        let captured = s
+            .capture(&CaptureSpec {
+                site,
+                layers: layers.as_ref(),
+                prompt: PROMPT,
+                continuation: None,
+                positions: &CapturePositions::Last,
+            })
+            .unwrap();
+        assert_eq!(
+            geometry.width,
+            captured.shape.last().copied(),
+            "{}",
+            site.name()
+        );
+    }
+    // A layer the plan does not have bounds nothing.
+    assert_eq!(
+        s.capture_geometry(CaptureSite::FfnDownInput, &[LAYERS])
+            .unwrap()
+            .width,
+        None
+    );
+    assert!(larql_lql::Session::new()
+        .capture_geometry(CaptureSite::Logits, &[])
+        .is_err());
 }

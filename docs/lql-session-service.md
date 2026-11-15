@@ -50,12 +50,12 @@ A JSON file, read once at start. Unknown fields are refused, so a misspelt limit
 | `container` | The one VINDEX3 container. Bound at start; never another (there is no `USE`). |
 | `workdir` | The only directory request paths may name. Must not contain, or be inside, the container. |
 | `audit_log` | JSONL. Must be outside the workdir and the container. Refused if it exists, unless `resume`. |
-| `resume` | Continue an existing log: its sequence numbers and its budget use carry on. Refused if the log does not parse whole, or its last `start` record names another container (by `index.json` digest). |
+| `resume` | Continue an existing log: its sequence numbers carry on, and the budget used is the number of its `admitted` records (never a figure a record states). Refused if the log does not parse whole, or its last `start` record names another container (by `index.json` digest). |
 | `operations` | The allow-list. `update_weights` (and any other) is allowed only if listed. `hello` and `budget` are always answered. |
 | `budget.edited_executions` | How many executions of an edited model are answered. |
-| `limits` | Optional; each field defaults: `max_response_bytes` 256 MiB (array bytes per response), `max_request_bytes` 64 MiB (one request line), `max_generate_tokens` 256, `max_capture_positions` 4096, `max_capture_layers` 64, `max_sequence_tokens` 4096 (prompt plus continuation), `max_patch_bytes` 64 MiB, `max_infer_top` 1000. |
+| `limits` | Optional; each field defaults: `max_response_bytes` 256 MiB (array bytes per response), `max_request_bytes` 64 MiB (one request line), `max_generate_tokens` 256, `max_capture_positions` 4096, `max_capture_layers` 64, `max_sequence_tokens` 4096 (prompt plus continuation), `max_patch_bytes` 64 MiB, `max_infer_top` 1000, `max_applied_patches` 16. |
 | `representation_source` | `stored` (default), `auto` or `transient`, as `larql lql --representation-source`. |
-| `staging_dir` | Where the service makes its private staging directory (mode 0700); default the system temporary directory. Must be outside the workdir and the container. |
+| `staging_dir` | Required. Where the service makes its private staging directory (mode 0700). Must be outside the workdir and the container, must not contain the workdir, and should be a directory the client cannot write. |
 
 Paths may be anywhere the service's user can reach; nothing ties them to one tree.
 
@@ -75,7 +75,8 @@ JSON lines over the Unix socket, one request, one response, in order.
  "budget": {"limit": 40, "used": 3, "remaining": 37}, "edited": true, "counted": true}
 ```
 
-- `id` is echoed. `seq` is the request's record number in the audit log.
+- `id` is echoed (at most 256 bytes as JSON; a longer one is refused and answered with `id` null). `seq` is the
+  request's record number in the audit log.
 - `budget` is after the request. `edited`: the execution ran (or was refused for) an edited model. `counted`:
   it was charged.
 - An error is `"ok": false, "error": {"kind", "reason"}`. Kinds: `invalid_request` (not JSON, not a request,
@@ -111,7 +112,8 @@ in-process Python method call; no LQL text is accepted or built.
 
 ## What it enforces
 
-- **One container, read-only, bound once.** Nothing in the protocol rebinds, compiles or writes into it.
+- **One container, read-only, bound once.** Nothing in the protocol rebinds, compiles or writes into it. Its
+  path is never sent: provenance and error text carry `<bound container>` instead (with the index digest).
 - **The allow-list.** Any other `op` is refused with the list.
 - **Paths stay in the workdir.** A request names a file relative to the workdir (or absolutely under it). The
   name must pass the container path rule (no root, `.`, `..`, backslash or NUL). The file is then opened one
@@ -120,37 +122,62 @@ in-process Python method call; no LQL text is accepted or built.
   be a regular file with one link (hard links to files elsewhere are refused; FIFOs are refused without blocking).
   LARQL itself never sees a workdir path: an applied patch is read here and copied to the private staging
   directory, and LARQL reads the copy; a saved patch is written by LARQL into staging and copied into a workdir
-  file opened as above. The staging path is removed from everything sent back. `begin_patch` checks the
+  file opened as above. Staged files get the same discipline: the place is cleared (a planted symlink is
+  removed, never followed) and the copy created with `O_CREAT | O_EXCL | O_NOFOLLOW` before LARQL reads it; the
+  place is cleared before LARQL saves there, and what it saved is read back confined (a link or hard link is
+  refused). A staged copy is deleted when its patch is removed. The staging path is removed from everything
+  sent back. `begin_patch` checks the
   destination when the recording starts, and `save_patch` again before LARQL writes; a refused save keeps the
   recording.
-- **The budget, server-side.** An `infer`, `generate` or `capture` executed while any patch is applied, any
-  weight op is staged, or any override is in the session overlay counts one (a capture over many positions or
-  layers is still one). The state is read from LARQL's own patch report before the execution; a capture's
-  provenance (`executes`) is a second witness, and a capture it says ran edited weights is charged too. When the
-  budget is spent those executions are refused (`budget_exhausted`) and logged; base-model executions (nothing
-  applied or staged) stay free, as do reads (`tensor`, `tokenize`, …). Removing every patch (and discarding
-  staged ops) makes executions free again. An execution is charged when its result is returned: a request
-  refused before or after running (for a limit) is not charged.
-- **Limits.** Generation length, capture positions and layers, sequence length and `top` are refused before
-  anything executes; a tensor read is refused before it is read when the listing shows it would be too large;
-  any response's array bytes are checked before it is sent.
+- **The budget, server-side.** An `infer`, `generate` or `capture` executed while the session has pending
+  edits (LARQL's own `has_pending_edits`: a weight op applied or staged, or a knowledge edit) or any patch is
+  applied is an edited execution. It is **charged when admitted, before it runs**: an `admitted` audit record
+  carrying the budget after it is appended and synced, and only then does the model run. Whatever happens next
+  (LARQL refuses after running, the response is too large, the client hangs up, the service is killed) the
+  charge stands, and a resumed log recounts it. A capture over many positions or layers is still one. A
+  capture's provenance (`executes`) is a second witness: a capture it says ran edited weights is charged even
+  if the pre-check did not. When the budget is spent, edited executions are refused (`budget_exhausted`) and
+  logged; base-model executions and reads (`tensor`, `tokenize`, …) stay free. Removing every patch and
+  discarding staged ops makes executions free again.
+- **Checks before execution.** Everything a capture's arguments allow is checked before it is admitted, so a
+  refusal there costs nothing and computes nothing: the site's need for a layer (or none), empty or repeated
+  `layers`/`positions`, layers against the plan, `REPLY` without a continuation, an empty continuation, token
+  ids outside the vocabulary, `generate=0`, positions against the sequence (exactly, or for `generate` against
+  the prompt plus `n`), and the limits. A position the model's own generation decides (one past where
+  generation actually stopped) can only be refused after running; that refusal is charged.
+- **Limits.** Generation length, capture positions and layers, sequence length, `top` and the patches
+  applied at once are refused before anything executes. A capture's array bytes are bounded before it runs
+  (layers × positions × the site's width from the plan × 4, plus the header) and refused up front; where the
+  plan gives no width (a hyper-connection residual, a routed FFN's down input) only the check after running
+  applies. A tensor read is refused before it is read when the listing shows it would be too large. Every
+  response's array bytes are checked again before it is sent.
 - **The audit log.** Every request gets one record, appended (`O_APPEND`) and synced before its response is
-  sent: `seq`, `time_unix_ms`, `id`, `op`, the arguments (operand arrays replaced by their digest), `ok`, the
-  error, `edited`, `counted`, `budget_used`, `budget_remaining`, each returned array's digest, dtype and shape,
-  and the SHA-256 of the response line. A `start` record holds the policy digest, the container path and index
+  sent: `seq`, `time_unix_ms`, `id`, `op`, the arguments (operand arrays, and strings over 1 KiB, replaced by
+  their digest; a line that is not a request by its digest and length), `ok`, the error, `edited`, `counted`,
+  `admitted_seq`, `outcome`, `budget_used`, `budget_remaining`, each returned array's digest, dtype and shape,
+  and the SHA-256 of the response line. Three states are distinguishable: a request `rejected` before
+  execution (no `admitted` record, not charged); an `admitted` record (charged, written before the model
+  runs); and the request record of an admitted execution, `completed` or `failed` (outcome only, no further
+  charge). A `start` record holds the policy digest, the container path and index
   digest, the workdir, the allow-list, budget, limits and every `LARQL_*` environment variable; `connect`,
-  `disconnect`, `connection_rejected` and `stop` are recorded too. If the log cannot be written, the request is
+  `disconnect`, `connection_rejected` and `stop` are recorded too; `connect` records the peer's uid, gid and (on
+  macOS and Linux) pid. If the log cannot be written, the request is
   answered with an error and the service stops answering.
 - **One client.** While a client is connected, a second connection is sent one `busy` error and closed (checked
-  between requests). Requests are answered one at a time.
-- **Shutdown.** SIGTERM or SIGINT: the request in flight is finished, the connection closed, the `stop` record
+  between requests). Requests are answered one at a time. A response that cannot be written within 10 s (a
+  client that stopped reading) ends the connection, so it cannot hold the service or its shutdown.
+- **Shutdown.** SIGTERM, SIGINT or SIGHUP: the request in flight is finished, the connection closed, the `stop` record
   written, the socket file removed (only if it is still the socket this process bound). The service refuses to
   start on an existing socket path rather than unlink it.
 
 ## What it does not enforce
 
 - **It is not an OS sandbox.** It cannot stop the client's process from reading the model files, the HF cache, a
-  GGUF, the audit log or the staging directory directly, or from running another model runtime. That must be
+  GGUF, the audit log or the staging directory directly, or from running another model runtime. The staging
+  directory in particular must not be writable by the client: LARQL itself opens staged paths by name, so a
+  party that can write there between the service's checks and LARQL's open (the service's own user) could
+  redirect a read or a save; the service's checks narrow that window and catch it afterwards, they do not
+  close it. That must be
   enforced by the operating system: the model directory unreadable (and untraversable) by the client's user or
   sandbox, no other copy of the checkpoint reachable, no model runtime installed. The pure-Python client means the
   client environment needs no native `larql` extension at all.
@@ -185,10 +212,15 @@ sockets, so check the connect from inside the sandbox before relying on it.
 
 - Rust, in `crates/larql-cli/src/commands/primary/session_service/tests/`: every operation against the
   in-process typed operation (arrays bit for bit), refusals, paths (`..`, absolute, symlinks to files and
-  directories, a link swapped in after `begin_patch`, hard links, FIFOs), the budget, the limits, the audit
-  log and its resume, the envelope, the socket (ordering, `busy`, over-long lines, shutdown). The process test
-  `crates/larql-cli/tests/test_serve_session.rs` sends SIGTERM and checks the stop record and the socket's
-  removal, and that a second start on the same log is refused.
+  directories, a link swapped in after `begin_patch`, links planted in staging, hard links, FIFOs), the budget
+  (charged at admission; every early refusal uncharged; a failure after admission charged; the edited
+  predicate checked against capture's `executes` after every state-changing operation on the allow-list), the
+  limits (the capture size bound before running), the audit log and its resume (budget recounted from
+  `admitted` records), redaction of the container path, the envelope, and the socket (ordering, `busy`,
+  over-long lines, a client that stops reading, a client that hangs up mid-request, shutdown).
+- The process tests in `crates/larql-cli/tests/test_serve_session.rs`: SIGTERM stops the service, records the
+  stop, removes the socket, and a second start on the same log is refused; SIGKILL during an admitted
+  generate, then a resume, leaves that generate spent.
 - Python, `crates/larql-python/tests/test_session_service.py`: every client method against `larql.session` on
-  the synthetic container, refusals as exceptions, the budget, and an import of the client with the native
-  extension blocked.
+  the synthetic container, refusals as exceptions, the budget, an answer naming another request refused, and
+  an import of the client with the native extension blocked.

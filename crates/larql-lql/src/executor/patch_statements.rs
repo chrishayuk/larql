@@ -478,6 +478,18 @@ impl Session {
         Ok(out)
     }
 
+    /// Whether what the session executes is not the bound container as stored: a stored-weight op applied or
+    /// staged, or a knowledge edit (an override, a KNN entry, a deletion). On a VINDEX3 binding only.
+    pub fn has_pending_edits(&self) -> Result<bool, LqlError> {
+        match &self.backend {
+            Backend::Vindex3 { overlay, .. } => Ok(overlay.has_pending_edits()),
+            Backend::None => Err(LqlError::NoBackend),
+            _ => Err(LqlError::Execution(
+                "pending edits are asked of a VINDEX3 binding, and this session is not bound to one".into(),
+            )),
+        }
+    }
+
     /// The typed operation behind `REMOVE PATCH`: remove the applied patch `path` names.
     pub fn remove_patch(&mut self, path: &str) -> Result<RemovedPatch, LqlError> {
         let by_name = |p: &larql_vindex::VindexPatch| p.description.as_deref() == Some(path);

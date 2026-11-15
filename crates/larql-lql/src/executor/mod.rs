@@ -53,9 +53,9 @@ pub mod operations {
         AppliedPatch, PatchSummary, PatchesReport, RemovedPatch, SavedPatch,
     };
     pub use super::vindex3::{
-        npy_file_bytes, operand_bits_from_values, operand_origin, CaptureSpec, Captured,
-        DiscardedWeightEdits, EditedElement, Generated, NpyDescr, OperandValues, Prediction,
-        Predictions, StagedLowRank, StagedWeightDelta, WeightRead,
+        npy_file_bytes, operand_bits_from_values, operand_origin, CaptureGeometry, CaptureSpec,
+        Captured, DiscardedWeightEdits, EditedElement, Generated, NpyDescr, OperandValues,
+        Prediction, Predictions, StagedLowRank, StagedWeightDelta, WeightRead,
     };
     pub use crate::ast::{CaptureContinuation, CaptureLayers, CapturePositions, CaptureSite};
     pub use larql_vindex::format::vindex3::stored_tensor::{BareName, TensorListing};

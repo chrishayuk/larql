@@ -186,3 +186,51 @@ fn a_destination_swapped_for_a_link_after_begin_is_refused_at_save_and_the_recor
     std::fs::remove_file(fx.workdir().join("late.vlp")).unwrap();
     assert_eq!(ok(&mut svc, "save_patch", json!({}))["path"], "late.vlp");
 }
+
+#[test]
+fn a_link_planted_in_staging_is_removed_never_followed() {
+    let fx = Fixture::new();
+    fx.patch("edit.vlp");
+    let victim = fx.logs.path().join("victim");
+    std::fs::write(&victim, "keep me").unwrap();
+    let mut svc = fx.start(5);
+    // At the staged copy's place, before an apply.
+    symlink(&victim, svc.staged_path("edit.vlp")).unwrap();
+    ok(&mut svc, "apply_patch", json!({"path": "edit.vlp"}));
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
+    // The staged copy is deleted when the patch is removed.
+    ok(&mut svc, "remove_patch", json!({"path": "edit.vlp"}));
+    assert!(svc.staged_path("edit.vlp").symlink_metadata().is_err());
+
+    // At a recording's staged place, between begin and save.
+    ok(&mut svc, "begin_patch", json!({"path": "rec.vlp"}));
+    ok(
+        &mut svc,
+        "update_weights",
+        json!({"tensor": TENSOR, "row": ROW, "cols": [0], "delta": 2.0}),
+    );
+    symlink(&victim, svc.staged_path("rec.vlp")).unwrap();
+    ok(&mut svc, "save_patch", json!({}));
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
+    assert!(fx.workdir().join("rec.vlp").is_file());
+    assert!(svc.staged_path("rec.vlp").symlink_metadata().is_err());
+}
+
+#[test]
+fn a_staged_file_that_is_not_the_one_written_is_refused_at_save() {
+    // A hard link where the staged file goes: LARQL's write replaces it, the read-back is still confined.
+    let fx = Fixture::new();
+    let workdir = Workdir::open(fx.logs.path()).unwrap();
+    std::fs::write(fx.logs.path().join("a"), "x").unwrap();
+    std::fs::hard_link(fx.logs.path().join("a"), fx.logs.path().join("b")).unwrap();
+    assert!(workdir
+        .read("b", 10)
+        .unwrap_err()
+        .reason
+        .contains("hard links"));
+    workdir.clear("b").unwrap();
+    workdir.clear("b").unwrap();
+    assert!(workdir.create_new("a").is_err());
+    std::fs::write(fx.logs.path().join("f"), "x").unwrap();
+    assert!(workdir.clear("f/g").is_err());
+}

@@ -22,6 +22,18 @@ const POSITION_WORDS: &str = "LAST, PROMPT_END, REPLY or ALL";
 /// What a capture's provenance says when the stored weights executed.
 const EXECUTES_STORED: &str = "stored";
 const DEFAULT_TOP: usize = 5;
+/// The bytes of one f32 element.
+const F32_BYTES: u64 = 4;
+/// At most this many bytes of `.npy` header precede a capture's body (a 1.0 header for up to three dims).
+const NPY_HEADER_BOUND: u64 = 256;
+
+fn no_repeats(what: &str, list: &[usize]) -> Result<(), Failure> {
+    let mut seen = std::collections::BTreeSet::new();
+    match list.iter().find(|item| !seen.insert(**item)) {
+        Some(repeat) => Err(Failure::invalid(format!("{what} {repeat} is listed twice"))),
+        None => Ok(()),
+    }
+}
 
 fn values(o: &Operand) -> OperandValues<'_> {
     match o {
@@ -353,46 +365,16 @@ impl Service {
             }
         };
         let positions = positions_arg(c.positions)?;
-
-        // The limits, before anything executes.
-        let layer_count = match &layers {
-            Some(CaptureLayers::Many(many)) => many.len() as u64,
-            _ => 1,
-        };
-        over(
-            "the layers to capture",
-            layer_count,
-            self.limits.max_capture_layers,
-            "max_capture_layers",
-        )?;
-        let reply = match &continuation {
-            None => 0,
-            Some(CaptureContinuation::Text(t)) => self
-                .session
-                .tokenize(t, false)
-                .map_err(Failure::failed)?
-                .len() as u64,
-            Some(CaptureContinuation::Tokens(ids)) => ids.len() as u64,
-            Some(CaptureContinuation::Generate(n)) => {
-                self.check_generate(u64::from(*n))?;
-                u64::from(*n)
-            }
-        };
-        let sequence = self.prompt_tokens(&c.prompt)? + reply;
-        self.check_sequence(sequence)?;
-        let position_count = match &positions {
-            CapturePositions::Last | CapturePositions::PromptEnd => 1,
-            CapturePositions::Reply => reply,
-            CapturePositions::All => sequence,
-            CapturePositions::List(list) => list.len() as u64,
-        };
-        over(
-            "the positions to capture",
-            position_count,
-            self.limits.max_capture_positions,
-            "max_capture_positions",
+        self.check_capture(
+            site,
+            layers.as_ref(),
+            &c.prompt,
+            continuation.as_ref(),
+            &positions,
         )?;
 
+        // Charged now, before it runs: whatever happens from here on (a refusal LARQL makes after running, a
+        // response too large to send), an edited model has executed.
         let edited = self.gate()?;
         let captured = self
             .session
@@ -406,16 +388,156 @@ impl Service {
             .map_err(Failure::failed)?;
         // The capture's own record of what executed is the second witness: if it says the stored weights
         // did not execute, the run is charged even if the session's report said otherwise.
-        let ran_edited = edited || captured.provenance["executes"] != EXECUTES_STORED;
+        if !edited && captured.provenance["executes"] != EXECUTES_STORED {
+            self.charge()?;
+        }
         let body: Vec<u8> = captured
             .values()
             .iter()
             .flat_map(|v| v.to_le_bytes())
             .collect();
         let encoded = encode(NpyDescr::F4, &captured.shape, &body)?;
-        self.check_response_bytes(encoded.bytes)?;
-        self.charge(ran_edited)?;
         self.readout(encoded, captured.provenance)
+    }
+
+    /// Every check a capture's arguments allow before it runs: the layers against the plan, the
+    /// continuation, the positions against the sequence where its length is known, and the limits,
+    /// including an upper bound on the response's array bytes.
+    fn check_capture(
+        &self,
+        site: CaptureSite,
+        layers: Option<&CaptureLayers>,
+        prompt: &str,
+        continuation: Option<&CaptureContinuation>,
+        positions: &CapturePositions,
+    ) -> Result<(), Failure> {
+        let layer_list = layers.map(|l| l.layers()).unwrap_or_default();
+        match (site.per_layer(), layers) {
+            (true, None) => {
+                return Err(Failure::invalid(format!(
+                    "the site {} is inside a layer: pass layer= or layers=",
+                    site.name()
+                )))
+            }
+            (false, Some(_)) => {
+                return Err(Failure::invalid(format!(
+                    "the site {} is after the last layer and takes no layer",
+                    site.name()
+                )))
+            }
+            _ => {}
+        }
+        if site.per_layer() && layer_list.is_empty() {
+            return Err(Failure::invalid("layers= is empty"));
+        }
+        no_repeats("layer", &layer_list)?;
+        let geometry = self
+            .session
+            .capture_geometry(site, &layer_list)
+            .map_err(Failure::failed)?;
+        if let Some(bad) = layer_list.iter().find(|&&l| l >= geometry.plan_layers) {
+            return Err(Failure::invalid(format!(
+                "layer {bad} does not exist: the program has {} layers",
+                geometry.plan_layers
+            )));
+        }
+        over(
+            "the layers to capture",
+            layer_list.len().max(1) as u64,
+            self.limits.max_capture_layers,
+            "max_capture_layers",
+        )?;
+
+        let prompt_tokens = self.prompt_tokens(prompt)?;
+        // The continuation's length: exact, or (for generate) at most.
+        let (reply, exact) = match continuation {
+            None => (0, true),
+            Some(CaptureContinuation::Text(t)) => {
+                let n = self
+                    .session
+                    .tokenize(t, false)
+                    .map_err(Failure::failed)?
+                    .len() as u64;
+                if n == 0 {
+                    return Err(Failure::invalid(format!(
+                        "continue_text={t:?} encodes to no tokens"
+                    )));
+                }
+                (n, true)
+            }
+            Some(CaptureContinuation::Tokens(ids)) => {
+                if ids.is_empty() {
+                    return Err(Failure::invalid("continue_tokens= is empty"));
+                }
+                if let (Some(vocab), Some(bad)) = (
+                    geometry.vocab,
+                    ids.iter()
+                        .find(|&&id| id as usize >= geometry.vocab.unwrap_or(0)),
+                ) {
+                    return Err(Failure::invalid(format!(
+                        "token id {bad} is outside the vocabulary of {vocab}"
+                    )));
+                }
+                (ids.len() as u64, true)
+            }
+            Some(CaptureContinuation::Generate(n)) => {
+                if *n == 0 {
+                    return Err(Failure::invalid("generate= must be at least 1"));
+                }
+                self.check_generate(u64::from(*n))?;
+                (u64::from(*n), false)
+            }
+        };
+        let sequence = prompt_tokens + reply;
+        self.check_sequence(sequence)?;
+        let position_count = match positions {
+            CapturePositions::Last | CapturePositions::PromptEnd => 1,
+            CapturePositions::Reply => {
+                if continuation.is_none() {
+                    return Err(Failure::invalid(
+                        "positions=\"REPLY\" needs a continuation (continue_text=, continue_tokens= or generate=)",
+                    ));
+                }
+                reply
+            }
+            CapturePositions::All => sequence,
+            CapturePositions::List(list) => {
+                if list.is_empty() {
+                    return Err(Failure::invalid("positions= is an empty list"));
+                }
+                no_repeats("position", list)?;
+                if let Some(bad) = list.iter().find(|&&p| p as u64 >= sequence) {
+                    return Err(Failure::invalid(if exact {
+                        format!("position {bad} is outside the {sequence}-token sequence")
+                    } else {
+                        format!(
+                            "position {bad} is beyond the prompt and the {reply} token(s) generate= may produce"
+                        )
+                    }));
+                }
+                list.len() as u64
+            }
+        };
+        over(
+            "the positions to capture",
+            position_count,
+            self.limits.max_capture_positions,
+            "max_capture_positions",
+        )?;
+        if let Some(width) = geometry.width {
+            let bound = (layer_list.len().max(1) as u64)
+                .saturating_mul(position_count)
+                .saturating_mul(width as u64)
+                .saturating_mul(F32_BYTES)
+                .saturating_add(NPY_HEADER_BOUND);
+            over(
+                "the capture's array bytes, at most",
+                bound,
+                self.limits.max_response_bytes,
+                "max_response_bytes",
+            )?;
+        }
+        Ok(())
     }
 
     fn infer(&mut self, i: InferArgs) -> Result<Value, Failure> {
@@ -427,12 +549,11 @@ impl Service {
         )?;
         let sequence = self.prompt_tokens(&i.prompt)?;
         self.check_sequence(sequence)?;
-        let edited = self.gate()?;
+        self.gate()?;
         let predicted = self
             .session
             .predict(&i.prompt, i.top)
             .map_err(Failure::failed)?;
-        self.charge(edited)?;
         Ok(json!({
             "prompt_ids": predicted.prompt_ids,
             "predictions": predicted.top.iter().map(|p| json!({
@@ -453,12 +574,11 @@ impl Service {
         self.check_generate(g.n as u64)?;
         let sequence = self.prompt_tokens(&g.prompt)? + g.n as u64;
         self.check_sequence(sequence)?;
-        let edited = self.gate()?;
+        self.gate()?;
         let generated = self
             .session
             .generate(&g.prompt, g.n)
             .map_err(Failure::failed)?;
-        self.charge(edited)?;
         Ok(json!({
             "prompt_ids": generated.prompt_ids,
             "token_ids": generated.token_ids,
@@ -466,13 +586,10 @@ impl Service {
         }))
     }
 
-    /// The staging path for workdir name `name`, its directories created.
+    /// The staging path for workdir name `name`, as LARQL is given it.
     fn staging_path(&self, name: &str) -> Result<String, Failure> {
-        let path = self.staged(name);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(Failure::failed)?;
-        }
-        path.to_str()
+        self.staged_path(name)
+            .to_str()
             .map(str::to_string)
             .ok_or_else(|| Failure::refused("the staging path is not valid UTF-8"))
     }
@@ -483,6 +600,8 @@ impl Service {
         // recording could only be kept. (Checked again at the save: the workdir can change in between.)
         self.workdir.open_for_write(&name)?.discard();
         let staged = self.staging_path(&name)?;
+        // LARQL creates the staged file at the save; nothing may be there before it.
+        self.staged.clear(&name)?;
         self.session.begin_patch(&staged).map_err(Failure::failed)?;
         self.recording = Some(name);
         Ok(Value::Null)
@@ -555,6 +674,10 @@ impl Service {
         // The destination is opened (and checked) before LARQL writes anything, so a refused destination
         // leaves the recording in the session.
         let mut target = self.workdir.open_for_write(&name)?;
+        if let Err(f) = self.staged.clear(&name) {
+            target.discard();
+            return Err(f);
+        }
         let saved = match self.session.save_patch() {
             Ok(saved) => saved,
             Err(e) => {
@@ -563,14 +686,19 @@ impl Service {
             }
         };
         self.recording = None;
-        let staged = self.staged(&name);
-        let delivered = std::fs::read(&staged).and_then(|bytes| {
+        // Read back as confined as the workdir: a staged file that is not the regular, singly linked file
+        // LARQL just wrote is refused.
+        let bytes = self.staged.read(&name, self.limits.max_patch_bytes);
+        let _ = self.staged.clear(&name);
+        let bytes = bytes?;
+        let delivered = {
             use std::io::Write;
-            target.file.set_len(0)?;
-            target.file.write_all(&bytes)?;
-            target.file.sync_all()
-        });
-        let _ = std::fs::remove_file(&staged);
+            target
+                .file
+                .set_len(0)
+                .and_then(|_| target.file.write_all(&bytes))
+                .and_then(|_| target.file.sync_all())
+        };
         delivered.map_err(|e| {
             Failure::failed(format!(
                 "the patch was saved but could not be written to `{name}` in the workdir: {e}"
@@ -588,9 +716,28 @@ impl Service {
 
     fn apply_patch(&mut self, p: PathArgs) -> Result<Value, Failure> {
         let name = self.workdir.name(&p.path)?;
+        let applied_now = self
+            .session
+            .patches()
+            .map_err(Failure::failed)?
+            .applied
+            .len() as u64;
+        over(
+            "the patches applied",
+            applied_now + 1,
+            self.limits.max_applied_patches,
+            "max_applied_patches",
+        )?;
         let bytes = self.workdir.read(&name, self.limits.max_patch_bytes)?;
         let staged = self.staging_path(&name)?;
-        std::fs::write(&staged, &bytes).map_err(Failure::failed)?;
+        self.staged.clear(&name)?;
+        {
+            use std::io::Write;
+            let mut copy = self.staged.create_new(&name)?;
+            copy.write_all(&bytes)
+                .and_then(|_| copy.sync_all())
+                .map_err(Failure::failed)?;
+        }
         let applied = self.session.apply_patch(&staged).map_err(Failure::failed)?;
         Ok(json!({
             "path": applied.path,
@@ -607,13 +754,16 @@ impl Service {
     fn remove_patch(&mut self, p: PathArgs) -> Result<Value, Failure> {
         // A patch applied from the workdir is named by its staged copy; one carrying a description of its own
         // is named by that description. Removal touches no file.
-        let staged = self
-            .workdir
-            .name(&p.path)
-            .ok()
-            .and_then(|name| self.staged(&name).to_str().map(str::to_string));
+        let name = self.workdir.name(&p.path).ok();
+        let staged = name.as_ref().and_then(|n| self.staging_path(n).ok());
         let removed = match staged.map(|s| self.session.remove_patch(&s)) {
-            Some(Ok(removed)) => removed,
+            Some(Ok(removed)) => {
+                if let Some(n) = &name {
+                    // The staged copy is no longer applied.
+                    let _ = self.staged.clear(n);
+                }
+                removed
+            }
             _ => self
                 .session
                 .remove_patch(&p.path)

@@ -3,7 +3,8 @@
 //! Every record carries `seq` (monotonically increasing, from 1, across resumes), `time_unix_ms`, `event` and
 //! `budget_used` after it. A fresh log is created exclusively: an existing file is refused unless the policy
 //! says `resume`, and a resumed log must parse whole, end in a record with a `seq` and a `budget_used`, and
-//! name the same container (by its index digest) in its last `start` record.
+//! name the same container (by its index digest) in its last `start` record. The budget a resumed log has used
+//! is the number of its `admitted` records.
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -15,6 +16,8 @@ use serde_json::{json, Value};
 pub const EVENT_START: &str = "start";
 pub const EVENT_STOP: &str = "stop";
 pub const EVENT_REQUEST: &str = "request";
+/// An edited-model execution admitted and charged, written before it runs.
+pub const EVENT_ADMITTED: &str = "admitted";
 pub const EVENT_CONNECT: &str = "connect";
 pub const EVENT_DISCONNECT: &str = "disconnect";
 pub const EVENT_REJECTED: &str = "connection_rejected";
@@ -87,6 +90,7 @@ impl AuditLog {
             .map_err(|e| format!("read the audit log {}: {e}", path.display()))?;
         let mut last: Option<Value> = None;
         let mut last_start: Option<Value> = None;
+        let mut admitted = 0u64;
         for (i, line) in text.lines().enumerate() {
             let record: Value = serde_json::from_str(line).map_err(|e| {
                 format!(
@@ -98,6 +102,9 @@ impl AuditLog {
             if record["event"] == EVENT_START {
                 last_start = Some(record.clone());
             }
+            if record["event"] == EVENT_ADMITTED {
+                admitted += 1;
+            }
             last = Some(record);
         }
         let Some(last) = last else {
@@ -106,9 +113,9 @@ impl AuditLog {
                 budget_used: 0,
             });
         };
-        let (Some(seq), Some(used)) = (last["seq"].as_u64(), last["budget_used"].as_u64()) else {
+        let Some(seq) = last["seq"].as_u64() else {
             return Err(format!(
-                "the audit log {} ends in a record without `seq` and `budget_used`; refusing to resume it",
+                "the audit log {} ends in a record without `seq`; refusing to resume it",
                 path.display()
             ));
         };
@@ -122,9 +129,11 @@ impl AuditLog {
                 ));
             }
         }
+        // The budget used is the count of admitted executions, never a field a record states: a request
+        // admitted and then cut off (the service killed while it ran) stays spent.
         Ok(Resumed {
             next_seq: seq + 1,
-            budget_used: used,
+            budget_used: admitted,
         })
     }
 

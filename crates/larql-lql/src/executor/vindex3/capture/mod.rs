@@ -13,9 +13,11 @@
 
 mod batch;
 mod decode;
+mod geometry;
 mod provenance;
 mod sequence;
 
+pub use geometry::CaptureGeometry;
 pub(crate) use provenance::AppliedPatchFile;
 
 use larql_inference::vindex3::OperandOverrides;
