@@ -102,7 +102,10 @@ impl Parser {
         if matches!(self.peek(), Token::Keyword(Keyword::Weights)) {
             return self.parse_update_weights();
         }
-        self.expect_keyword(Keyword::Edges)?;
+        if !self.check_keyword(Keyword::Edges) {
+            return Err(self.expected_one_of("UPDATE", &["EDGES", "WEIGHTS"], "UPDATE WEIGHTS"));
+        }
+        self.advance();
         self.expect_keyword(Keyword::Set)?;
 
         let set = self.parse_assignments()?;

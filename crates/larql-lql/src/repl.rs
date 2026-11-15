@@ -400,45 +400,21 @@ fn split_statements(input: &str) -> Vec<String> {
     stmts
 }
 
+/// The REPL's own commands, which are not LQL statements.
+const META_COMMANDS: &str = "
+REPL commands (no semicolon):
+  help, \\h, \\?     this overview
+  clear             clear the screen
+  exit, quit, \\q    leave the REPL
+";
+
+/// `help` at the prompt: the same overview `HELP;` prints, from the help
+/// catalogue, then the REPL's own commands.
 fn print_help() {
-    println!(
-        r#"
-LQL Commands:
-
-  Lifecycle:
-    EXTRACT MODEL <id> INTO <path>;     Decompile model → vindex
-    COMPILE <vindex> INTO MODEL <path>;  Recompile vindex → weights
-    USE <path>;                          Set active vindex
-    USE MODEL <id>;                      Set active model (live weights)
-
-  Query (pure vindex, no model needed):
-    WALK <prompt> [TOP n];               Feature scan for a token
-    SELECT ... FROM EDGES WHERE ...;     Query edges
-    DESCRIBE <entity>;                   Knowledge about an entity
-    EXPLAIN WALK <prompt>;               Feature trace (no attention)
-    EXPLAIN INFER <prompt>;              Feature trace (with attention)
-
-  Inference (requires model weights):
-    INFER <prompt> [TOP n] [COMPARE];    Full prediction with attention
-
-  Mutation:
-    INSERT INTO EDGES (...) VALUES (...); Add edge
-    DELETE FROM EDGES WHERE ...;          Remove edges
-    UPDATE EDGES SET ... WHERE ...;       Modify edges
-
-  Introspection:
-    SHOW RELATIONS;                      List relation types
-    SHOW LAYERS;                         Layer summary
-    SHOW FEATURES <layer>;               Feature details
-    SHOW MODELS;                         List vindexes
-    STATS;                               Summary stats
-
-  Meta:
-    clear                                Clear the screen
-    help, \h, \?                         Show this help
-    exit, quit, \q                       Exit REPL
-"#
-    );
+    for line in crate::help::render::overview() {
+        println!("{line}");
+    }
+    println!("{META_COMMANDS}");
 }
 
 #[cfg(test)]

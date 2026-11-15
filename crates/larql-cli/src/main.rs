@@ -150,11 +150,16 @@ enum Commands {
 
     // ── LQL ─────────────────────────────────────────────────────────
     #[command(next_help_heading = "LQL")]
-    /// Launch the LQL interactive REPL.
+    /// Launch the LQL interactive REPL (type `help`; it always exits 0).
     Repl,
 
-    #[command(next_help_heading = "LQL")]
-    /// Execute a one-shot LQL statement.
+    // The text is `lql_help`'s: the process model, the exit status, and
+    // where the language documents itself (`larql lql "HELP;"`).
+    #[command(
+        next_help_heading = "LQL",
+        about = lql_help::ABOUT,
+        after_help = lql_help::after_help()
+    )]
     Lql(LqlArgs),
 
     // ── Build / extract ─────────────────────────────────────────────
@@ -359,7 +364,8 @@ const LQL_FAILURE_EXIT: i32 = 1;
 
 #[derive(clap::Args)]
 struct LqlArgs {
-    /// LQL statement (e.g. `WALK "The capital of France is" TOP 5;`).
+    /// One or more LQL statements separated by `;`, as one argument
+    /// (e.g. `USE "model.vindex3"; STATS;`). `HELP;` lists the statements.
     statement: String,
 
     /// Where a VINDEX3 container bound by `USE` may take its execution representation from: `stored`

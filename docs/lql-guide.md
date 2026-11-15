@@ -10,11 +10,26 @@ cargo run -p larql-cli -- repl
 
 Features: arrow keys, command history (`~/.larql_history`), Ctrl-R search, Ctrl-C cancel, Ctrl-D exit.
 
-Single statement:
+One or more statements, without the REPL:
 
 ```bash
 cargo run -p larql-cli -- lql 'SHOW MODELS;'
+cargo run -p larql-cli -- lql 'USE "model.vindex3"; STATS; SHOW LAYERS;'
 ```
+
+The language documents itself. No model needs to be bound:
+
+```bash
+larql lql 'HELP;'                    # every statement's syntax, one line each
+larql lql 'HELP REMOVE DIRECTION;'   # one statement: syntax, examples, requirements, refusals
+larql lql 'HELP WEIGHTS;'            # one group of statements
+larql lql 'HELP BATCH;'              # how statements share a session; HELP EXIT CODES; for the status
+larql lql --help                     # the same process model, from the command line
+```
+
+An unknown topic is an error that names the nearest ones, and a mistyped statement says what was
+expected: `REMOVE DIRECTON …` answers `after REMOVE expected DIRECTION or PATCH, got DIRECTON. Did you
+mean REMOVE DIRECTION? Run HELP REMOVE DIRECTION; for the syntax.`
 
 ## Getting Started
 
@@ -325,7 +340,8 @@ program, never a reconstructed model:
 ```
 larql> USE "gpt-oss-20b.v3";
 Using: gpt-oss-20b.v3 (VINDEX3, model: gpt-oss-20b, component target, 24 layers, execution closed)
-Supported: SELECT, DESCRIBE, WALK, INFER [TOP n] [GENERATE n], INSERT [MODE KNN], patches, … Tokenizer: present.
+Supported: USE, EXTRACT, STATS, SHOW COMPONENTS, …, INFER, WALK, EXPLAIN, TRACE, UPDATE WEIGHTS, REMOVE DIRECTION, ADD LOW RANK, …, HELP, PIPE. Tokenizer: present.
+Syntax: HELP; lists every statement. HELP <statement>; prints one page.
 
 larql> STATS;                      -- the container's own authority
 larql> SELECT * FROM FEATURES WHERE layer = 0 LIMIT 8;
@@ -359,41 +375,340 @@ logical format V2 writes — one patch applies to either backend.
 Compose-mode INSERT executes too: the FFN slot lands in the overlay
 and execution observes it through the operand-source seam, running
 V2's full install pipeline (capture, decoy-suppressed refine, balance,
-cross-fact regression) with cross-format parity gated. COMPILE/DIFF/COMPACT still refuse with a message naming the
-supported statements — a capability boundary, not a missing feature
-apology. See the spec's §4.2/§4.4 for the full contract.
+cross-fact regression) with cross-format parity gated. `COMPILE … INTO MODEL`,
+`DIFF … INTO PATCH`, `COMPACT MINOR` and `COMPACT MAJOR` refuse on a VINDEX3
+container with a message naming the supported statements — a capability
+boundary, not a missing feature apology. See the spec's §4.2/§4.4 for the
+full contract.
 
 ### Editing stored weights
 
-On a VINDEX3 container, `UPDATE WEIGHTS` edits real elements of one stored tensor. The container is never
-modified; `COMPILE` writes a new one.
+On a VINDEX3 container three statements edit the stored weights themselves, not the knowledge overlay:
+`UPDATE WEIGHTS`, `REMOVE DIRECTION` and `ADD LOW RANK`. This is the whole loop:
 
-```sql
-USE "qwen3-0.6b-q8_0.vindex3";
-
--- Optional: record the edit so it can be saved, shared and reapplied.
-BEGIN PATCH "wsp001.vlp";
-
-UPDATE WEIGHTS SET DELTA = 0.0078125
-  WHERE TENSOR = "26.mlp.down_proj.weight" AND ROW = 100
-    AND COL IN (200, 201, 202, 203, 204, 206, 207);
-
-SAVE PATCH;                                   -- writes wsp001.vlp (version 2)
-COMPILE CURRENT INTO VINDEX "qwen3-edited.vindex3";
+```
+USE  →  stage one or more ops  →  [BEGIN PATCH … SAVE PATCH]  →  COMPILE  →  VERIFY
 ```
 
-In another session, the same edit applies to the same container and produces the same bytes:
+Four facts shape everything below.
 
-```sql
-USE "qwen3-0.6b-q8_0.vindex3";
-APPLY PATCH "wsp001.vlp";       -- refused for any other container, or if the file was altered
-COMPILE CURRENT INTO VINDEX "qwen3-edited.vindex3";
-REMOVE PATCH "wsp001.vlp";      -- before COMPILE: nothing remains staged
+- **Staging changes nothing you can run.** A staged op is checked and remembered; no file is written and the
+  bound container is never modified. `INFER`, `DIFF … CURRENT` and every other statement in the session still
+  see the stored weights. The edit exists only in the container `COMPILE CURRENT INTO VINDEX` writes: `USE`
+  that container to run it.
+- **State lives in the process.** `larql lql 'A; B; C;'` runs its statements in one process and one session,
+  so `USE`, the staged ops and applied patches carry from `A` to `C`. A second `larql lql` starts unbound
+  with nothing staged. Only files carry over: a `.vlp` patch and a compiled container.
+- **A compiled edit cannot be edited again.** A container written by a stored-weight `COMPILE` carries a
+  ledger, `weight_patches.json`. Stage every op on the unedited base and compile once.
+- **`COMPILE` writes to a path that does not exist yet, or refuses.** Nothing is ever replaced, and a
+  stored-weight compile refuses an existing directory even when it is empty.
+
+Every example below was run with `larql lql` on a two-layer toy container with no tokenizer (the conformance
+fixture `verifier/conformance/structured_patch/base`, copied to `model.vindex3`), and the replies are the
+ones it printed. The `USE` banner is left out after the first example.
+
+#### 1. Bind, and find the tensor names
+
+```
+$ larql lql 'USE "model.vindex3"; STATS;'
+Using: model.vindex3 (VINDEX3, model: wsp, component target, 2 layers, execution closed)
+Supported: USE, EXTRACT, STATS, SHOW COMPONENTS, …, UPDATE WEIGHTS, REMOVE DIRECTION, ADD LOW RANK, …, HELP, PIPE. Tokenizer: absent (token-id capability only).
+Refused without a tokenizer: SHOW RELATIONS, SHOW FEATURES, SHOW ENTITIES, DESCRIBE, SELECT, INFER, WALK, TRACE, INSERT, DELETE, UPDATE.
+Syntax: HELP; lists every statement. HELP <statement>; prints one page.
+Execution: representation source stored (the stored weights execute; nothing is manufactured at load).
+Model:           wsp (VINDEX3)
+…
 ```
 
-The delta is added to the stored value and rounded once to bfloat16 (ties to even). Applying a patch twice, or
-two patches that touch one element, is refused. Quantised representations are re-derived from the edited
-weights. See the spec (§3.5.1) for the limits and for what is and is not verified.
+A weight edit names a tensor as the container stores it. `EXPLAIN INFER "x";` prints the plan without
+running a token and needs no tokenizer; the name is the part after `::`:
+
+```
+$ larql lql 'USE "model.vindex3"; EXPLAIN INFER "x";'
+  layer 0
+    …
+    ffn        kind dense
+      gate         target.decoder_stack::0.mlp.gate_proj.weight @BF16
+      up           target.decoder_stack::0.mlp.up_proj.weight @BF16
+      down         target.decoder_stack::0.mlp.down_proj.weight @BF16
+```
+
+#### 2. `UPDATE WEIGHTS`: a delta on named elements
+
+```
+$ larql lql 'USE "model.vindex3";
+UPDATE WEIGHTS SET DELTA = 0.0625
+  WHERE TENSOR = "0.mlp.down_proj.weight" AND ROW = 5 AND COL IN (12, 13);
+SHOW PATCHES;
+COMPILE CURRENT INTO VINDEX "delta.vindex3";'
+Staged: 2 element(s) of 0.mlp.down_proj.weight, row 5, delta 0.0625 (BF16, nearest-even of the exact sum)
+  [5, 12]: -0.0277100 -> 0.0346680
+  [5, 13]: -0.0476074 -> 0.0148926
+  op digest 45d6eeb173923883
+  2 weight element(s) pending in this session
+  Takes effect in a container written by COMPILE CURRENT INTO VINDEX; INFER in this session does not see it.
+  (no patches applied)
+  Stored-weight edits: 2 element(s) in 1 op(s), pending COMPILE
+Compiled: delta.vindex3 (VINDEX3, clean container; weight patch of 2 element(s) of 0.mlp.down_proj.weight)
+  re-derived: target.decoder_stack@Q8_0
+  edited source (canonical) payload 22c8dfe3b3429bcc
+  ledger weight_patches.json weight-patches/v2 (1 patch op(s) as origin)
+```
+
+Each element becomes the bfloat16 nearest to stored value + delta (ties to even), rounded once. `COL = <n>`
+names one column and `COL IN (…)` several. `SHOW PATCHES` shows what a `COMPILE` would write. The quantised
+representation (`@Q8_0`) is re-derived from the edited weights.
+
+#### 3. `REMOVE DIRECTION`: project a direction out of chosen columns
+
+The direction is an operand file, not a number in the statement: JSON
+`{"bits": ["<16 lowercase hex digits>", … one per row of the tensor], "origin": "<optional note>"}`. Each
+string is the bit pattern of an f64 (`"3ff0000000000000"` is 1.0), never a decimal.
+
+```
+$ larql lql 'USE "model.vindex3";
+BEGIN PATCH "removal.vlp";
+REMOVE DIRECTION "u.json" FROM "1.mlp.down_proj.weight" COLUMNS (33, 34)
+  SCALE 0.5 NUMERICS "f64-seq-rne1/v1";
+SAVE PATCH;
+COMPILE CURRENT INTO VINDEX "removed.vindex3";'
+Patch session started: removal.vlp
+Staged: remove direction (64 component(s)) from 1.mlp.down_proj.weight, column(s) [33, 34], scale 0.5 under f64-seq-rne1/v1; 2 element(s) would change
+  op digest ada59dc5924ba662
+  results are BF16 as the profile defines them; no f32 delta is involved
+  1 structured op(s) pending in this session; takes effect at COMPILE CURRENT INTO VINDEX
+Saved: removal.vlp (0 inserts, 1 updates, 0 deletes, 1 weight edit(s) bound to the source container)
+Compiled: removed.vindex3 (VINDEX3, clean container; weight patch of 2 element(s) of 1.mlp.down_proj.weight)
+  re-derived: target.decoder_stack@Q8_0
+  edited source (canonical) payload 47ae4d9cea976afb
+  ledger weight_patches.json weight-patches/v3 (1 patch op(s) as origin)
+```
+
+`COLUMNS` must be strictly increasing. `NUMERICS` is `f64-seq-rne1/v1` or `f64-seq-rne2/v1`. The patch
+is recorded here because `VERIFY PATCH` (step 8) judges this kind of compile from the saved `.vlp`. The
+ops stay staged after `SAVE PATCH`, so the `COMPILE` in the same batch still writes them.
+
+#### 4. `ADD LOW RANK`: add `a · b` to chosen columns
+
+The operand file is JSON `{"rank": K, "a": […], "b": […], "origin": "<optional note>"}`. `a` is rows × K
+and `b` is K × the number of `COLUMNS`, both row-major, as bit patterns in the profile's working width:
+16 hex digits for the f64 profiles, 8 for `f32-seq-rne1/v1`. There is no `SCALE`: fold it into `a` or `b`.
+
+```
+$ larql lql 'USE "model.vindex3";
+ADD LOW RANK "a_b.json" TO "1.mlp.down_proj.weight" COLUMNS (8, 9)
+  NUMERICS "f64-seq-rne1/v1";
+COMPILE CURRENT INTO VINDEX "lowrank.vindex3";'
+Staged: add rank-1 update to 1.mlp.down_proj.weight, 2 column(s) 8..=9 under f64-seq-rne1/v1; 128 element(s) would change
+  op digest 3ae85f53b8765b65
+  results are BF16 as the profile defines them; an element whose terms all have a zero factor keeps its bits
+  1 structured op(s) pending in this session; takes effect at COMPILE CURRENT INTO VINDEX
+Compiled: lowrank.vindex3 (VINDEX3, clean container; weight patch of 128 element(s) of 1.mlp.down_proj.weight)
+  re-derived: target.decoder_stack@Q8_0
+  edited source (canonical) payload 2b1fa2caf8ef0f34
+  ledger weight_patches.json weight-patches/v4 (1 patch op(s) as origin)
+```
+
+The three compiles above wrote three ledger schemas. The schema follows the ops:
+
+| Ops in the compile | Ledger |
+|---|---|
+| `UPDATE WEIGHTS` only | `weight-patches/v2` |
+| a `REMOVE DIRECTION`, no `ADD LOW RANK` | `weight-patches/v3` |
+| any `ADD LOW RANK` | `weight-patches/v4` |
+
+#### 5. Several ops, recorded as a patch
+
+One compile takes several ops on several tensors. Two structured ops may share a tensor on disjoint
+columns; a tensor takes `UPDATE WEIGHTS` or structured ops, not both. `BEGIN PATCH` records what is staged
+after it, and `SAVE PATCH` writes the file:
+
+```
+$ larql lql 'USE "model.vindex3";
+BEGIN PATCH "edit.vlp";
+ADD LOW RANK "a_b.json" TO "1.mlp.down_proj.weight" COLUMNS (8, 9) NUMERICS "f64-seq-rne1/v1";
+REMOVE DIRECTION "u.json" FROM "1.mlp.down_proj.weight" COLUMNS (33, 34) SCALE 0.5 NUMERICS "f64-seq-rne1/v1";
+UPDATE WEIGHTS SET DELTA = 0.0625 WHERE TENSOR = "0.mlp.down_proj.weight" AND ROW = 5 AND COL IN (12, 13);
+SAVE PATCH;'
+Patch session started: edit.vlp
+Staged: add rank-1 update to 1.mlp.down_proj.weight, …
+Staged: remove direction (64 component(s)) from 1.mlp.down_proj.weight, …
+Staged: 2 element(s) of 0.mlp.down_proj.weight, row 5, delta 0.0625 (BF16, nearest-even of the exact sum)
+  …
+  recorded into patch "edit.vlp" (3 ops pending)
+  …
+Saved: edit.vlp (0 inserts, 3 updates, 0 deletes, 4 weight edit(s) bound to the source container)
+```
+
+That process has ended, and nothing was compiled. A new process applies the patch and compiles it:
+
+```
+$ larql lql 'USE "model.vindex3";
+APPLY PATCH "edit.vlp";
+SHOW PATCHES;
+COMPILE CURRENT INTO VINDEX "edited.vindex3";'
+Applied: edit.vlp (3 operations: 0 inserts, 3 updates, 0 deletes; 2 stored-weight edit(s), bound to this container and pending COMPILE; 2 structured weight op(s), bound to this container and pending COMPILE)
+  1. edit.vlp                                 3 ops (0 ins, 3 upd, 0 del)
+  Total: 3 from files, 0 in session
+  Stored-weight edits: 2 element(s) in 3 op(s), pending COMPILE
+Compiled: edited.vindex3 (VINDEX3, clean container; weight patch of 132 element(s) of 1.mlp.down_proj.weight, 0.mlp.down_proj.weight)
+  re-derived: target.decoder_stack@Q8_0
+  edited source (canonical) payload bd899be7f3522094
+  ledger weight_patches.json weight-patches/v4 (3 patch op(s) as origin)
+```
+
+A stored-weight op in a patch is bound to the exact container it was written against. Applied to any
+other container, the compiled one included, it is refused:
+
+```
+$ larql lql 'USE "edited.vindex3"; APPLY PATCH "edit.vlp";'
+Error: Execution error: failed to apply patch: this edit was written against another artifact: expected index/weights 1f68b2cf5f93 / fc7c2807decd, this container is ee0b1086a3ce / bd899be7f352
+```
+
+`DIFF` compares the base with the result. It needs nothing bound:
+
+```
+$ larql lql 'DIFF "model.vindex3" "edited.vindex3";
+DIFF "model.vindex3" "edited.vindex3" PHYSICAL;'
+Diff (logical): model.vindex3 vs edited.vindex3
+FEATURES
+  L0 F12   down_col changed
+  L0 F13   down_col changed
+  L1 F8   down_col changed
+  L1 F9   down_col changed
+  L1 F33   down_col changed
+  L1 F34   down_col changed
+SUMMARY
+  feature slots changed: 6, knowledge +0/−0, other tensors: 0
+Diff (physical): model.vindex3 vs edited.vindex3
+  segment target.decoder_stack@BF16: 1ae6b2638229 → df00da3c14f8
+  segment target.decoder_stack@Q8_0: ce9d8624980e → 5fdfe7049a7b
+```
+
+#### 6. Changing your mind
+
+`DISCARD WEIGHT EDITS` drops the ops staged directly in the session. `REMOVE PATCH` drops an applied patch
+and its ops. A second `USE` drops everything, without a warning.
+
+```
+$ larql lql 'USE "model.vindex3";
+UPDATE WEIGHTS SET DELTA = 0.0625 WHERE TENSOR = "0.mlp.down_proj.weight" AND ROW = 5 AND COL = 12;
+DISCARD WEIGHT EDITS;
+APPLY PATCH "edit.vlp";
+REMOVE PATCH "edit.vlp";
+SHOW PATCHES;'
+Staged: 1 element(s) of 0.mlp.down_proj.weight, row 5, delta 0.0625 (BF16, nearest-even of the exact sum)
+  …
+Discarded: 1 stored-weight op(s) staged in this session
+Applied: edit.vlp (3 operations: …)
+Removed patch #1
+  (no patches applied)
+```
+
+Without the `DISCARD` the `APPLY PATCH` is refused, because the patch edits element (5, 12) too:
+
+```
+$ larql lql 'USE "model.vindex3";
+UPDATE WEIGHTS SET DELTA = 0.0625 WHERE TENSOR = "0.mlp.down_proj.weight" AND ROW = 5 AND COL = 12;
+APPLY PATCH "edit.vlp";'
+Staged: 1 element(s) of 0.mlp.down_proj.weight, row 5, delta 0.0625 (BF16, nearest-even of the exact sum)
+  …
+Error: Execution error: failed to apply patch: parse error: weight patch refused: element (5, 12) of `0.mlp.down_proj.weight` is already edited by this session; edits to one element are not composed
+```
+
+#### 7. A compiled container cannot be edited again
+
+`UPDATE WEIGHTS` is refused when it is staged. `REMOVE DIRECTION` and `ADD LOW RANK` stage, and the
+`COMPILE` is refused:
+
+```
+$ larql lql 'USE "edited.vindex3";
+UPDATE WEIGHTS SET DELTA = 0.0625 WHERE TENSOR = "0.mlp.down_proj.weight" AND ROW = 6 AND COL = 12;'
+Error: Execution error: UPDATE WEIGHTS refused: the source already carries a weight-patch ledger; patching a patched container is not supported
+
+$ larql lql 'USE "edited.vindex3";
+ADD LOW RANK "a_b.json" TO "1.mlp.down_proj.weight" COLUMNS (20, 21) NUMERICS "f64-seq-rne1/v1";
+COMPILE CURRENT INTO VINDEX "twice.vindex3";'
+Staged: add rank-1 update to 1.mlp.down_proj.weight, 2 column(s) 20..=21 under f64-seq-rne1/v1; 128 element(s) would change
+  …
+Error: Execution error: COMPILE refused: the source already carries a weight-patch ledger; patching a patched container is not supported
+```
+
+To change an edit, go back to the base: apply the saved patch or re-stage the ops there, add the new op,
+and compile to a new path.
+
+#### 8. Verifying
+
+LQL never judges an edit itself. A `VERIFY` statement runs an external verifier and reports its answer. It
+takes paths, so it needs nothing bound. Which statement fits depends on the ledger:
+
+| Ledger | Statement |
+|---|---|
+| `weight-patches/v4` (any `ADD LOW RANK`) | `VERIFY LEDGER`: the verifier recomputes every op the ledger records |
+| `weight-patches/v3` (a `REMOVE DIRECTION`, no `ADD LOW RANK`) | `VERIFY PATCH`, from the saved `.vlp`, when it holds only `REMOVE DIRECTION` ops |
+| `weight-patches/v2` (`UPDATE WEIGHTS` only) | Neither statement judges it |
+
+`VERIFY LEDGER` passes the verifier the contract, the base and the container, and no patch file.
+
+With no verifier configured a `VERIFY` statement is refused; it never passes by default. No verifier was
+configured for this guide, so this is what the two statements printed (and both runs exited 1):
+
+```
+$ larql lql 'VERIFY LEDGER "edited.vindex3" USING CONTRACT "WEIGHT_PATCHES_V4" FROM "model.vindex3";'
+Error: Execution error: VERIFY LEDGER needs an independent verifier and found none: install verifier/ from this repository, or set LARQL_VERIFIER. LARQL does not evaluate contracts itself.
+
+$ larql lql 'VERIFY PATCH "removal.vlp" USING CONTRACT "STRUCTURED_REMOVE_DIRECTION" FROM "model.vindex3" AGAINST "removed.vindex3";'
+Error: Execution error: VERIFY PATCH needs an independent verifier and found none: install verifier/ from this repository, or set LARQL_VERIFIER. LARQL does not evaluate contracts itself.
+```
+
+With a verifier, the statement prints its report. `satisfied` and `violated` are both answers: a violation
+does not fail the statement, and `larql lql` exits 2 when nothing else failed. `could_not_evaluate` is an
+error. How a verifier is found is in [the contract protocol](verification/contract-protocol.md) and in
+`HELP VERIFIER;`.
+
+#### 9. The process model
+
+- **A failed statement does not stop a batch.** Later statements still run, and each failure is one
+  `Error: …` line on standard output.
+- **After a failure, nothing is written.** Every later statement that would write an artifact (`COMPILE`,
+  `SAVE PATCH`, `EXTRACT`, `COMPACT INTO VINDEX`, `COMPACT MAJOR`, `DIFF … INTO PATCH`, `TRACE … SAVE`) is
+  refused:
+
+  ```
+  $ larql lql 'USE "model.vindex3";
+  UPDATE WEIGHTS SET DELTA = 0.0625 WHERE TENSOR = "no.such.tensor" AND ROW = 5 AND COL = 12;
+  COMPILE CURRENT INTO VINDEX "never.vindex3";'
+  Error: Execution error: UPDATE WEIGHTS refused: tensor `no.such.tensor` is not held by any canonical representation of the source
+  Error: refused `COMPILE CURRENT INTO VINDEX "never.vindex3"`: 1 earlier statement(s) in this batch failed, and a batch writes nothing after a failure
+  ```
+
+- **The exit status of `larql lql`** is 0 when every statement succeeded; 1 when any failed (a parse error,
+  a refusal, an execution error, a contract that could not be evaluated, a missing verifier); 2 when a
+  `VERIFY` contract was violated and nothing else failed. Every run in this section that printed `Error:`
+  exited 1.
+- **`larql repl` exits 0** whatever happened, and does not refuse writes after a failure. Use `larql lql`
+  when a script must act on the result.
+- **`COMPILE` refuses an existing output**:
+
+  ```
+  $ larql lql 'USE "model.vindex3"; COMPILE CURRENT INTO VINDEX "edited.vindex3";'
+  Error: Execution error: compile: bake failed: refusing to write output `edited.vindex3`: the directory already exists and is not empty; existing contents are never replaced — choose a new path, or remove the directory yourself first
+  ```
+
+- **A container without `tokenizer.json`** binds and can be edited, compiled and inspected, and refuses
+  the statements that need text. On the toy container:
+
+  ```
+  $ larql lql 'USE "model.vindex3"; INFER "The capital of France is" TOP 3;'
+  Error: Execution error: INFER needs a tokenizer and this container carries no tokenizer.json — token-id capability only
+  ```
+
+  So this guide shows that `INFER` in the staging session does not see a staged op from the engine's own
+  reply (`INFER in this session does not see it`) and from the code, not from a run of `INFER`.
+
+`HELP <statement>;` gives each statement's refusals in full, and the spec (§3.5.1 to §3.5.4, §3.9) the
+limits and what is and is not verified.
 
 While an edit is pending, `INFER` and `TRACE` in that session compute with the edited weights: the edited
 tensor's bytes are produced by the compile path and held in memory, and nothing on disk changes.
@@ -409,9 +724,14 @@ stored weights. `DESCRIBE`, `WALK`, `SELECT` and `DIFF` keep reading the stored 
 | Browse | WALK, DESCRIBE, SELECT, EXPLAIN WALK |
 | Inference | INFER (with TOP, GENERATE, ROUTE, COMPARE), EXPLAIN INFER |
 | Trace | TRACE (with FOR, DECOMPOSE, LAYERS, POSITIONS, SAVE; plain form on VINDEX3) |
-| Mutation | INSERT, DELETE, UPDATE, UPDATE WEIGHTS (VINDEX3), MERGE |
+| Mutation | INSERT, DELETE, UPDATE, MERGE, REBALANCE |
+| Stored weights (VINDEX3) | UPDATE WEIGHTS, REMOVE DIRECTION, ADD LOW RANK, DISCARD WEIGHT EDITS |
 | Patches | BEGIN PATCH, SAVE PATCH, APPLY PATCH, SHOW PATCHES, REMOVE PATCH |
-| Introspection | SHOW RELATIONS/LAYERS/FEATURES/MODELS/PATCHES, STATS |
+| Verification | VERIFY REPRESENTATION, VERIFY OPERATOR, VERIFY PATCH, VERIFY LEDGER (external verifier) |
+| Introspection | SHOW RELATIONS/LAYERS/FEATURES/ENTITIES/MODELS/PATCHES, SHOW COMPONENTS/REPRESENTATIONS/PROVENANCE/AUTHORITY (VINDEX3), STATS |
+| Help | HELP, HELP \<topic\> |
 | Pipe | `\|>` chains two statements |
 
-See [the LQL specification](../crates/larql-lql/docs/spec.md) for the full language specification.
+`HELP;` prints the syntax of every statement above from the running binary, and is the list to trust
+when this table and the binary disagree. See [the LQL specification](../crates/larql-lql/docs/spec.md)
+for the full language specification.

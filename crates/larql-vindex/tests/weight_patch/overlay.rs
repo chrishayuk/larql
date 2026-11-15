@@ -141,6 +141,23 @@ fn removing_a_patch_removes_its_edits_and_leaves_the_sessions() {
 }
 
 #[test]
+fn discarding_drops_the_sessions_edits_and_leaves_a_patchs() {
+    let src = source_with_pack();
+    let mut overlay = KnowledgeOverlay::new();
+    overlay.stage_weight_op(op(&src, &[1])).unwrap();
+    overlay.stage_weight_op(op(&src, &[2])).unwrap();
+    overlay
+        .try_apply_patch(patch("a.vlp", vec![op(&src, &[3])]))
+        .unwrap();
+    assert_eq!(overlay.discard_session_weight_ops(), 2);
+    let names: Vec<String> = overlay.weight_ops().into_iter().map(|(by, _)| by).collect();
+    assert_eq!(names, vec!["a.vlp".to_string()]);
+    assert_eq!(overlay.discard_session_weight_ops(), 0);
+    // The discarded elements are free again.
+    overlay.stage_weight_op(op(&src, &[1])).unwrap();
+}
+
+#[test]
 fn weight_edits_are_not_knowledge_state() {
     let src = source_with_pack();
     let mut overlay = KnowledgeOverlay::new();

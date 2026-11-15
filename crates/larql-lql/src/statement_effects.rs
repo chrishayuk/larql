@@ -42,6 +42,7 @@ impl Statement {
             | Statement::UpdateWeights { .. }
             | Statement::RemoveDirection { .. }
             | Statement::AddLowRank { .. }
+            | Statement::DiscardWeightEdits
             | Statement::Merge { .. }
             | Statement::Rebalance { .. }
             | Statement::ShowRelations { .. }
@@ -63,7 +64,8 @@ impl Statement {
             | Statement::BeginPatch { .. }
             | Statement::ApplyPatch { .. }
             | Statement::ShowPatches
-            | Statement::RemovePatch { .. } => false,
+            | Statement::RemovePatch { .. }
+            | Statement::Help { .. } => false,
         }
     }
 }

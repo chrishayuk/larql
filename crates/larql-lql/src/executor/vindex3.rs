@@ -32,16 +32,15 @@ pub(crate) use session::*;
 
 /// The statements a VINDEX3 binding serves today. Everything else gets
 /// [`unsupported`] — a capability refusal, not a format apology.
-/// The capability string is part of the contract, not decoration: a
-/// statement that executes on a V3 binding must appear here, or the
-/// binding is understating what it serves. EXTRACT does execute (the
-/// dispatch does not gate on the backend) and now says so.
-pub(crate) const SUPPORTED: &str = "SELECT, DESCRIBE, WALK, EXPLAIN WALK, \
-     SHOW RELATIONS/LAYERS/FEATURES/ENTITIES/PATCHES/MODELS, \
-     SHOW COMPONENTS/REPRESENTATIONS/PROVENANCE/AUTHORITY, INFER [TOP n] [GENERATE n], \
-     EXPLAIN INFER, TRACE, STATS, USE, EXTRACT [FORMAT VINDEX2|VINDEX3], \
-     INSERT [MODE KNN|COMPOSE], DELETE, UPDATE, UPDATE WEIGHTS, MERGE, \
-     BEGIN/SAVE/APPLY/REMOVE PATCH, COMPILE [CURRENT] INTO VINDEX, DIFF [PHYSICAL], COMPACT INTO VINDEX";
+/// The capability string is part of the contract, not decoration, so it is
+/// not kept here: it is every statement of the help catalogue whose page
+/// does not require a VINDEX2 vindex. A statement that executes on a V3
+/// binding is therefore listed exactly when `HELP` documents it as served,
+/// and `tests/help/banner.rs` runs the catalogue's examples on a container
+/// to check that the pages and the executor agree.
+pub(crate) fn supported() -> String {
+    crate::help::render::vindex3_supported()
+}
 
 /// How a representation source is spelled, and what it means for the weights a run computes with. The words are
 /// the ones `larql vindex3 exec --representation-source` takes.
@@ -73,7 +72,8 @@ pub(crate) type V3Runtime = Vindex3Runtime<SharedProvider>;
 pub(crate) fn unsupported(what: &str) -> LqlError {
     LqlError::Execution(format!(
         "{what} is not supported on a VINDEX3 container yet. \
-         Supported: {SUPPORTED}."
+         Supported: {}. Run HELP; for the syntax of each.",
+        supported()
     ))
 }
 
@@ -414,7 +414,7 @@ impl Session {
                     "absent (token-id capability only)"
                 }
             ),
-            format!("Capabilities:    {SUPPORTED}"),
+            format!("Capabilities:    {}", supported()),
         ])
     }
 

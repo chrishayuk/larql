@@ -4,6 +4,9 @@ use super::{ParseError, Parser};
 use crate::ast::*;
 use crate::lexer::Keyword;
 
+/// The help page a COMPILE parse error points at.
+const COMPILE_TOPIC: &str = "COMPILE";
+
 impl Parser {
     pub(crate) fn parse_extract(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword(Keyword::Extract)?;
@@ -79,8 +82,20 @@ impl Parser {
 
     pub(crate) fn parse_compile(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword(Keyword::Compile)?;
+        if !self.check_keyword(Keyword::Current)
+            && !matches!(self.peek(), crate::lexer::Token::StringLit(_))
+        {
+            return Err(self.expected_one_of(
+                "COMPILE",
+                &["CURRENT", "a quoted vindex path"],
+                COMPILE_TOPIC,
+            ));
+        }
         let vindex = self.parse_vindex_ref()?;
-        self.expect_keyword(Keyword::Into)?;
+        if !self.check_keyword(Keyword::Into) {
+            return Err(self.expected_one_of("the COMPILE source", &["INTO"], COMPILE_TOPIC));
+        }
+        self.advance();
 
         // COMPILE ... INTO MODEL or COMPILE ... INTO VINDEX
         let target = if self.check_keyword(Keyword::Model) {
@@ -94,8 +109,11 @@ impl Parser {
                     CompileTarget::Vindex
                 }
                 _ => {
-                    self.expect_keyword(Keyword::Model)?; // will error with good message
-                    CompileTarget::Model
+                    return Err(self.expected_one_of(
+                        "COMPILE ... INTO",
+                        &["VINDEX", "MODEL"],
+                        COMPILE_TOPIC,
+                    ))
                 }
             }
         };
@@ -305,10 +323,7 @@ impl Parser {
                 self.eat_semicolon();
                 Ok(Statement::CompactMajor { full, lambda })
             }
-            _ => Err(ParseError(format!(
-                "expected MINOR or MAJOR after COMPACT, got {:?}",
-                self.peek(),
-            ))),
+            _ => Err(self.expected_after("COMPACT")),
         }
     }
 }

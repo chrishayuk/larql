@@ -23,6 +23,12 @@ pub enum LqlError {
         statement: String,
         served: String,
     },
+
+    /// `HELP <topic>;` named no page. `nearest` is empty, or a sentence
+    /// naming the closest topics: a mistyped topic is an error, never a
+    /// silent overview.
+    #[error("no help topic \"{topic}\".{nearest} Run HELP; for every topic.")]
+    UnknownHelpTopic { topic: String, nearest: String },
 }
 
 impl LqlError {
