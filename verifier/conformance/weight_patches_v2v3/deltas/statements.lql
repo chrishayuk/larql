@@ -1,0 +1,6 @@
+USE "../structured_patch/base";
+UPDATE WEIGHTS SET DELTA = 0.1 WHERE TENSOR = "0.mlp.down_proj.weight" AND ROW = 5 AND COL IN (12, 13, 200);
+UPDATE WEIGHTS SET DELTA = -0.0625 WHERE TENSOR = "0.mlp.down_proj.weight" AND ROW = 63 AND COL = 255;
+UPDATE WEIGHTS SET DELTA = -0.3 WHERE TENSOR = "1.self_attn.o_proj.weight" AND ROW = 0 AND COL IN (0, 63);
+UPDATE WEIGHTS SET DELTA = 0.0000000001 WHERE TENSOR = "1.self_attn.o_proj.weight" AND ROW = 7 AND COL = 7;
+COMPILE CURRENT INTO VINDEX "compiled";

@@ -1,0 +1,3 @@
+USE "../structured_patch/base";
+REMOVE DIRECTION "removal/operands/u.json" FROM "1.mlp.down_proj.weight" COLUMNS (33, 34, 250) SCALE 0.5 NUMERICS "f64-seq-rne1/v1";
+COMPILE CURRENT INTO VINDEX "compiled";

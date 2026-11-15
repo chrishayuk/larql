@@ -1,0 +1,33 @@
+{
+  "generated_by": "verifier/conformance/weight_patches_v2v3/make_fixtures.py (engine-side; not an oracle)",
+  "larql_binary_sha256": "dd84841656bda2f27e5b7baf482bf30d3ca6e4dc70fc4cfce43e2efb93c57319",
+  "engine_revision_as_given": "47d56f6b",
+  "base": "../structured_patch/base",
+  "base_index_sha256": "1f68b2cf5f932baab50fc55280b84f9f456f3e2a822d20c006ea8f618983d750",
+  "cases": {
+    "deltas": {
+      "ledger_schema": "weight-patches/v2",
+      "ledger_sha256": "3952cbe8e2dd1fa29d006e65f68309918b8837356e827805f4b90084e52a2921",
+      "index_sha256": "02b67afd0256b9b501797b007a78bb9a1a9e31978f204539f570e738d82aae9e",
+      "patch_sha256": "e23e5103281131edb640cdfe38f7f610e87e2287d4a03d571ada3bb73892df45"
+    },
+    "removal": {
+      "ledger_schema": "weight-patches/v3",
+      "ledger_sha256": "5da4dc793bccd25ec6b1bcd2d31c14de9cd4b188675548c1d07fbeb65db1d533",
+      "index_sha256": "56c10bae1e7ef7662c11a8574a551030a1eebb0b1aae61cf20a9989835b33d13",
+      "patch_sha256": "ce2a127e0eec9fd219bde97906cf896a1252ccd5cad6058ecc17ed8a1aff97d2"
+    },
+    "removal_two": {
+      "ledger_schema": "weight-patches/v3",
+      "ledger_sha256": "fd7c1ddfac83ac263a0230c928b71568bae67bbb870cc95ce7568c42ca9d7e65",
+      "index_sha256": "9b856885fed8eb7ddd5279a69384f0e3029a390f82e44f9cbb827945d67c6437",
+      "patch_sha256": "9d164726b8e4b1c32105fa222ad1f63e294edfa3b7b6e0e2e5d24e5bb7a47e8f"
+    },
+    "mixed": {
+      "ledger_schema": "weight-patches/v3",
+      "ledger_sha256": "be36f04fb9b94247a226a430f6910a4059941679794f0b71b897ac22ad7c3544",
+      "index_sha256": "4b6f180754fe32c9404f15845d28f92ac9d619d8639607cebda085f420739cd9",
+      "patch_sha256": "3c5d796a544c0bef3ba7757709412dcc8702e707f45ecc9f9bf8eed3802c582d"
+    }
+  }
+}

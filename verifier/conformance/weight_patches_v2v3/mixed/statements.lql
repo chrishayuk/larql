@@ -1,0 +1,5 @@
+USE "../structured_patch/base";
+UPDATE WEIGHTS SET DELTA = 0.1 WHERE TENSOR = "0.mlp.down_proj.weight" AND ROW = 5 AND COL = 12;
+UPDATE WEIGHTS SET DELTA = -0.75 WHERE TENSOR = "0.mlp.down_proj.weight" AND ROW = 6 AND COL IN (0, 255);
+REMOVE DIRECTION "mixed/operands/u.json" FROM "1.self_attn.o_proj.weight" COLUMNS (0, 63) SCALE 0.5 NUMERICS "f64-seq-rne1/v1";
+COMPILE CURRENT INTO VINDEX "compiled";
