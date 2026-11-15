@@ -681,12 +681,7 @@ class Judge:
         if src.get("model") != self.base_index.get("model"):
             L.violate("source.model", f"{src.get('model')!r} is not the base's model {self.base_index.get('model')!r}")
             ok = False
-        canon = src.get("canonical")
-        if not isinstance(canon, dict):
-            # A canonical of the wrong kind names no binding, so every field below is unmatched.
-            L.violate("source.canonical", "is not an object")
-            canon, ok = {}, False
-        entry = self.bc.reps[self.rep]
+        canon, entry = canonical_object(src), self.bc.reps[self.rep]
         for field in CANONICAL_INDEX_FIELDS:
             if canon.get(field) != entry[field]:
                 L.violate(f"source.canonical.{field}", f"is not the base's {self.rep} {field}")
@@ -1338,10 +1333,7 @@ class Judge:
         if not isinstance(res, dict):
             L.violate("result", "the ledger has no result object")
             return
-        canon, entry = res.get("canonical"), self.nc.reps[self.rep]
-        if not isinstance(canon, dict):
-            L.violate("result.canonical", "is not an object")
-            canon = {}
+        canon, entry = canonical_object(res), self.nc.reps[self.rep]
         for field in CANONICAL_INDEX_FIELDS:
             if canon.get(field) != entry[field]:
                 L.violate(f"result.canonical.{field}", f"is not the compiled {self.rep} {field}")
@@ -1364,6 +1356,13 @@ class Judge:
             if d.get("source_representation_digest") != entry["payload_sha256"]:
                 L.violate(f"result.derived[{rid}]", "does not derive from the compiled canonical payload")
         self.engine["encoders"] = {d.get("representation"): d.get("encoder") for d in derived if isinstance(d, dict)}
+
+
+def canonical_object(section: dict) -> dict:
+    """A ledger section's `canonical` object. Anything that is not an object holds no field, so every field of it is
+    reported as not the container's, as for an absent one."""
+    canon = section.get("canonical")
+    return canon if isinstance(canon, dict) else {}
 
 
 def could_not(out: dict, *reasons: str) -> dict:
@@ -1443,8 +1442,16 @@ def evaluate(out: dict, base: str, container: str, patch: bytes | None = None,
     if status == "could_not_evaluate" and not out["reasons"]:
         out["reasons"] = ["nothing was judged"]
     files = (getattr(judge, "base_files", None), getattr(judge, "new_files", None))
-    if files[0] is not None:
-        out["base"]["sha256"] = container_digest(files[0])
-    if files[1] is not None:
-        out["container"]["sha256"] = container_digest(files[1])
+    for side, held in (("base", files[0]), ("container", files[1])):
+        if held is not None:
+            out[side]["sha256"] = digest_or_none(held)
     return out
+
+
+def digest_or_none(files: dict[str, tuple[int, str]]) -> str | None:
+    """The container digest, or None for a container that has none: a file name that is not valid UTF-8 has no place
+    in it. An answer with no digest to hold its input to is withdrawn by the caller, never left standing."""
+    try:
+        return container_digest(files)
+    except ValueError:
+        return None

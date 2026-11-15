@@ -2248,7 +2248,8 @@ class NeverRaisesNeverPasses(Fixture):
         with mock.patch.object(E, "evaluate", touch):
             out = self.judge("deltas", root)
         self.assertEqual(out["status"], CNE)
-        self.assertIn("an input changed during the evaluation", out["reasons"])
+        self.assertTrue(any(r.startswith("an input changed during the evaluation") for r in out["reasons"]), out["reasons"])
+        self.assertEqual((out["numerical_satisfaction"], out["ledger_integrity"]), (CNE, CNE))
 
 
 if __name__ == "__main__":

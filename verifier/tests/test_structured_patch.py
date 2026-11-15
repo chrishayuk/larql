@@ -12,6 +12,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -373,6 +374,42 @@ class Axes(Base):
         with open(os.path.join(root, "weight_patches.json"), "w") as f:
             f.write("{ not json")
         self.check(self.run_patch(root), "satisfied", "satisfied")
+
+
+class ManyOffenders(Base):
+    def test_more_offending_tensors_than_the_listing_holds_still_sum_to_the_violations(self):
+        # Every tensor of the model differs from what the patch declares: far more than `OFFENDING_LIMIT` of them.
+        root = os.path.join(self.d, "all-different")
+        synth.write_container(root, {k: -v for k, v in self.written.source.items()})
+        out = self.run_patch(root)
+        self.assertEqual(out["status"], "violated", out)
+        self.assertEqual(len(out["offending"]), S.OFFENDING_LIMIT)
+        self.assertIn("further findings", out["offending"][-1]["name"])
+        self.assertEqual(sum(o["violations"] for o in out["offending"]), out["violations"])
+
+    def test_a_container_with_no_digest_is_an_answer_and_not_a_failure(self):
+        # What a file name that is not valid UTF-8 raises on Linux, at the first digest and at the second.
+        root = self.compiled("ok", self.right())
+
+        def no_digest(_root):
+            raise ValueError("a file name is not valid UTF-8")
+
+        with mock.patch.object(cli.checkpoint, "container_sha256", no_digest):
+            out = self.run_patch(root)
+        self.assertEqual(out["status"], "could_not_evaluate", out)
+        self.assertIn("not valid UTF-8", out["reasons"][0])
+
+        real, calls = cli.checkpoint.container_sha256, []
+
+        def only_at_first(path):
+            calls.append(path)
+            if len(calls) > 2:
+                raise ValueError("a file name is not valid UTF-8")
+            return real(path)
+
+        with mock.patch.object(cli.checkpoint, "container_sha256", only_at_first):
+            out = self.run_patch(root)
+        self.assertEqual((out["status"], out["violations"], out["offending"]), ("could_not_evaluate", 0, []), out)
 
 
 class CommandLine(Base):

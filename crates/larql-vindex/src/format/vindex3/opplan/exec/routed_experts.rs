@@ -130,12 +130,17 @@ pub struct RowExpertOutput {
 /// `pairs` for a kernel that takes one row at a time: grouping changes the
 /// order experts are visited in, not how often their weights are read. This
 /// counts grouping only and is never evidence of avoided memory traffic.
+///
+/// `transform_ns` is the wall time spent inside those transform calls, read
+/// only when accounting was asked for: a diagnostic of where a call's time
+/// went, outside the numerical result.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RowsAccounting {
     pub rows: usize,
     pub pairs: usize,
     pub distinct_experts: usize,
     pub transform_calls: usize,
+    pub transform_ns: u64,
 }
 
 /// Split a multi-row response by row and reduce each row in its own

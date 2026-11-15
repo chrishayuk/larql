@@ -304,6 +304,19 @@ pub fn plan_declared_patch(
     }
 }
 
+/// Refuse more listed elements than one compile may carry ([`MAX_PATCH_ELEMENTS`]). The one statement of the
+/// bound. Only the compile refuses by it, because the count depends on the whole set of ops compiled together;
+/// staging uses it to warn.
+pub fn check_element_count(count: usize) -> Result<(), WeightPatchError> {
+    match count > MAX_PATCH_ELEMENTS {
+        true => Err(WeightPatchError::TooManyElements {
+            count,
+            limit: MAX_PATCH_ELEMENTS,
+        }),
+        false => Ok(()),
+    }
+}
+
 /// What only the set can break, cheapest first: the element total within
 /// the limit, then [`validate`] for each patch, and no tensor twice.
 fn validate_all(patches: &[DeclaredPatch]) -> Result<(), WeightPatchError> {
@@ -311,13 +324,7 @@ fn validate_all(patches: &[DeclaredPatch]) -> Result<(), WeightPatchError> {
         return Err(WeightPatchError::Empty);
     }
     // Element patches only: an operation patch lists no elements and is bounded by `MAX_STRUCTURED_*`.
-    let count: usize = patches.iter().map(|p| p.len()).sum();
-    if count > MAX_PATCH_ELEMENTS {
-        return Err(WeightPatchError::TooManyElements {
-            count,
-            limit: MAX_PATCH_ELEMENTS,
-        });
-    }
+    check_element_count(patches.iter().map(|p| p.len()).sum())?;
     let mut names = BTreeSet::new();
     for p in patches {
         validate(p)?;
@@ -379,12 +386,7 @@ fn validate(patch: &DeclaredPatch) -> Result<(), WeightPatchError> {
     if patch.len() == 0 {
         return Err(WeightPatchError::Empty);
     }
-    if patch.len() > MAX_PATCH_ELEMENTS {
-        return Err(WeightPatchError::TooManyElements {
-            count: patch.len(),
-            limit: MAX_PATCH_ELEMENTS,
-        });
-    }
+    check_element_count(patch.len())?;
     if let DeclaredPatch::Deltas(p) = patch {
         for e in &p.edits {
             if !e.delta.is_finite() {
@@ -519,8 +521,7 @@ fn resolve_edits<'a>(
             )));
         }
         // The ops were resolved against a base; refuse to write them over another.
-        let (_, base) = read_bf16_tensor(src, &p.tensor)?;
-        if tensor_sha256(&base) != p.base_tensor_sha256 {
+        if stored_tensor_sha256(src, at)? != p.base_tensor_sha256 {
             return Err(WeightPatchError::Structured(format!(
                 "`{}` differs from the base its operations were compiled against",
                 p.tensor
@@ -592,7 +593,31 @@ fn resolve_edits<'a>(
     Ok(Resolved::Edits(out))
 }
 
+/// How much of a stored tensor is held in memory at a time while it is hashed.
+const HASH_CHUNK_BYTES: usize = 1 << 20;
+
+/// The digest [`tensor_sha256`](super::op_target::tensor_sha256) gives the located tensor, read from its segment a
+/// chunk at a time. Stored BF16 is little-endian, which is the byte order that digest is defined over, so the
+/// stored bytes are hashed as they are and the tensor is never held whole: an operation target may be gigabytes.
+fn stored_tensor_sha256(src: &Path, at: &Located) -> Result<String, WeightPatchError> {
+    let mut file = File::open(src.join(&at.entry.segment))?;
+    file.seek(SeekFrom::Start(at.payload_start + at.tensor.offset))?;
+    let elements: u64 = at.tensor.shape.iter().map(|d| *d as u64).product();
+    let mut stored = file.take(elements * BF16_BYTES);
+    let mut hash = Sha256::new();
+    let mut chunk = vec![0u8; HASH_CHUNK_BYTES];
+    // A segment shorter than its tensor table says hashes to another digest, and is refused as another base.
+    loop {
+        let read = stored.read(&mut chunk)?;
+        if read == 0 {
+            return Ok(hex(&hash.finalize()));
+        }
+        hash.update(&chunk[..read]);
+    }
+}
+
 /// Copy into `assembled` every top-level file of `src` it lacks, other than the three this patch writes itself.
+/// Directories are not carried, whether held directly or through a symlink.
 /// Stage A carries them, but the re-derivation compiles a fresh container from stage A and keeps only what a
 /// representation compile knows about. A file such as the container's L0 knowledge (`knn_store.bin`) is part of
 /// what the container means and must not be lost with the weights it sits beside.
@@ -600,7 +625,8 @@ fn carry_top_level_files(src: &Path, assembled: &Path) -> Result<(), WeightPatch
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().to_string();
-        if entry.file_type()?.is_dir()
+        // `Path::is_dir` follows a symlink, as stage A does: a linked `segments` directory is a directory.
+        if entry.path().is_dir()
             || [INDEX_JSON, CANDIDATE_JSON, WEIGHT_PATCHES_JSON].contains(&name.as_str())
         {
             continue;
@@ -661,7 +687,9 @@ fn write_stage(
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().to_string();
-        if entry.file_type()?.is_dir() {
+        // `Path::is_dir` follows a symlink: a linked directory is a directory here, refused by name like any
+        // other, where the entry's own file type would call it a file and the copy below would fail on it.
+        if entry.path().is_dir() {
             if name != SEGMENTS_DIR {
                 return Err(WeightPatchError::UnexpectedEntry(name));
             }

@@ -424,12 +424,14 @@ record:
 
 ## 13. Corrections to the shared `WEIGHT_PATCHES_V4` code
 
-These contracts reuse the v4 judge. Three inputs that judge mishandled were corrected, and the corrections apply on the
+These contracts reuse the v4 judge. Three inputs that judge mishandled are corrected, and the corrections apply on the
 v4 route too. None of them lets a v4 answer become `satisfied`; each is tested on the v4 route
-(`tests/test_weight_patches_v4.py`, `SharedCodeCorrections`).
+(`tests/test_weight_patches_v4.py`).
 
-1. **A `source.canonical` or `result.canonical` that is not an object.** It raised an uncaught error; it is now a
-   ledger violation.
+1. **A `source.canonical` or `result.canonical` that is not an object.** It raised an uncaught error. It is now a
+   ledger violation: every field is reported as not the container's. This was fixed on main independently
+   (`canonical_object`, 966455b5), and this change takes main's form. It is tested there
+   (`test_a_canonical_section_that_is_not_an_object_is_a_ledger_finding`).
 2. **A `rounding` rule the contract does not implement, on a ledger with delta edits.** The edited elements were
    expected to keep the base's bits, so a container holding exactly the recorded `new_bits` was reported `violated`
    with a false finding. They are now expected to hold the recorded `new_bits`, and both halves are

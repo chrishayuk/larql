@@ -27,7 +27,8 @@
 //! alters what the program computes without touching the container.
 
 use crate::format::vindex3::weight_patch::{
-    LowRankColumnsOp, StructuredWeightOp, WeightDeltaOp, WeightOp, WeightOpRef, WeightPatchError,
+    check_element_count, LowRankColumnsOp, StructuredWeightOp, WeightDeltaOp, WeightOp,
+    WeightOpRef, WeightPatchError,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -401,6 +402,31 @@ impl KnowledgeOverlay {
                 WeightOpRef::Structured(_) | WeightOpRef::LowRankColumns(_) => 0,
             })
             .sum()
+    }
+
+    /// Whether `tensor` compiles as an operation target: an `add_low_rank_columns` op in effect names it, so
+    /// the whole tensor is recorded by its operations and the element limit does not bound it.
+    pub fn is_operation_target(&self, tensor: &str) -> bool {
+        self.weight_ops()
+            .iter()
+            .any(|(_, w)| matches!(w, WeightOpRef::LowRankColumns(_)) && w.tensor() == tensor)
+    }
+
+    /// What to tell the author of a `remove_direction` op on `tensor` that changes `elements` elements, when
+    /// a compile of what is in effect now would refuse it: a tensor edited only by removals compiles as a list
+    /// of elements, which [`check_element_count`] bounds. `None` when it fits, or when the tensor is already
+    /// an operation target.
+    ///
+    /// A notice and never a refusal. Whether the op compiles depends on the whole set compiled with it, in
+    /// any order, so only the compile can refuse it.
+    pub fn element_form_notice(&self, tensor: &str, elements: usize) -> Option<String> {
+        let over = check_element_count(elements).err()?;
+        (!self.is_operation_target(tensor)).then(|| {
+            format!(
+                "{over}; a compile refuses this unless an add_low_rank_columns op on `{tensor}` is \
+                 compiled with it, in either order"
+            )
+        })
     }
 
     /// Number of structured stored-weight ops in effect, of any kind.
