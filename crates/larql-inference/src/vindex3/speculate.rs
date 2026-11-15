@@ -124,8 +124,12 @@ pub struct SpeculativeRun {
     pub events: Vec<Event>,
     pub blocks: Vec<Block>,
     pub single_steps: usize,
-    /// Prompt length, already committed by prefill when the run began.
+    /// Prompt length: what the proposer may copy from.
     pub prompt_len: usize,
+    /// The target's committed position when the run began. Normally the
+    /// prompt's length, but a session may already hold earlier input (a
+    /// system prefix, earlier turns), so positions are judged from here.
+    pub start_position: usize,
     /// The target's committed position when the run ended.
     pub final_position: usize,
 }
@@ -141,8 +145,8 @@ impl SpeculativeRun {
     ///   its width is its proposal plus one; its rejection offset is its
     ///   accepted count when it rejected anything.
     /// - Each block started at the position its preceding ids imply, and
-    ///   the target ended at `prompt_len + produced - 1` (the last id is
-    ///   produced, never fed).
+    ///   the target ended at `start_position + produced - 1` (the last id
+    ///   is produced, never fed).
     /// - A run that generated nothing has no events, blocks or steps, and
     ///   left the target where prefill did.
     pub fn reconcile(&self) -> Result<(), String> {
@@ -150,7 +154,7 @@ impl SpeculativeRun {
             let untouched = self.ids.is_empty()
                 && self.blocks.is_empty()
                 && self.single_steps == 0
-                && self.final_position == self.prompt_len;
+                && self.final_position == self.start_position;
             return if untouched {
                 Ok(())
             } else {
@@ -229,19 +233,19 @@ impl SpeculativeRun {
             {
                 return Err(format!("block {index} is inconsistent: {block:?}"));
             }
-            if block.start + 1 != self.prompt_len + first {
+            if block.start + 1 != self.start_position + first {
                 return Err(format!(
-                    "block {index} started at {}, after {first} ids of a {}-token prompt",
-                    block.start, self.prompt_len
+                    "block {index} started at {}, {first} ids after the run began at {}",
+                    block.start, self.start_position
                 ));
             }
         }
-        if self.final_position + 1 != self.prompt_len + self.events.len() {
+        if self.final_position + 1 != self.start_position + self.events.len() {
             return Err(format!(
-                "the target ended at {}, after {} ids of a {}-token prompt",
+                "the target ended at {}, {} ids after the run began at {}",
                 self.final_position,
                 self.events.len(),
-                self.prompt_len
+                self.start_position
             ));
         }
         Ok(())
@@ -326,6 +330,7 @@ pub fn greedy_speculate<T: BlockTarget + ?Sized>(
     }
     let mut run = SpeculativeRun {
         prompt_len: prompt.len(),
+        start_position: target.position(),
         final_position: target.position(),
         ..Default::default()
     };

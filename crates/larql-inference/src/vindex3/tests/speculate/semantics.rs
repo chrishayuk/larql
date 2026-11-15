@@ -383,3 +383,35 @@ fn a_proposer_that_returns_too_much_is_cut_back_to_the_block() {
         assert!(run.blocks.iter().all(|b| b.width <= width), "width {width}");
     }
 }
+
+#[test]
+fn a_session_that_already_held_earlier_input_reconciles() {
+    // A system prefix committed before the prompt: the proposer copies from
+    // the prompt alone, and positions are judged from where the run began.
+    let prefix: Vec<u32> = (0..5).map(|i| (i * 3 + 1) % VOCAB).collect();
+    for width in WIDTHS {
+        let mut target = Scripted::default();
+        prefill(&mut target, &prefix, width).unwrap();
+        let prompt = prompt();
+        let first = prefill(&mut target, &prompt, width).unwrap();
+        let run = greedy_speculate(
+            &mut target,
+            &prompt,
+            first,
+            GENERATE,
+            width,
+            &HashSet::new(),
+            &mut |ctx: &[u32], _: usize, max: usize| {
+                let mut full = prefix.clone();
+                full.extend(ctx);
+                oracle(&full, 0, max)
+            },
+        )
+        .unwrap();
+        assert_eq!(run.start_position, prefix.len() + prompt.len());
+        run.reconcile().unwrap();
+        let mut whole = prefix.clone();
+        whole.extend(&prompt);
+        assert_eq!(run.ids, reference(&whole, GENERATE), "width {width}");
+    }
+}
