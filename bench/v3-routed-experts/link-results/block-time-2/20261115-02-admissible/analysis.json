@@ -1,0 +1,1131 @@
+{
+  "protocol": "BLOCK-TIME-2 revision 1",
+  "pairs": [
+    {
+      "pair": 0,
+      "round": 0,
+      "arm": "block-8",
+      "arm_pair": 0,
+      "order": "5->20",
+      "bracket_drift": 0.0024702222647920566,
+      "within_pair_difference": {
+        "coordinator": 0.0038511500944670277,
+        "execution": 0.0012142914922776014
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 2.9966546630952378,
+      "low_ns": 134030562.5,
+      "high_ns": 178980382.44642857,
+      "exchange_remainders": {
+        "trial-001": {
+          "largest_ns": 617667.0,
+          "median_ns": 522853.5
+        },
+        "trial-002": {
+          "largest_ns": 9211208.0,
+          "median_ns": 535250.0
+        }
+      }
+    },
+    {
+      "pair": 1,
+      "round": 0,
+      "arm": "block-4",
+      "arm_pair": 0,
+      "order": "5->20",
+      "bracket_drift": 0.00018903014196133762,
+      "within_pair_difference": {
+        "coordinator": 0.003422355974090452,
+        "execution": 0.00012345100208639663
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 6.006449107142858,
+      "low_ns": 152186485.125,
+      "high_ns": 242283221.73214287,
+      "exchange_remainders": {
+        "trial-005": {
+          "largest_ns": 9223042.0,
+          "median_ns": 395626.0
+        },
+        "trial-006": {
+          "largest_ns": 573833.0,
+          "median_ns": 414458.5
+        }
+      }
+    },
+    {
+      "pair": 2,
+      "round": 0,
+      "arm": "block-1",
+      "arm_pair": 0,
+      "order": "5->20",
+      "bracket_drift": 0.0018477902329407153,
+      "within_pair_difference": {
+        "coordinator": 0.00040377839212401076,
+        "execution": 0.002281926777459402
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 24.015064780952383,
+      "low_ns": 256195396.5892857,
+      "high_ns": 616421368.3035715,
+      "exchange_remainders": {
+        "trial-009": {
+          "largest_ns": 411541.0,
+          "median_ns": 273000.0
+        },
+        "trial-010": {
+          "largest_ns": 390709.0,
+          "median_ns": 289187.5
+        }
+      }
+    },
+    {
+      "pair": 3,
+      "round": 0,
+      "arm": "sequential",
+      "arm_pair": 0,
+      "order": "5->20",
+      "bracket_drift": 0.005064238292449682,
+      "within_pair_difference": {
+        "coordinator": 0.000858039633977389,
+        "execution": 0.0017655936792110942
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 24.016930555952378,
+      "low_ns": 246722810.26785713,
+      "high_ns": 606976768.6071428,
+      "exchange_remainders": {
+        "trial-013": {
+          "largest_ns": 362583.0,
+          "median_ns": 269500.0
+        },
+        "trial-014": {
+          "largest_ns": 383751.0,
+          "median_ns": 282042.0
+        }
+      }
+    },
+    {
+      "pair": 4,
+      "round": 0,
+      "arm": "block-2",
+      "arm_pair": 0,
+      "order": "5->20",
+      "bracket_drift": 0.0013540034578928726,
+      "within_pair_difference": {
+        "coordinator": 5.9561120924353336e-05,
+        "execution": 0.0017133761250459128
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 12.007784375,
+      "low_ns": 187664732.14285713,
+      "high_ns": 367781497.76785713,
+      "exchange_remainders": {
+        "trial-017": {
+          "largest_ns": 415042.0,
+          "median_ns": 333125.5
+        },
+        "trial-018": {
+          "largest_ns": 509543.0,
+          "median_ns": 350375.5
+        }
+      }
+    },
+    {
+      "pair": 5,
+      "round": 1,
+      "arm": "sequential",
+      "arm_pair": 1,
+      "order": "20->5",
+      "bracket_drift": 0.0019215457059627526,
+      "within_pair_difference": {
+        "coordinator": 0.004521341140142749,
+        "execution": 0.0008878941335193943
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 24.02821130952381,
+      "low_ns": 246788084.07142857,
+      "high_ns": 607211253.7142857,
+      "exchange_remainders": {
+        "trial-021": {
+          "largest_ns": 392625.0,
+          "median_ns": 284437.5
+        },
+        "trial-022": {
+          "largest_ns": 377583.0,
+          "median_ns": 271979.5
+        }
+      }
+    },
+    {
+      "pair": 6,
+      "round": 1,
+      "arm": "block-4",
+      "arm_pair": 1,
+      "order": "20->5",
+      "bracket_drift": 0.002369956561663128,
+      "within_pair_difference": {
+        "coordinator": 0.017869486486564553,
+        "execution": 0.02159836607157442
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 5.825556051190477,
+      "low_ns": 154499638.39285713,
+      "high_ns": 241882979.1607143,
+      "exchange_remainders": {
+        "trial-025": {
+          "largest_ns": 486416.0,
+          "median_ns": 401437.0
+        },
+        "trial-026": {
+          "largest_ns": 608500.0,
+          "median_ns": 431521.0
+        }
+      }
+    },
+    {
+      "pair": 7,
+      "round": 1,
+      "arm": "block-8",
+      "arm_pair": 1,
+      "order": "20->5",
+      "bracket_drift": 0.006270554891041919,
+      "within_pair_difference": {
+        "coordinator": 0.0064972650976022235,
+        "execution": 0.0009438659610809372
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 3.0026340773809523,
+      "low_ns": 134005955.35714285,
+      "high_ns": 179045466.51785713,
+      "exchange_remainders": {
+        "trial-029": {
+          "largest_ns": 8765916.0,
+          "median_ns": 536437.0
+        },
+        "trial-030": {
+          "largest_ns": 600500.0,
+          "median_ns": 528645.5
+        }
+      }
+    },
+    {
+      "pair": 8,
+      "round": 1,
+      "arm": "block-1",
+      "arm_pair": 1,
+      "order": "20->5",
+      "bracket_drift": 0.01862959216573037,
+      "within_pair_difference": {
+        "coordinator": 0.012746200543310349,
+        "execution": 0.01715717616907736
+      },
+      "valid_without_rule_4": false,
+      "valid": false,
+      "void_reasons": [
+        "brackets differ by 0.0186"
+      ],
+      "slope": 23.836260167857148,
+      "low_ns": 259560218.75,
+      "high_ns": 617104121.2678572,
+      "exchange_remainders": {
+        "trial-033": {
+          "largest_ns": 412749.0,
+          "median_ns": 285916.5
+        },
+        "trial-034": {
+          "largest_ns": 4499292.0,
+          "median_ns": 290666.5
+        }
+      }
+    },
+    {
+      "pair": 9,
+      "round": 1,
+      "arm": "block-2",
+      "arm_pair": 1,
+      "order": "20->5",
+      "bracket_drift": 0.0013349056801155534,
+      "within_pair_difference": {
+        "coordinator": 0.0026597278490583845,
+        "execution": 0.0006082030132175815
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 12.010202133333332,
+      "low_ns": 187897182.2857143,
+      "high_ns": 368050214.28571427,
+      "exchange_remainders": {
+        "trial-037": {
+          "largest_ns": 449750.0,
+          "median_ns": 349834.0
+        },
+        "trial-038": {
+          "largest_ns": 426583.0,
+          "median_ns": 335249.5
+        }
+      }
+    },
+    {
+      "pair": 10,
+      "round": 2,
+      "arm": "block-8",
+      "arm_pair": 2,
+      "order": "20->5",
+      "bracket_drift": 0.003452253837926189,
+      "within_pair_difference": {
+        "coordinator": 0.004675561029846881,
+        "execution": 0.0011618416113544062
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 2.9952427083333335,
+      "low_ns": 133942428.57142857,
+      "high_ns": 178871069.19642857,
+      "exchange_remainders": {
+        "trial-041": {
+          "largest_ns": 8787042.0,
+          "median_ns": 529437.5
+        },
+        "trial-042": {
+          "largest_ns": 590708.0,
+          "median_ns": 522333.0
+        }
+      }
+    },
+    {
+      "pair": 11,
+      "round": 2,
+      "arm": "block-2",
+      "arm_pair": 2,
+      "order": "20->5",
+      "bracket_drift": 0.0004929513561829409,
+      "within_pair_difference": {
+        "coordinator": 0.000262344241872877,
+        "execution": 0.0009173484908441648
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 12.008740377380953,
+      "low_ns": 187908065.4642857,
+      "high_ns": 368039171.125,
+      "exchange_remainders": {
+        "trial-045": {
+          "largest_ns": 456584.0,
+          "median_ns": 353458.5
+        },
+        "trial-046": {
+          "largest_ns": 489916.0,
+          "median_ns": 337583.5
+        }
+      }
+    },
+    {
+      "pair": 12,
+      "round": 2,
+      "arm": "block-4",
+      "arm_pair": 2,
+      "order": "20->5",
+      "bracket_drift": 0.0014105175305921397,
+      "within_pair_difference": {
+        "coordinator": 0.0012229914610290618,
+        "execution": 0.00043706484277721263
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 5.998682888095238,
+      "low_ns": 151988244.7857143,
+      "high_ns": 241968488.10714287,
+      "exchange_remainders": {
+        "trial-049": {
+          "largest_ns": 500959.0,
+          "median_ns": 413334.0
+        },
+        "trial-050": {
+          "largest_ns": 8568792.0,
+          "median_ns": 397062.0
+        }
+      }
+    },
+    {
+      "pair": 13,
+      "round": 2,
+      "arm": "sequential",
+      "arm_pair": 2,
+      "order": "20->5",
+      "bracket_drift": 0.03896211432725954,
+      "within_pair_difference": {
+        "coordinator": 0.05653079442249843,
+        "execution": 0.07640751656667573
+      },
+      "valid_without_rule_4": false,
+      "valid": false,
+      "void_reasons": [
+        "brackets differ by 0.0390",
+        "coordinator time differs by 0.0565 between the pair's delays",
+        "worker execution time differs by 0.0764 between the pair's delays"
+      ],
+      "slope": 23.289910219047616,
+      "low_ns": 257570098.94642857,
+      "high_ns": 606918752.2321428,
+      "exchange_remainders": {
+        "trial-053": {
+          "largest_ns": 382499.0,
+          "median_ns": 283604.5
+        },
+        "trial-054": {
+          "largest_ns": 5944167.0,
+          "median_ns": 356625.0
+        }
+      }
+    },
+    {
+      "pair": 14,
+      "round": 2,
+      "arm": "block-1",
+      "arm_pair": 2,
+      "order": "20->5",
+      "bracket_drift": 0.05335883670542089,
+      "within_pair_difference": {
+        "coordinator": 0.004752889158374801,
+        "execution": 0.00022094516225010404
+      },
+      "valid_without_rule_4": false,
+      "valid": false,
+      "void_reasons": [
+        "brackets differ by 0.0534"
+      ],
+      "slope": 24.04765654761905,
+      "low_ns": 256091337.05357143,
+      "high_ns": 616806185.2678572,
+      "exchange_remainders": {
+        "trial-057": {
+          "largest_ns": 423084.0,
+          "median_ns": 290353.5
+        },
+        "trial-058": {
+          "largest_ns": 395333.0,
+          "median_ns": 272021.0
+        }
+      }
+    },
+    {
+      "pair": 15,
+      "round": 3,
+      "arm": "block-4",
+      "arm_pair": 3,
+      "order": "5->20",
+      "bracket_drift": 0.0025059200889637075,
+      "within_pair_difference": {
+        "coordinator": 0.002245755085074564,
+        "execution": 0.0036447699913925847
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 5.965952479761905,
+      "low_ns": 152627057.30357143,
+      "high_ns": 242116344.5,
+      "exchange_remainders": {
+        "trial-061": {
+          "largest_ns": 8358584.0,
+          "median_ns": 405334.0
+        },
+        "trial-062": {
+          "largest_ns": 536374.0,
+          "median_ns": 411416.5
+        }
+      }
+    },
+    {
+      "pair": 16,
+      "round": 3,
+      "arm": "block-2",
+      "arm_pair": 3,
+      "order": "5->20",
+      "bracket_drift": 0.0029531034932179043,
+      "within_pair_difference": {
+        "coordinator": 0.00043404079397656674,
+        "execution": 0.01121818137522086
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 11.964404761904763,
+      "low_ns": 188403857.14285713,
+      "high_ns": 367869928.5714286,
+      "exchange_remainders": {
+        "trial-065": {
+          "largest_ns": 399500.0,
+          "median_ns": 329333.0
+        },
+        "trial-066": {
+          "largest_ns": 445916.0,
+          "median_ns": 351750.5
+        }
+      }
+    },
+    {
+      "pair": 17,
+      "round": 3,
+      "arm": "sequential",
+      "arm_pair": 3,
+      "order": "5->20",
+      "bracket_drift": 0.0033428265373374637,
+      "within_pair_difference": {
+        "coordinator": 0.004219936193123059,
+        "execution": 0.009194885231837197
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 23.951820435714286,
+      "low_ns": 247910840.7857143,
+      "high_ns": 607188147.3214285,
+      "exchange_remainders": {
+        "trial-069": {
+          "largest_ns": 598501.0,
+          "median_ns": 275729.0
+        },
+        "trial-070": {
+          "largest_ns": 403458.0,
+          "median_ns": 287000.0
+        }
+      }
+    },
+    {
+      "pair": 18,
+      "round": 3,
+      "arm": "block-1",
+      "arm_pair": 3,
+      "order": "5->20",
+      "bracket_drift": 0.002007732707877991,
+      "within_pair_difference": {
+        "coordinator": 0.000655490460611864,
+        "execution": 0.0026830424307790167
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 24.006070635714284,
+      "low_ns": 256598869.7857143,
+      "high_ns": 616689929.3214285,
+      "exchange_remainders": {
+        "trial-073": {
+          "largest_ns": 370958.0,
+          "median_ns": 273374.0
+        },
+        "trial-074": {
+          "largest_ns": 406542.0,
+          "median_ns": 287791.5
+        }
+      }
+    },
+    {
+      "pair": 19,
+      "round": 3,
+      "arm": "block-8",
+      "arm_pair": 3,
+      "order": "5->20",
+      "bracket_drift": 0.0012166739495410477,
+      "within_pair_difference": {
+        "coordinator": 0.008034965090764462,
+        "execution": 0.0030151854701036037
+      },
+      "valid_without_rule_4": true,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 2.9745104666666666,
+      "low_ns": 134495919.64285713,
+      "high_ns": 179113576.64285713,
+      "exchange_remainders": {
+        "trial-077": {
+          "largest_ns": 703708.0,
+          "median_ns": 540812.0
+        },
+        "trial-078": {
+          "largest_ns": 8716416.0,
+          "median_ns": 541417.0
+        }
+      }
+    }
+  ],
+  "arms": {
+    "sequential": {
+      "predicted": 24.0,
+      "pairs_scheduled": 4,
+      "pairs_valid": 3,
+      "valid_slopes": [
+        24.016930555952378,
+        24.02821130952381,
+        23.951820435714286
+      ],
+      "within_pair_failures": {
+        "coordinator": 1,
+        "execution": 1,
+        "of": 4
+      },
+      "secondary_without_rule_4": {
+        "pairs": 3,
+        "slopes": [
+          24.016930555952378,
+          24.02821130952381,
+          23.951820435714286
+        ],
+        "slope": 23.99898743373016,
+        "ratio": 0.9999578097387567
+      },
+      "rule_4_admits_shift": {
+        "round_trips": 0.23838208796428573,
+        "share_of_predicted": 0.009932586998511905
+      },
+      "slope": 23.99898743373016,
+      "ratio": 0.9999578097387567,
+      "follows_exchange_model": true,
+      "note": null,
+      "order": {
+        "5->20": 23.984375495833334,
+        "20->5": 24.02821130952381,
+        "difference": -0.043835813690478176
+      },
+      "times_ns": {
+        "5.0": 247140578.375,
+        "20.0": 607125389.8809524
+      },
+      "worker_execution_ns": {
+        "5.0": {
+          "valid_pairs": {
+            "min": 83978926.92857143,
+            "median": 83983843.46428572,
+            "max": 84687424.75,
+            "values": [
+              83978926.92857143,
+              83983843.46428572,
+              84687424.75
+            ],
+            "missing": 0
+          },
+          "all_pairs": {
+            "min": 83978926.92857143,
+            "median": 84335634.10714287,
+            "max": 90241880.85714285,
+            "values": [
+              83978926.92857143,
+              83983843.46428572,
+              84687424.75,
+              90241880.85714285
+            ],
+            "missing": 0
+          }
+        },
+        "20.0": {
+          "valid_pairs": {
+            "min": 83835823.46428572,
+            "median": 83904428.67857143,
+            "max": 83915828.33928572,
+            "values": [
+              83835823.46428572,
+              83904428.67857143,
+              83915828.33928572
+            ],
+            "missing": 0
+          },
+          "all_pairs": {
+            "min": 83835823.46428572,
+            "median": 83870298.08928572,
+            "max": 83915828.33928572,
+            "values": [
+              83835823.46428572,
+              83836167.5,
+              83904428.67857143,
+              83915828.33928572
+            ],
+            "missing": 0
+          }
+        }
+      }
+    },
+    "block-1": {
+      "predicted": 24.0,
+      "pairs_scheduled": 4,
+      "pairs_valid": 2,
+      "valid_slopes": [
+        24.015064780952383,
+        24.006070635714284
+      ],
+      "within_pair_failures": {
+        "coordinator": 0,
+        "execution": 0,
+        "of": 4
+      },
+      "secondary_without_rule_4": {
+        "pairs": 2,
+        "slopes": [
+          24.015064780952383,
+          24.006070635714284
+        ],
+        "slope": null,
+        "ratio": null
+      },
+      "rule_4_admits_shift": {
+        "round_trips": 0.25712909880357143,
+        "share_of_predicted": 0.010713712450148809
+      },
+      "slope": null,
+      "ratio": null,
+      "follows_exchange_model": null,
+      "note": "2 of 4 pairs valid; 3 required",
+      "order": {
+        "5->20": 24.010567708333333,
+        "20->5": null,
+        "difference": null
+      },
+      "times_ns": {
+        "5.0": 256397133.1875,
+        "20.0": 616555648.8125
+      },
+      "worker_execution_ns": {
+        "5.0": {
+          "valid_pairs": {
+            "min": 84093596.67857143,
+            "median": 84137028.0982143,
+            "max": 84180459.51785715,
+            "values": [
+              84093596.67857143,
+              84180459.51785715
+            ],
+            "missing": 0
+          },
+          "all_pairs": {
+            "min": 84015564.83928572,
+            "median": 84137028.0982143,
+            "max": 85840853.64285715,
+            "values": [
+              84015564.83928572,
+              84093596.67857143,
+              84180459.51785715,
+              85840853.64285715
+            ],
+            "missing": 0
+          }
+        },
+        "20.0": {
+          "valid_pairs": {
+            "min": 83902138.14285715,
+            "median": 83928671.14285715,
+            "max": 83955204.14285715,
+            "values": [
+              83902138.14285715,
+              83955204.14285715
+            ],
+            "missing": 0
+          },
+          "all_pairs": {
+            "min": 83902138.14285715,
+            "median": 83976105.125,
+            "max": 84392909.625,
+            "values": [
+              83902138.14285715,
+              83955204.14285715,
+              83997006.10714285,
+              84392909.625
+            ],
+            "missing": 0
+          }
+        }
+      }
+    },
+    "block-2": {
+      "predicted": 12.0,
+      "pairs_scheduled": 4,
+      "pairs_valid": 4,
+      "valid_slopes": [
+        12.007784375,
+        12.010202133333332,
+        12.008740377380953,
+        11.964404761904763
+      ],
+      "within_pair_failures": {
+        "coordinator": 0,
+        "execution": 0,
+        "of": 4
+      },
+      "secondary_without_rule_4": {
+        "pairs": 4,
+        "slopes": [
+          12.007784375,
+          12.010202133333332,
+          12.008740377380953,
+          11.964404761904763
+        ],
+        "slope": 11.997782911904762,
+        "ratio": 0.9998152426587302
+      },
+      "rule_4_admits_shift": {
+        "round_trips": 0.24622984406696427,
+        "share_of_predicted": 0.020519153672247024
+      },
+      "slope": 11.997782911904762,
+      "ratio": 0.9998152426587302,
+      "follows_exchange_model": true,
+      "note": null,
+      "order": {
+        "5->20": 11.986094568452382,
+        "20->5": 12.009471255357141,
+        "difference": -0.02337668690475958
+      },
+      "times_ns": {
+        "5.0": 187968459.25892857,
+        "20.0": 367935202.9375
+      },
+      "worker_execution_ns": {
+        "5.0": {
+          "valid_pairs": {
+            "min": 83768402.25,
+            "median": 83828496.70535713,
+            "max": 84648916.33928572,
+            "values": [
+              83768402.25,
+              83808991.94642857,
+              83848001.46428572,
+              84648916.33928572
+            ],
+            "missing": 0
+          },
+          "all_pairs": {
+            "min": 83768402.25,
+            "median": 83828496.70535713,
+            "max": 84648916.33928572,
+            "values": [
+              83768402.25,
+              83808991.94642857,
+              83848001.46428572,
+              84648916.33928572
+            ],
+            "missing": 0
+          }
+        },
+        "20.0": {
+          "valid_pairs": {
+            "min": 83625120.96428572,
+            "median": 83721012.24107143,
+            "max": 83898998.07142857,
+            "values": [
+              83625120.96428572,
+              83709844.125,
+              83732180.35714285,
+              83898998.07142857
+            ],
+            "missing": 0
+          },
+          "all_pairs": {
+            "min": 83625120.96428572,
+            "median": 83721012.24107143,
+            "max": 83898998.07142857,
+            "values": [
+              83625120.96428572,
+              83709844.125,
+              83732180.35714285,
+              83898998.07142857
+            ],
+            "missing": 0
+          }
+        }
+      }
+    },
+    "block-4": {
+      "predicted": 6.0,
+      "pairs_scheduled": 4,
+      "pairs_valid": 4,
+      "valid_slopes": [
+        6.006449107142858,
+        5.825556051190477,
+        5.998682888095238,
+        5.965952479761905
+      ],
+      "within_pair_failures": {
+        "coordinator": 0,
+        "execution": 0,
+        "of": 4
+      },
+      "secondary_without_rule_4": {
+        "pairs": 4,
+        "slopes": [
+          6.006449107142858,
+          5.825556051190477,
+          5.998682888095238,
+          5.965952479761905
+        ],
+        "slope": 5.94916013154762,
+        "ratio": 0.99152668859127
+      },
+      "rule_4_admits_shift": {
+        "round_trips": 0.23886181251339286,
+        "share_of_predicted": 0.03981030208556548
+      },
+      "slope": 5.94916013154762,
+      "ratio": 0.99152668859127,
+      "follows_exchange_model": true,
+      "note": null,
+      "order": {
+        "5->20": 5.986200793452381,
+        "20->5": 5.912119469642858,
+        "difference": 0.0740813238095237
+      },
+      "times_ns": {
+        "5.0": 152825356.40178573,
+        "20.0": 242062758.375
+      },
+      "worker_execution_ns": {
+        "5.0": {
+          "valid_pairs": {
+            "min": 83468307.33928572,
+            "median": 83744879.27678572,
+            "max": 85227723.28571428,
+            "values": [
+              83468307.33928572,
+              83616025.53571428,
+              83873733.01785715,
+              85227723.28571428
+            ],
+            "missing": 0
+          },
+          "all_pairs": {
+            "min": 83468307.33928572,
+            "median": 83744879.27678572,
+            "max": 85227723.28571428,
+            "values": [
+              83468307.33928572,
+              83616025.53571428,
+              83873733.01785715,
+              85227723.28571428
+            ],
+            "missing": 0
+          }
+        },
+        "20.0": {
+          "valid_pairs": {
+            "min": 83425861.0,
+            "median": 83500492.46428572,
+            "max": 83626348.01785715,
+            "values": [
+              83425861.0,
+              83431842.21428572,
+              83569142.71428572,
+              83626348.01785715
+            ],
+            "missing": 0
+          },
+          "all_pairs": {
+            "min": 83425861.0,
+            "median": 83500492.46428572,
+            "max": 83626348.01785715,
+            "values": [
+              83425861.0,
+              83431842.21428572,
+              83569142.71428572,
+              83626348.01785715
+            ],
+            "missing": 0
+          }
+        }
+      }
+    },
+    "block-8": {
+      "predicted": 3.0,
+      "pairs_scheduled": 4,
+      "pairs_valid": 4,
+      "valid_slopes": [
+        2.9966546630952378,
+        3.0026340773809523,
+        2.9952427083333335,
+        2.9745104666666666
+      ],
+      "within_pair_failures": {
+        "coordinator": 0,
+        "execution": 0,
+        "of": 4
+      },
+      "secondary_without_rule_4": {
+        "pairs": 4,
+        "slopes": [
+          2.9966546630952378,
+          3.0026340773809523,
+          2.9952427083333335,
+          2.9745104666666666
+        ],
+        "slope": 2.9922604788690474,
+        "ratio": 0.9974201596230158
+      },
+      "rule_4_admits_shift": {
+        "round_trips": 0.23393208339285715,
+        "share_of_predicted": 0.07797736113095238
+      },
+      "slope": 2.9922604788690474,
+      "ratio": 0.9974201596230158,
+      "follows_exchange_model": true,
+      "note": null,
+      "order": {
+        "5->20": 2.985582564880952,
+        "20->5": 2.998938392857143,
+        "difference": -0.013355827976190948
+      },
+      "times_ns": {
+        "5.0": 134118716.51785713,
+        "20.0": 179002623.70089287
+      },
+      "worker_execution_ns": {
+        "5.0": {
+          "valid_pairs": {
+            "min": 83277392.83928572,
+            "median": 83338166.94642857,
+            "max": 83624246.89285715,
+            "values": [
+              83277392.83928572,
+              83332973.125,
+              83343360.76785715,
+              83624246.89285715
+            ],
+            "missing": 0
+          },
+          "all_pairs": {
+            "min": 83277392.83928572,
+            "median": 83338166.94642857,
+            "max": 83624246.89285715,
+            "values": [
+              83277392.83928572,
+              83332973.125,
+              83343360.76785715,
+              83624246.89285715
+            ],
+            "missing": 0
+          }
+        },
+        "20.0": {
+          "valid_pairs": {
+            "min": 83236265.76785715,
+            "median": 83299137.95535713,
+            "max": 83372862.25,
+            "values": [
+              83236265.76785715,
+              83242280.375,
+              83355995.53571428,
+              83372862.25
+            ],
+            "missing": 0
+          },
+          "all_pairs": {
+            "min": 83236265.76785715,
+            "median": 83299137.95535713,
+            "max": 83372862.25,
+            "values": [
+              83236265.76785715,
+              83242280.375,
+              83355995.53571428,
+              83372862.25
+            ],
+            "missing": 0
+          }
+        }
+      }
+    }
+  },
+  "within_pair_failures_by_order": {
+    "5->20": {
+      "coordinator": 0,
+      "execution": 0,
+      "of": 10
+    },
+    "20->5": {
+      "coordinator": 1,
+      "execution": 1,
+      "of": 10
+    }
+  },
+  "valid_pairs": 17,
+  "void_pairs": 3,
+  "thresholds": {
+    "gate": 0.01,
+    "slope_band": 0.1,
+    "minimum_valid_pairs": 3,
+    "within_pair_consistency": 0.03
+  },
+  "reading": "evaluated positions only; the three-of-four rule is a reporting minimum and the band a model-fit criterion, neither is statistical significance; no speed comparison is made",
+  "kind": "admissible",
+  "counts": true,
+  "quiet_at_end": true,
+  "complete": true,
+  "stopped": null,
+  "scheduled": 80,
+  "observed": 80,
+  "telemetry_samples": 912,
+  "pauses": [],
+  "suspensions": [],
+  "outcomes": {
+    "valid_pairs": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      9,
+      10,
+      11,
+      12,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "void_pairs": {
+      "8": [
+        "brackets differ by 0.0186"
+      ],
+      "13": [
+        "brackets differ by 0.0390",
+        "coordinator time differs by 0.0565 between the pair's delays",
+        "worker execution time differs by 0.0764 between the pair's delays"
+      ],
+      "14": [
+        "brackets differ by 0.0534"
+      ]
+    },
+    "not_run": [],
+    "worker_timing_incomplete": []
+  },
+  "host_after": {
+    "load_average": [
+      3.12841796875,
+      3.06494140625,
+      3.048828125
+    ],
+    "busy_processes": [],
+    "utc": "2026-11-15T15:48:00Z"
+  },
+  "exclusivity_evidence_supplied": true,
+  "ended_utc": "2026-11-15T15:48:00Z"
+}

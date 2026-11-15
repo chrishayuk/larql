@@ -1,0 +1,4674 @@
+[
+  {
+    "label": "trial-000",
+    "pair": 0,
+    "round": 0,
+    "pair_arm": "block-8",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 127189913.69642857,
+      "wall_ns": 7122635167,
+      "exchanges": 1344,
+      "exchange_ns": 5149305754,
+      "coordinator_ns": 1973329413,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4781886708,
+        "execute_ns": 4718542970,
+        "experts_ns": 4710619061,
+        "queue_ns": 11602310,
+        "unattributed_exchange_ns": 367419046.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.02490234375,
+      2.87109375,
+      4.84033203125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724733,
+      "relay_late_mean_ns": 383.17567111668035,
+      "relay_late_max_ns": 6833,
+      "relay_late_per_position_ns": 36807.92592592593,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:44:49Z",
+    "ended_utc": "2026-11-15T14:45:17Z",
+    "started_monotonic": 407038.59427125,
+    "ended_monotonic": 407067.276594708,
+    "exchange_remainder": {
+      "largest_ns": 16579041.0,
+      "median_ns": 259542.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-001",
+    "pair": 0,
+    "round": 0,
+    "pair_arm": "block-8",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 134030562.5,
+      "wall_ns": 7505711500,
+      "exchanges": 168,
+      "exchange_ns": 5618959866,
+      "coordinator_ns": 1886751634,
+      "configured_delay_ns": 840000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 4690317707,
+        "execute_ns": 4667228203,
+        "experts_ns": 4659575336,
+        "queue_ns": 1660006,
+        "unattributed_exchange_ns": 88642159.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.6875,
+      2.80224609375,
+      4.74609375
+    ],
+    "relay": {
+      "relay_chunks": 18809,
+      "relay_bytes": 299501094,
+      "relay_late_mean_ns": 1897.6284225636664,
+      "relay_late_max_ns": 32250,
+      "relay_late_per_position_ns": 165243.02314814815,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:45:17Z",
+    "ended_utc": "2026-11-15T14:45:48Z",
+    "started_monotonic": 407067.279263833,
+    "ended_monotonic": 407097.432545916,
+    "exchange_remainder": {
+      "largest_ns": 617667.0,
+      "median_ns": 522853.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-002",
+    "pair": 0,
+    "round": 0,
+    "pair_arm": "block-8",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 178980382.44642857,
+      "wall_ns": 10022901417,
+      "exchanges": 168,
+      "exchange_ns": 8143388071,
+      "coordinator_ns": 1879513346,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 4684630424,
+        "execute_ns": 4661567701,
+        "experts_ns": 4653867484,
+        "queue_ns": 1589207,
+        "unattributed_exchange_ns": 98757647.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.169921875,
+      2.90478515625,
+      4.693359375
+    ],
+    "relay": {
+      "relay_chunks": 18810,
+      "relay_bytes": 299501091,
+      "relay_late_mean_ns": 1786.591759702286,
+      "relay_late_max_ns": 39375,
+      "relay_late_per_position_ns": 155582.36574074073,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:45:48Z",
+    "ended_utc": "2026-11-15T14:46:28Z",
+    "started_monotonic": 407097.435386458,
+    "ended_monotonic": 407137.42894375,
+    "exchange_remainder": {
+      "largest_ns": 9211208.0,
+      "median_ns": 535250.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-003",
+    "pair": 0,
+    "round": 0,
+    "pair_arm": "block-8",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 127504489.58928572,
+      "wall_ns": 7140251417,
+      "exchanges": 1344,
+      "exchange_ns": 5151086520,
+      "coordinator_ns": 1989164897,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4788884655,
+        "execute_ns": 4725295971,
+        "experts_ns": 4717324358,
+        "queue_ns": 11828434,
+        "unattributed_exchange_ns": 362201865.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.4794921875,
+      3.0205078125,
+      4.6728515625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724859,
+      "relay_late_mean_ns": 352.3619451539833,
+      "relay_late_max_ns": 8000,
+      "relay_late_per_position_ns": 33847.9537037037,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:46:28Z",
+    "ended_utc": "2026-11-15T14:46:56Z",
+    "started_monotonic": 407137.4308995,
+    "ended_monotonic": 407166.171641125,
+    "exchange_remainder": {
+      "largest_ns": 8800583.0,
+      "median_ns": 261103.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-004",
+    "pair": 1,
+    "round": 0,
+    "pair_arm": "block-4",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126904927.07142857,
+      "wall_ns": 7106675916,
+      "exchanges": 1344,
+      "exchange_ns": 5135282504,
+      "coordinator_ns": 1971393412,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4785750836,
+        "execute_ns": 4722617868,
+        "experts_ns": 4714640344,
+        "queue_ns": 11751041,
+        "unattributed_exchange_ns": 349531668.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.12451171875,
+      2.9833984375,
+      4.60205078125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724719,
+      "relay_late_mean_ns": 369.24401175960287,
+      "relay_late_max_ns": 6708,
+      "relay_late_per_position_ns": 35469.648148148146,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:46:56Z",
+    "ended_utc": "2026-11-15T14:47:25Z",
+    "started_monotonic": 407166.174453583,
+    "ended_monotonic": 407194.873412125,
+    "exchange_remainder": {
+      "largest_ns": 323292.0,
+      "median_ns": 257875.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-005",
+    "pair": 1,
+    "round": 0,
+    "pair_arm": "block-4",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 152186485.125,
+      "wall_ns": 8522443167,
+      "exchanges": 336,
+      "exchange_ns": 6532354745,
+      "coordinator_ns": 1990088422,
+      "configured_delay_ns": 1680000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 4709173457,
+        "execute_ns": 4682497430,
+        "experts_ns": 4674657625,
+        "queue_ns": 3338072,
+        "unattributed_exchange_ns": 143181288.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.9189453125,
+      3.16455078125,
+      4.609375
+    ],
+    "relay": {
+      "relay_chunks": 19454,
+      "relay_bytes": 299921390,
+      "relay_late_mean_ns": 1633.6074843219903,
+      "relay_late_max_ns": 46458,
+      "relay_late_per_position_ns": 147130.55555555556,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:47:25Z",
+    "ended_utc": "2026-11-15T14:47:59Z",
+    "started_monotonic": 407194.877127541,
+    "ended_monotonic": 407229.026601041,
+    "exchange_remainder": {
+      "largest_ns": 9223042.0,
+      "median_ns": 395626.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-006",
+    "pair": 1,
+    "round": 0,
+    "pair_arm": "block-4",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 242283221.73214287,
+      "wall_ns": 13567860417,
+      "exchanges": 336,
+      "exchange_ns": 11570961204,
+      "coordinator_ns": 1996899213,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 4710169583,
+        "execute_ns": 4683075489,
+        "experts_ns": 4675139185,
+        "queue_ns": 3225048,
+        "unattributed_exchange_ns": 140791621.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.92138671875,
+      3.0234375,
+      4.4658203125
+    ],
+    "relay": {
+      "relay_chunks": 19454,
+      "relay_bytes": 299921276,
+      "relay_late_mean_ns": 1686.4411432096226,
+      "relay_late_max_ns": 37375,
+      "relay_late_per_position_ns": 151889.00925925927,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:47:59Z",
+    "ended_utc": "2026-11-15T14:48:53Z",
+    "started_monotonic": 407229.029748833,
+    "ended_monotonic": 407282.662318041,
+    "exchange_remainder": {
+      "largest_ns": 573833.0,
+      "median_ns": 414458.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-007",
+    "pair": 1,
+    "round": 0,
+    "pair_arm": "block-4",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126880940.48214285,
+      "wall_ns": 7105332667,
+      "exchanges": 1344,
+      "exchange_ns": 5135923252,
+      "coordinator_ns": 1969409415,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4785002770,
+        "execute_ns": 4721638906,
+        "experts_ns": 4713711413,
+        "queue_ns": 11836900,
+        "unattributed_exchange_ns": 350920482.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.8779296875,
+      3.01611328125,
+      4.4130859375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724882,
+      "relay_late_mean_ns": 390.30652079618295,
+      "relay_late_max_ns": 6541,
+      "relay_late_per_position_ns": 37492.916666666664,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:48:53Z",
+    "ended_utc": "2026-11-15T14:49:21Z",
+    "started_monotonic": 407282.664887875,
+    "ended_monotonic": 407311.352443416,
+    "exchange_remainder": {
+      "largest_ns": 357334.0,
+      "median_ns": 258937.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-008",
+    "pair": 2,
+    "round": 0,
+    "pair_arm": "block-1",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126858319.92857143,
+      "wall_ns": 7104065916,
+      "exchanges": 1344,
+      "exchange_ns": 5132237842,
+      "coordinator_ns": 1971828074,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4780336715,
+        "execute_ns": 4717164367,
+        "experts_ns": 4709253891,
+        "queue_ns": 11806789,
+        "unattributed_exchange_ns": 351901127.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.21484375,
+      3.11669921875,
+      4.40185546875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724934,
+      "relay_late_mean_ns": 380.9780230372548,
+      "relay_late_max_ns": 9833,
+      "relay_late_per_position_ns": 36596.819444444445,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:49:21Z",
+    "ended_utc": "2026-11-15T14:49:50Z",
+    "started_monotonic": 407311.355881958,
+    "ended_monotonic": 407340.087625583,
+    "exchange_remainder": {
+      "largest_ns": 335916.0,
+      "median_ns": 259709.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-009",
+    "pair": 2,
+    "round": 0,
+    "pair_arm": "block-1",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 256195396.5892857,
+      "wall_ns": 14346942209,
+      "exchanges": 1344,
+      "exchange_ns": 11859316742,
+      "coordinator_ns": 2487625467,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 4769439083,
+        "execute_ns": 4709241414,
+        "experts_ns": 4700418155,
+        "queue_ns": 11887548,
+        "unattributed_exchange_ns": 369877659.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.677734375,
+      3.2265625,
+      4.35791015625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302414413,
+      "relay_late_mean_ns": 2096.3459925779557,
+      "relay_late_max_ns": 22000,
+      "relay_late_per_position_ns": 201375.38425925927,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:49:50Z",
+    "ended_utc": "2026-11-15T14:50:47Z",
+    "started_monotonic": 407340.092250958,
+    "ended_monotonic": 407396.742713541,
+    "exchange_remainder": {
+      "largest_ns": 411541.0,
+      "median_ns": 273000.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-010",
+    "pair": 2,
+    "round": 0,
+    "pair_arm": "block-1",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 616421368.3035715,
+      "wall_ns": 34519596625,
+      "exchanges": 1344,
+      "exchange_ns": 32032975202,
+      "coordinator_ns": 2486621423,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 4760198161,
+        "execute_ns": 4698519736,
+        "experts_ns": 4689587024,
+        "queue_ns": 11727917,
+        "unattributed_exchange_ns": 392777041.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      1.6689453125,
+      2.5830078125,
+      3.92919921875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302414245,
+      "relay_late_mean_ns": 1964.7279868909345,
+      "relay_late_max_ns": 29583,
+      "relay_late_per_position_ns": 188732.13425925927,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:50:47Z",
+    "ended_utc": "2026-11-15T14:53:01Z",
+    "started_monotonic": 407396.746396958,
+    "ended_monotonic": 407531.224771125,
+    "exchange_remainder": {
+      "largest_ns": 390709.0,
+      "median_ns": 289187.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-011",
+    "pair": 2,
+    "round": 0,
+    "pair_arm": "block-1",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126624128.73214285,
+      "wall_ns": 7090951209,
+      "exchanges": 1344,
+      "exchange_ns": 5124444571,
+      "coordinator_ns": 1966506638,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4772919834,
+        "execute_ns": 4709547217,
+        "experts_ns": 4701636370,
+        "queue_ns": 11847251,
+        "unattributed_exchange_ns": 351524737.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.9755859375,
+      2.796875,
+      3.96484375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725013,
+      "relay_late_mean_ns": 359.35808954648417,
+      "relay_late_max_ns": 15833,
+      "relay_late_per_position_ns": 34520.00462962963,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:53:01Z",
+    "ended_utc": "2026-11-15T14:53:30Z",
+    "started_monotonic": 407531.2268875,
+    "ended_monotonic": 407559.801504125,
+    "exchange_remainder": {
+      "largest_ns": 366917.0,
+      "median_ns": 258625.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-012",
+    "pair": 3,
+    "round": 0,
+    "pair_arm": "sequential",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 127109374.26785715,
+      "wall_ns": 7118124959,
+      "exchanges": 1344,
+      "exchange_ns": 5143847012,
+      "coordinator_ns": 1974277947,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4785596055,
+        "execute_ns": 4722136041,
+        "experts_ns": 4714186827,
+        "queue_ns": 11965222,
+        "unattributed_exchange_ns": 358250957.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.89794921875,
+      2.78515625,
+      3.91845703125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725026,
+      "relay_late_mean_ns": 370.98983083522097,
+      "relay_late_max_ns": 9167,
+      "relay_late_per_position_ns": 35637.351851851854,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:53:30Z",
+    "ended_utc": "2026-11-15T14:53:59Z",
+    "started_monotonic": 407559.80595075,
+    "ended_monotonic": 407588.451219666,
+    "exchange_remainder": {
+      "largest_ns": 359083.0,
+      "median_ns": 263624.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-013",
+    "pair": 3,
+    "round": 0,
+    "pair_arm": "sequential",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 246722810.26785713,
+      "wall_ns": 13816477375,
+      "exchanges": 1344,
+      "exchange_ns": 11852628698,
+      "coordinator_ns": 1963848677,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4767236127,
+        "execute_ns": 4703095234,
+        "experts_ns": 4695070474,
+        "queue_ns": 11992050,
+        "unattributed_exchange_ns": 365392571.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.7255859375,
+      3.06884765625,
+      3.95361328125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725027,
+      "relay_late_mean_ns": 2028.6774784326956,
+      "relay_late_max_ns": 20500,
+      "relay_late_per_position_ns": 194875.13425925927,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:53:59Z",
+    "ended_utc": "2026-11-15T14:54:53Z",
+    "started_monotonic": 407588.45474575,
+    "ended_monotonic": 407643.089061625,
+    "exchange_remainder": {
+      "largest_ns": 362583.0,
+      "median_ns": 269500.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-014",
+    "pair": 3,
+    "round": 0,
+    "pair_arm": "sequential",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 606976768.6071428,
+      "wall_ns": 33990699042,
+      "exchanges": 1344,
+      "exchange_ns": 32025165305,
+      "coordinator_ns": 1965533737,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4760050502,
+        "execute_ns": 4694806114,
+        "experts_ns": 4686792140,
+        "queue_ns": 11606470,
+        "unattributed_exchange_ns": 385114803.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      1.60302734375,
+      2.45263671875,
+      3.578125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724733,
+      "relay_late_mean_ns": 2058.1896958889583,
+      "relay_late_max_ns": 27500,
+      "relay_late_per_position_ns": 197710.08333333334,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:54:53Z",
+    "ended_utc": "2026-11-15T14:57:06Z",
+    "started_monotonic": 407643.093003541,
+    "ended_monotonic": 407775.557115,
+    "exchange_remainder": {
+      "largest_ns": 383751.0,
+      "median_ns": 282042.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-015",
+    "pair": 3,
+    "round": 0,
+    "pair_arm": "sequential",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126467287.94642857,
+      "wall_ns": 7082168125,
+      "exchanges": 1344,
+      "exchange_ns": 5113179130,
+      "coordinator_ns": 1968988995,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4763926211,
+        "execute_ns": 4700702277,
+        "experts_ns": 4692788300,
+        "queue_ns": 11720166,
+        "unattributed_exchange_ns": 349252919.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.5888671875,
+      2.61376953125,
+      3.59716796875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724883,
+      "relay_late_mean_ns": 370.84018506916,
+      "relay_late_max_ns": 7000,
+      "relay_late_per_position_ns": 35622.976851851854,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:57:06Z",
+    "ended_utc": "2026-11-15T14:57:34Z",
+    "started_monotonic": 407775.560844791,
+    "ended_monotonic": 407804.182903291,
+    "exchange_remainder": {
+      "largest_ns": 334958.0,
+      "median_ns": 257624.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-016",
+    "pair": 4,
+    "round": 0,
+    "pair_arm": "block-2",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126790601.92857143,
+      "wall_ns": 7100273708,
+      "exchanges": 1344,
+      "exchange_ns": 5133581338,
+      "coordinator_ns": 1966692370,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4776235624,
+        "execute_ns": 4712514185,
+        "experts_ns": 4704505151,
+        "queue_ns": 11673132,
+        "unattributed_exchange_ns": 357345714.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.7568359375,
+      2.64990234375,
+      3.57470703125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724854,
+      "relay_late_mean_ns": 394.7639404308641,
+      "relay_late_max_ns": 7166,
+      "relay_late_per_position_ns": 37921.09722222222,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:57:34Z",
+    "ended_utc": "2026-11-15T14:58:03Z",
+    "started_monotonic": 407804.188023375,
+    "ended_monotonic": 407832.804127875,
+    "exchange_remainder": {
+      "largest_ns": 347084.0,
+      "median_ns": 263062.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-017",
+    "pair": 4,
+    "round": 0,
+    "pair_arm": "block-2",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 187664732.14285713,
+      "wall_ns": 10509225000,
+      "exchanges": 672,
+      "exchange_ns": 8314978457,
+      "coordinator_ns": 2194246543,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 4729974417,
+        "execute_ns": 4691030526,
+        "experts_ns": 4682761447,
+        "queue_ns": 6271918,
+        "unattributed_exchange_ns": 225004040.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.93408203125,
+      2.6953125,
+      3.54736328125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300746900,
+      "relay_late_mean_ns": 1638.8465950166274,
+      "relay_late_max_ns": 29334,
+      "relay_late_per_position_ns": 157427.90740740742,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:58:03Z",
+    "ended_utc": "2026-11-15T14:58:45Z",
+    "started_monotonic": 407832.808275166,
+    "ended_monotonic": 407874.696910208,
+    "exchange_remainder": {
+      "largest_ns": 415042.0,
+      "median_ns": 333125.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-018",
+    "pair": 4,
+    "round": 0,
+    "pair_arm": "block-2",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 367781497.76785713,
+      "wall_ns": 20595763875,
+      "exchanges": 672,
+      "exchange_ns": 18401648016,
+      "coordinator_ns": 2194115859,
+      "configured_delay_ns": 13440000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 4722839378,
+        "execute_ns": 4683006774,
+        "experts_ns": 4674689162,
+        "queue_ns": 6185716,
+        "unattributed_exchange_ns": 238808638.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      1.78955078125,
+      2.38330078125,
+      3.34912109375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300746787,
+      "relay_late_mean_ns": 1739.3863800665092,
+      "relay_late_max_ns": 54291,
+      "relay_late_per_position_ns": 167085.77777777778,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T14:58:45Z",
+    "ended_utc": "2026-11-15T15:00:06Z",
+    "started_monotonic": 407874.701111125,
+    "ended_monotonic": 407955.542060083,
+    "exchange_remainder": {
+      "largest_ns": 509543.0,
+      "median_ns": 350375.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-019",
+    "pair": 4,
+    "round": 0,
+    "pair_arm": "block-2",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126619043.16071428,
+      "wall_ns": 7090666417,
+      "exchanges": 1344,
+      "exchange_ns": 5122724839,
+      "coordinator_ns": 1967941578,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4770356794,
+        "execute_ns": 4706660509,
+        "experts_ns": 4698676960,
+        "queue_ns": 11848767,
+        "unattributed_exchange_ns": 352368045.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.41845703125,
+      2.48681640625,
+      3.35205078125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724913,
+      "relay_late_mean_ns": 414.71251626584416,
+      "relay_late_max_ns": 6541,
+      "relay_late_per_position_ns": 39837.36111111111,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:00:06Z",
+    "ended_utc": "2026-11-15T15:00:34Z",
+    "started_monotonic": 407955.54484675,
+    "ended_monotonic": 407984.168890125,
+    "exchange_remainder": {
+      "largest_ns": 325958.0,
+      "median_ns": 260479.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-020",
+    "pair": 5,
+    "round": 1,
+    "pair_arm": "sequential",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126922879.46428572,
+      "wall_ns": 7107681250,
+      "exchanges": 1344,
+      "exchange_ns": 5145054111,
+      "coordinator_ns": 1962627139,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4788256983,
+        "execute_ns": 4725176807,
+        "experts_ns": 4717234377,
+        "queue_ns": 11553549,
+        "unattributed_exchange_ns": 356797128.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.5888671875,
+      2.53173828125,
+      3.33740234375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724861,
+      "relay_late_mean_ns": 389.50966311629475,
+      "relay_late_max_ns": 6625,
+      "relay_late_per_position_ns": 37416.37037037037,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:00:34Z",
+    "ended_utc": "2026-11-15T15:01:03Z",
+    "started_monotonic": 407984.172840125,
+    "ended_monotonic": 408012.865298125,
+    "exchange_remainder": {
+      "largest_ns": 355042.0,
+      "median_ns": 262104.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-021",
+    "pair": 5,
+    "round": 1,
+    "pair_arm": "sequential",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 607211253.7142857,
+      "wall_ns": 34003830208,
+      "exchanges": 1344,
+      "exchange_ns": 32031596596,
+      "coordinator_ns": 1972233612,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4763934509,
+        "execute_ns": 4698648006,
+        "experts_ns": 4690635512,
+        "queue_ns": 11702972,
+        "unattributed_exchange_ns": 387662087.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      1.8779296875,
+      2.2275390625,
+      3.0947265625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724732,
+      "relay_late_mean_ns": 1943.0463636801774,
+      "relay_late_max_ns": 34458,
+      "relay_late_per_position_ns": 186649.3935185185,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:01:03Z",
+    "ended_utc": "2026-11-15T15:03:16Z",
+    "started_monotonic": 408012.870453375,
+    "ended_monotonic": 408145.443262916,
+    "exchange_remainder": {
+      "largest_ns": 392625.0,
+      "median_ns": 284437.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-022",
+    "pair": 5,
+    "round": 1,
+    "pair_arm": "sequential",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 246788084.07142857,
+      "wall_ns": 13820132708,
+      "exchanges": 1344,
+      "exchange_ns": 11856776101,
+      "coordinator_ns": 1963356607,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4766546568,
+        "execute_ns": 4702819908,
+        "experts_ns": 4694886330,
+        "queue_ns": 11758372,
+        "unattributed_exchange_ns": 370229533.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.3974609375,
+      2.32177734375,
+      3.07470703125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724846,
+      "relay_late_mean_ns": 2059.551110896911,
+      "relay_late_max_ns": 19125,
+      "relay_late_per_position_ns": 197840.86111111112,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:03:16Z",
+    "ended_utc": "2026-11-15T15:04:10Z",
+    "started_monotonic": 408145.445406208,
+    "ended_monotonic": 408200.044177666,
+    "exchange_remainder": {
+      "largest_ns": 377583.0,
+      "median_ns": 271979.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-023",
+    "pair": 5,
+    "round": 1,
+    "pair_arm": "sequential",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126679225.44642857,
+      "wall_ns": 7094036625,
+      "exchanges": 1344,
+      "exchange_ns": 5125828911,
+      "coordinator_ns": 1968207714,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4774694536,
+        "execute_ns": 4711211583,
+        "experts_ns": 4703248840,
+        "queue_ns": 11655445,
+        "unattributed_exchange_ns": 351134375.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.70068359375,
+      2.4013671875,
+      3.0771484375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724845,
+      "relay_late_mean_ns": 384.5545327485662,
+      "relay_late_max_ns": 7375,
+      "relay_late_per_position_ns": 36940.37962962963,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:04:10Z",
+    "ended_utc": "2026-11-15T15:04:39Z",
+    "started_monotonic": 408200.049454916,
+    "ended_monotonic": 408228.652777791,
+    "exchange_remainder": {
+      "largest_ns": 323500.0,
+      "median_ns": 259354.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-024",
+    "pair": 6,
+    "round": 1,
+    "pair_arm": "block-4",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126930049.10714285,
+      "wall_ns": 7108082750,
+      "exchanges": 1344,
+      "exchange_ns": 5139072115,
+      "coordinator_ns": 1969010635,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4781939778,
+        "execute_ns": 4718179271,
+        "experts_ns": 4710212787,
+        "queue_ns": 11543971,
+        "unattributed_exchange_ns": 357132337.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.1337890625,
+      2.5283203125,
+      3.10302734375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724678,
+      "relay_late_mean_ns": 392.50465082654586,
+      "relay_late_max_ns": 9000,
+      "relay_late_per_position_ns": 37704.069444444445,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:04:39Z",
+    "ended_utc": "2026-11-15T15:05:07Z",
+    "started_monotonic": 408228.655985375,
+    "ended_monotonic": 408257.306382875,
+    "exchange_remainder": {
+      "largest_ns": 352166.0,
+      "median_ns": 262896.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-025",
+    "pair": 6,
+    "round": 1,
+    "pair_arm": "block-4",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 241882979.1607143,
+      "wall_ns": 13545446833,
+      "exchanges": 336,
+      "exchange_ns": 11555607504,
+      "coordinator_ns": 1989839329,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 4698853964,
+        "execute_ns": 4671848216,
+        "experts_ns": 4663931679,
+        "queue_ns": 3311123,
+        "unattributed_exchange_ns": 136753540.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.67578125,
+      2.52294921875,
+      3.064453125
+    ],
+    "relay": {
+      "relay_chunks": 19453,
+      "relay_bytes": 299921314,
+      "relay_late_mean_ns": 1750.5465480902687,
+      "relay_late_max_ns": 33458,
+      "relay_late_per_position_ns": 157654.5462962963,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:05:07Z",
+    "ended_utc": "2026-11-15T15:06:01Z",
+    "started_monotonic": 408257.310548583,
+    "ended_monotonic": 408310.934838083,
+    "exchange_remainder": {
+      "largest_ns": 486416.0,
+      "median_ns": 401437.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-026",
+    "pair": 6,
+    "round": 1,
+    "pair_arm": "block-4",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 154499638.39285713,
+      "wall_ns": 8651979750,
+      "exchanges": 336,
+      "exchange_ns": 6626583014,
+      "coordinator_ns": 2025396736,
+      "configured_delay_ns": 1680000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 4800160959,
+        "execute_ns": 4772752504,
+        "experts_ns": 4764689116,
+        "queue_ns": 3327416,
+        "unattributed_exchange_ns": 146422055.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.60302734375,
+      2.7529296875,
+      3.12451171875
+    ],
+    "relay": {
+      "relay_chunks": 19455,
+      "relay_bytes": 299921363,
+      "relay_late_mean_ns": 1370.7388846054998,
+      "relay_late_max_ns": 24708,
+      "relay_late_per_position_ns": 123461.68981481482,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:06:01Z",
+    "ended_utc": "2026-11-15T15:06:36Z",
+    "started_monotonic": 408310.939824583,
+    "ended_monotonic": 408345.420830083,
+    "exchange_remainder": {
+      "largest_ns": 608500.0,
+      "median_ns": 431521.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-027",
+    "pair": 6,
+    "round": 1,
+    "pair_arm": "block-4",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 127231224.69642857,
+      "wall_ns": 7124948583,
+      "exchanges": 1344,
+      "exchange_ns": 5151077456,
+      "coordinator_ns": 1973871127,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4794803146,
+        "execute_ns": 4730870932,
+        "experts_ns": 4722883544,
+        "queue_ns": 11845611,
+        "unattributed_exchange_ns": 356274310.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.8876953125,
+      2.927734375,
+      3.17529296875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724903,
+      "relay_late_mean_ns": 404.0702684466721,
+      "relay_late_max_ns": 7084,
+      "relay_late_per_position_ns": 38815.06481481482,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:06:36Z",
+    "ended_utc": "2026-11-15T15:07:04Z",
+    "started_monotonic": 408345.425533916,
+    "ended_monotonic": 408374.386257833,
+    "exchange_remainder": {
+      "largest_ns": 337874.0,
+      "median_ns": 263166.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-028",
+    "pair": 7,
+    "round": 1,
+    "pair_arm": "block-8",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126851302.82142857,
+      "wall_ns": 7103672958,
+      "exchanges": 1344,
+      "exchange_ns": 5131966790,
+      "coordinator_ns": 1971706168,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4782142146,
+        "execute_ns": 4718777458,
+        "experts_ns": 4710864537,
+        "queue_ns": 11689656,
+        "unattributed_exchange_ns": 349824644.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.2998046875,
+      2.86767578125,
+      3.14599609375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724841,
+      "relay_late_mean_ns": 374.82071425128925,
+      "relay_late_max_ns": 17833,
+      "relay_late_per_position_ns": 36005.34722222222,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:07:04Z",
+    "ended_utc": "2026-11-15T15:07:33Z",
+    "started_monotonic": 408374.391671791,
+    "ended_monotonic": 408403.086601916,
+    "exchange_remainder": {
+      "largest_ns": 366499.0,
+      "median_ns": 258436.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-029",
+    "pair": 7,
+    "round": 1,
+    "pair_arm": "block-8",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 179045466.51785713,
+      "wall_ns": 10026546125,
+      "exchanges": 168,
+      "exchange_ns": 8150146622,
+      "coordinator_ns": 1876399503,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 4691105620,
+        "execute_ns": 4667935750,
+        "experts_ns": 4660250278,
+        "queue_ns": 1513835,
+        "unattributed_exchange_ns": 99041002.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.59814453125,
+      2.75390625,
+      3.09130859375
+    ],
+    "relay": {
+      "relay_chunks": 18810,
+      "relay_bytes": 299501062,
+      "relay_late_mean_ns": 1717.8800637958532,
+      "relay_late_max_ns": 52791,
+      "relay_late_per_position_ns": 149598.72222222222,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:07:33Z",
+    "ended_utc": "2026-11-15T15:08:13Z",
+    "started_monotonic": 408403.08949775,
+    "ended_monotonic": 408443.035911833,
+    "exchange_remainder": {
+      "largest_ns": 8765916.0,
+      "median_ns": 536437.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-030",
+    "pair": 7,
+    "round": 1,
+    "pair_arm": "block-8",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 134005955.35714285,
+      "wall_ns": 7504333500,
+      "exchanges": 168,
+      "exchange_ns": 5615742532,
+      "coordinator_ns": 1888590968,
+      "configured_delay_ns": 840000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 4686626740,
+        "execute_ns": 4663533999,
+        "experts_ns": 4655868215,
+        "queue_ns": 1612752,
+        "unattributed_exchange_ns": 89115792.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.4287109375,
+      2.6962890625,
+      3.05810546875
+    ],
+    "relay": {
+      "relay_chunks": 18811,
+      "relay_bytes": 299501114,
+      "relay_late_mean_ns": 1839.4293764286854,
+      "relay_late_max_ns": 34666,
+      "relay_late_per_position_ns": 160192.15740740742,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:08:13Z",
+    "ended_utc": "2026-11-15T15:08:43Z",
+    "started_monotonic": 408443.037769041,
+    "ended_monotonic": 408473.223835791,
+    "exchange_remainder": {
+      "largest_ns": 600500.0,
+      "median_ns": 528645.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-031",
+    "pair": 7,
+    "round": 1,
+    "pair_arm": "block-8",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126058360.85714285,
+      "wall_ns": 7059268208,
+      "exchanges": 1344,
+      "exchange_ns": 5076577713,
+      "coordinator_ns": 1982690495,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4733189045,
+        "execute_ns": 4672938081,
+        "experts_ns": 4664968162,
+        "queue_ns": 11342185,
+        "unattributed_exchange_ns": 343388668.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.3359375,
+      2.8720703125,
+      3.10791015625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724563,
+      "relay_late_mean_ns": 386.37380114704325,
+      "relay_late_max_ns": 11500,
+      "relay_late_per_position_ns": 37115.13888888889,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:08:43Z",
+    "ended_utc": "2026-11-15T15:09:12Z",
+    "started_monotonic": 408473.227790541,
+    "ended_monotonic": 408501.901187666,
+    "exchange_remainder": {
+      "largest_ns": 337542.0,
+      "median_ns": 253687.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-032",
+    "pair": 8,
+    "round": 1,
+    "pair_arm": "block-1",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126153150.28571428,
+      "wall_ns": 7064576416,
+      "exchanges": 1344,
+      "exchange_ns": 5094132859,
+      "coordinator_ns": 1970443557,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4748541961,
+        "execute_ns": 4687542123,
+        "experts_ns": 4679604242,
+        "queue_ns": 11468886,
+        "unattributed_exchange_ns": 345590898.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.4130859375,
+      2.9443359375,
+      3.12548828125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724612,
+      "relay_late_mean_ns": 385.7294327437467,
+      "relay_late_max_ns": 26833,
+      "relay_late_per_position_ns": 37053.24074074074,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:09:12Z",
+    "ended_utc": "2026-11-15T15:09:41Z",
+    "started_monotonic": 408501.906528958,
+    "ended_monotonic": 408530.424547708,
+    "exchange_remainder": {
+      "largest_ns": 331416.0,
+      "median_ns": 254750.5
+    },
+    "suspensions": [],
+    "pair_valid": false,
+    "valid": false,
+    "trial_defects": [],
+    "void_reasons": [
+      "brackets differ by 0.0186"
+    ]
+  },
+  {
+    "label": "trial-033",
+    "pair": 8,
+    "round": 1,
+    "pair_arm": "block-1",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 617104121.2678572,
+      "wall_ns": 34557830791,
+      "exchanges": 1344,
+      "exchange_ns": 32057582196,
+      "coordinator_ns": 2500248595,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 4788800340,
+        "execute_ns": 4726002939,
+        "experts_ns": 4716852135,
+        "queue_ns": 11774750,
+        "unattributed_exchange_ns": 388781856.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.46923828125,
+      2.63720703125,
+      2.96435546875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302414095,
+      "relay_late_mean_ns": 2009.1777917008048,
+      "relay_late_max_ns": 40875,
+      "relay_late_per_position_ns": 193001.99074074073,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:09:41Z",
+    "ended_utc": "2026-11-15T15:11:55Z",
+    "started_monotonic": 408530.429093583,
+    "ended_monotonic": 408665.061908,
+    "exchange_remainder": {
+      "largest_ns": 412749.0,
+      "median_ns": 285916.5
+    },
+    "suspensions": [],
+    "pair_valid": false,
+    "valid": false,
+    "trial_defects": [],
+    "void_reasons": [
+      "brackets differ by 0.0186"
+    ]
+  },
+  {
+    "label": "trial-034",
+    "pair": 8,
+    "round": 1,
+    "pair_arm": "block-1",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 259560218.75,
+      "wall_ns": 14535372250,
+      "exchanges": 1344,
+      "exchange_ns": 12003254985,
+      "coordinator_ns": 2532117265,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 4880210986,
+        "execute_ns": 4807087804,
+        "experts_ns": 4797246121,
+        "queue_ns": 19481408,
+        "unattributed_exchange_ns": 403043999.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.23583984375,
+      2.54296875,
+      2.90625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302414946,
+      "relay_late_mean_ns": 2124.017157453371,
+      "relay_late_max_ns": 27708,
+      "relay_late_per_position_ns": 204033.4814814815,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:11:55Z",
+    "ended_utc": "2026-11-15T15:12:52Z",
+    "started_monotonic": 408665.064627083,
+    "ended_monotonic": 408722.327010833,
+    "exchange_remainder": {
+      "largest_ns": 4499292.0,
+      "median_ns": 290666.5
+    },
+    "suspensions": [],
+    "pair_valid": false,
+    "valid": false,
+    "trial_defects": [],
+    "void_reasons": [
+      "brackets differ by 0.0186"
+    ]
+  },
+  {
+    "label": "trial-035",
+    "pair": 8,
+    "round": 1,
+    "pair_arm": "block-1",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 128525429.32142857,
+      "wall_ns": 7197424042,
+      "exchanges": 1344,
+      "exchange_ns": 5208383292,
+      "coordinator_ns": 1989040750,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4841787709,
+        "execute_ns": 4774985302,
+        "experts_ns": 4766764017,
+        "queue_ns": 12182234,
+        "unattributed_exchange_ns": 366595583.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.29541015625,
+      2.5224609375,
+      2.8857421875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724890,
+      "relay_late_mean_ns": 402.00322907128054,
+      "relay_late_max_ns": 7917,
+      "relay_late_per_position_ns": 38616.50462962963,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:12:52Z",
+    "ended_utc": "2026-11-15T15:13:21Z",
+    "started_monotonic": 408722.329670458,
+    "ended_monotonic": 408751.367443458,
+    "exchange_remainder": {
+      "largest_ns": 385792.0,
+      "median_ns": 268375.0
+    },
+    "suspensions": [],
+    "pair_valid": false,
+    "valid": false,
+    "trial_defects": [],
+    "void_reasons": [
+      "brackets differ by 0.0186"
+    ]
+  },
+  {
+    "label": "trial-036",
+    "pair": 9,
+    "round": 1,
+    "pair_arm": "block-2",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126970768.60714285,
+      "wall_ns": 7110363042,
+      "exchanges": 1344,
+      "exchange_ns": 5135955706,
+      "coordinator_ns": 1974407336,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4784428669,
+        "execute_ns": 4720540352,
+        "experts_ns": 4712598043,
+        "queue_ns": 11758338,
+        "unattributed_exchange_ns": 351527037.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.44091796875,
+      2.53515625,
+      2.876953125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724911,
+      "relay_late_mean_ns": 383.26622969781675,
+      "relay_late_max_ns": 25583,
+      "relay_late_per_position_ns": 36816.625,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:13:21Z",
+    "ended_utc": "2026-11-15T15:13:50Z",
+    "started_monotonic": 408751.372487666,
+    "ended_monotonic": 408780.191174583,
+    "exchange_remainder": {
+      "largest_ns": 337041.0,
+      "median_ns": 259750.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-037",
+    "pair": 9,
+    "round": 1,
+    "pair_arm": "block-2",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 368050214.28571427,
+      "wall_ns": 20610812000,
+      "exchanges": 672,
+      "exchange_ns": 18415801333,
+      "coordinator_ns": 2195010667,
+      "configured_delay_ns": 13440000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 4738211504,
+        "execute_ns": 4698343892,
+        "experts_ns": 4689983533,
+        "queue_ns": 6216154,
+        "unattributed_exchange_ns": 237589829.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.49658203125,
+      2.5234375,
+      2.83837890625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300746803,
+      "relay_late_mean_ns": 1743.6861053544749,
+      "relay_late_max_ns": 32000,
+      "relay_late_per_position_ns": 167498.8101851852,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:13:50Z",
+    "ended_utc": "2026-11-15T15:15:11Z",
+    "started_monotonic": 408780.1965325,
+    "ended_monotonic": 408861.304609875,
+    "exchange_remainder": {
+      "largest_ns": 449750.0,
+      "median_ns": 349834.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-038",
+    "pair": 9,
+    "round": 1,
+    "pair_arm": "block-2",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 187897182.2857143,
+      "wall_ns": 10522242208,
+      "exchanges": 672,
+      "exchange_ns": 8321393410,
+      "coordinator_ns": 2200848798,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 4734743170,
+        "execute_ns": 4695488082,
+        "experts_ns": 4687140104,
+        "queue_ns": 6668986,
+        "unattributed_exchange_ns": 226650240.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.1748046875,
+      2.705078125,
+      2.8896484375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300747231,
+      "relay_late_mean_ns": 1750.0926309701672,
+      "relay_late_max_ns": 28792,
+      "relay_late_per_position_ns": 168114.22222222222,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:15:11Z",
+    "ended_utc": "2026-11-15T15:15:53Z",
+    "started_monotonic": 408861.310489666,
+    "ended_monotonic": 408903.220261625,
+    "exchange_remainder": {
+      "largest_ns": 426583.0,
+      "median_ns": 335249.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-039",
+    "pair": 9,
+    "round": 1,
+    "pair_arm": "block-2",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126801387.66071428,
+      "wall_ns": 7100877709,
+      "exchanges": 1344,
+      "exchange_ns": 5136185070,
+      "coordinator_ns": 1964692639,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4784426515,
+        "execute_ns": 4720714702,
+        "experts_ns": 4712755288,
+        "queue_ns": 11937207,
+        "unattributed_exchange_ns": 351758555.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.2470703125,
+      2.75146484375,
+      2.8984375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724906,
+      "relay_late_mean_ns": 385.5196395006988,
+      "relay_late_max_ns": 6375,
+      "relay_late_per_position_ns": 37033.08796296296,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:15:53Z",
+    "ended_utc": "2026-11-15T15:16:22Z",
+    "started_monotonic": 408903.22555475,
+    "ended_monotonic": 408931.971224541,
+    "exchange_remainder": {
+      "largest_ns": 336708.0,
+      "median_ns": 259666.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-040",
+    "pair": 10,
+    "round": 2,
+    "pair_arm": "block-8",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 127099113.83928572,
+      "wall_ns": 7117550375,
+      "exchanges": 1344,
+      "exchange_ns": 5144362168,
+      "coordinator_ns": 1973188207,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4788086613,
+        "execute_ns": 4723857647,
+        "experts_ns": 4715913847,
+        "queue_ns": 11997424,
+        "unattributed_exchange_ns": 356275555.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      4.35498046875,
+      3.044921875,
+      2.9990234375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724947,
+      "relay_late_mean_ns": 360.9738300640995,
+      "relay_late_max_ns": 8458,
+      "relay_late_per_position_ns": 34675.21296296296,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:16:22Z",
+    "ended_utc": "2026-11-15T15:16:51Z",
+    "started_monotonic": 408931.97764175,
+    "ended_monotonic": 408960.672702083,
+    "exchange_remainder": {
+      "largest_ns": 355500.0,
+      "median_ns": 262749.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-041",
+    "pair": 10,
+    "round": 2,
+    "pair_arm": "block-8",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 178871069.19642857,
+      "wall_ns": 10016779875,
+      "exchanges": 168,
+      "exchange_ns": 8142415292,
+      "coordinator_ns": 1874364583,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 4684395338,
+        "execute_ns": 4661230883,
+        "experts_ns": 4653558192,
+        "queue_ns": 1570212,
+        "unattributed_exchange_ns": 98019954.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.51611328125,
+      3.01513671875,
+      2.990234375
+    ],
+    "relay": {
+      "relay_chunks": 18810,
+      "relay_bytes": 299501088,
+      "relay_late_mean_ns": 1818.1323763955343,
+      "relay_late_max_ns": 54542,
+      "relay_late_per_position_ns": 158329.02777777778,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:16:51Z",
+    "ended_utc": "2026-11-15T15:17:31Z",
+    "started_monotonic": 408960.676919458,
+    "ended_monotonic": 409000.585025708,
+    "exchange_remainder": {
+      "largest_ns": 8787042.0,
+      "median_ns": 529437.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-042",
+    "pair": 10,
+    "round": 2,
+    "pair_arm": "block-8",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 133942428.57142857,
+      "wall_ns": 7500776000,
+      "exchanges": 168,
+      "exchange_ns": 5617647711,
+      "coordinator_ns": 1883128289,
+      "configured_delay_ns": 840000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 4689442339,
+        "execute_ns": 4666646495,
+        "experts_ns": 4658985017,
+        "queue_ns": 1563836,
+        "unattributed_exchange_ns": 88205372.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.794921875,
+      3.12548828125,
+      3.0302734375
+    ],
+    "relay": {
+      "relay_chunks": 18809,
+      "relay_bytes": 299501093,
+      "relay_late_mean_ns": 1880.2402041575842,
+      "relay_late_max_ns": 37875,
+      "relay_late_per_position_ns": 163728.87962962964,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:17:31Z",
+    "ended_utc": "2026-11-15T15:18:01Z",
+    "started_monotonic": 409000.590697208,
+    "ended_monotonic": 409030.732274666,
+    "exchange_remainder": {
+      "largest_ns": 590708.0,
+      "median_ns": 522333.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-043",
+    "pair": 10,
+    "round": 2,
+    "pair_arm": "block-8",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126661091.51785715,
+      "wall_ns": 7093021125,
+      "exchanges": 1344,
+      "exchange_ns": 5131425049,
+      "coordinator_ns": 1961596076,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4779421109,
+        "execute_ns": 4715659875,
+        "experts_ns": 4707700286,
+        "queue_ns": 11908016,
+        "unattributed_exchange_ns": 352003940.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.63427734375,
+      3.1455078125,
+      3.0390625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724945,
+      "relay_late_mean_ns": 399.0081931659357,
+      "relay_late_max_ns": 6625,
+      "relay_late_per_position_ns": 38328.80092592593,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:18:01Z",
+    "ended_utc": "2026-11-15T15:18:30Z",
+    "started_monotonic": 409030.73803475,
+    "ended_monotonic": 409059.421342125,
+    "exchange_remainder": {
+      "largest_ns": 343083.0,
+      "median_ns": 259208.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-044",
+    "pair": 11,
+    "round": 2,
+    "pair_arm": "block-2",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126699325.89285715,
+      "wall_ns": 7095162250,
+      "exchanges": 1344,
+      "exchange_ns": 5134656255,
+      "coordinator_ns": 1960505995,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4783851442,
+        "execute_ns": 4720126840,
+        "experts_ns": 4712199301,
+        "queue_ns": 11791043,
+        "unattributed_exchange_ns": 350804813.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.34912109375,
+      3.11572265625,
+      3.0302734375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724832,
+      "relay_late_mean_ns": 396.1583208829341,
+      "relay_late_max_ns": 6959,
+      "relay_late_per_position_ns": 38055.041666666664,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:18:30Z",
+    "ended_utc": "2026-11-15T15:18:58Z",
+    "started_monotonic": 409059.426194,
+    "ended_monotonic": 409088.088886,
+    "exchange_remainder": {
+      "largest_ns": 330875.0,
+      "median_ns": 258707.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-045",
+    "pair": 11,
+    "round": 2,
+    "pair_arm": "block-2",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 368039171.125,
+      "wall_ns": 20610193583,
+      "exchanges": 672,
+      "exchange_ns": 18409341009,
+      "coordinator_ns": 2200852574,
+      "configured_delay_ns": 13440000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 4729002827,
+        "execute_ns": 4689002100,
+        "experts_ns": 4680638496,
+        "queue_ns": 6197485,
+        "unattributed_exchange_ns": 240338182.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.91259765625,
+      3.0517578125,
+      3.0107421875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300746717,
+      "relay_late_mean_ns": 1723.7973878259193,
+      "relay_late_max_ns": 23208,
+      "relay_late_per_position_ns": 165588.2962962963,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:18:58Z",
+    "ended_utc": "2026-11-15T15:20:19Z",
+    "started_monotonic": 409088.092842541,
+    "ended_monotonic": 409168.959920875,
+    "exchange_remainder": {
+      "largest_ns": 456584.0,
+      "median_ns": 353458.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-046",
+    "pair": 11,
+    "round": 2,
+    "pair_arm": "block-2",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 187908065.4642857,
+      "wall_ns": 10522851666,
+      "exchanges": 672,
+      "exchange_ns": 8321421711,
+      "coordinator_ns": 2201429955,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 4732103871,
+        "execute_ns": 4693303549,
+        "experts_ns": 4684997936,
+        "queue_ns": 6263682,
+        "unattributed_exchange_ns": 229317840.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.68115234375,
+      3.21923828125,
+      3.0712890625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300746876,
+      "relay_late_mean_ns": 1648.646488987421,
+      "relay_late_max_ns": 25917,
+      "relay_late_per_position_ns": 158369.28703703705,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:20:19Z",
+    "ended_utc": "2026-11-15T15:21:01Z",
+    "started_monotonic": 409168.963962875,
+    "ended_monotonic": 409210.845439833,
+    "exchange_remainder": {
+      "largest_ns": 489916.0,
+      "median_ns": 337583.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-047",
+    "pair": 11,
+    "round": 2,
+    "pair_arm": "block-2",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126636884.67857143,
+      "wall_ns": 7091665542,
+      "exchanges": 1344,
+      "exchange_ns": 5129845219,
+      "coordinator_ns": 1961820323,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4779840335,
+        "execute_ns": 4716083877,
+        "experts_ns": 4708137498,
+        "queue_ns": 11848054,
+        "unattributed_exchange_ns": 350004884.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.93994140625,
+      3.32470703125,
+      3.11376953125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724752,
+      "relay_late_mean_ns": 393.11234276350666,
+      "relay_late_max_ns": 6375,
+      "relay_late_per_position_ns": 37762.444444444445,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:21:01Z",
+    "ended_utc": "2026-11-15T15:21:30Z",
+    "started_monotonic": 409210.848679166,
+    "ended_monotonic": 409239.468395708,
+    "exchange_remainder": {
+      "largest_ns": 333209.0,
+      "median_ns": 258208.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-048",
+    "pair": 12,
+    "round": 2,
+    "pair_arm": "block-4",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126841780.5,
+      "wall_ns": 7103139708,
+      "exchanges": 1344,
+      "exchange_ns": 5134596069,
+      "coordinator_ns": 1968543639,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4784169167,
+        "execute_ns": 4720503167,
+        "experts_ns": 4712508160,
+        "queue_ns": 11860831,
+        "unattributed_exchange_ns": 350426902.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.8447265625,
+      3.34375,
+      3.12548828125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724980,
+      "relay_late_mean_ns": 380.42204443587644,
+      "relay_late_max_ns": 8750,
+      "relay_late_per_position_ns": 36543.41203703704,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:21:30Z",
+    "ended_utc": "2026-11-15T15:21:58Z",
+    "started_monotonic": 409239.474211916,
+    "ended_monotonic": 409268.163615083,
+    "exchange_remainder": {
+      "largest_ns": 356208.0,
+      "median_ns": 258791.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-049",
+    "pair": 12,
+    "round": 2,
+    "pair_arm": "block-4",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 241968488.10714287,
+      "wall_ns": 13550235334,
+      "exchanges": 336,
+      "exchange_ns": 11559206420,
+      "coordinator_ns": 1991028914,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 4699255203,
+        "execute_ns": 4672183164,
+        "experts_ns": 4664270533,
+        "queue_ns": 3349877,
+        "unattributed_exchange_ns": 139951217.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.64453125,
+      3.08935546875,
+      3.0419921875
+    ],
+    "relay": {
+      "relay_chunks": 19454,
+      "relay_bytes": 299921364,
+      "relay_late_mean_ns": 1701.9051608923614,
+      "relay_late_max_ns": 28208,
+      "relay_late_per_position_ns": 153281.77314814815,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:21:58Z",
+    "ended_utc": "2026-11-15T15:22:52Z",
+    "started_monotonic": 409268.169139666,
+    "ended_monotonic": 409321.785911833,
+    "exchange_remainder": {
+      "largest_ns": 500959.0,
+      "median_ns": 413334.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-050",
+    "pair": 12,
+    "round": 2,
+    "pair_arm": "block-4",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 151988244.7857143,
+      "wall_ns": 8511341708,
+      "exchanges": 336,
+      "exchange_ns": 6522744831,
+      "coordinator_ns": 1988596877,
+      "configured_delay_ns": 1680000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 4700615493,
+        "execute_ns": 4674225211,
+        "experts_ns": 4666381766,
+        "queue_ns": 3219914,
+        "unattributed_exchange_ns": 142129338.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.95361328125,
+      3.09765625,
+      3.04443359375
+    ],
+    "relay": {
+      "relay_chunks": 19455,
+      "relay_bytes": 299921318,
+      "relay_late_mean_ns": 1614.5207401696223,
+      "relay_late_max_ns": 41667,
+      "relay_late_per_position_ns": 145418.98611111112,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:22:52Z",
+    "ended_utc": "2026-11-15T15:23:26Z",
+    "started_monotonic": 409321.78846975,
+    "ended_monotonic": 409355.925148041,
+    "exchange_remainder": {
+      "largest_ns": 8568792.0,
+      "median_ns": 397062.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-051",
+    "pair": 12,
+    "round": 2,
+    "pair_arm": "block-4",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126662994.03571428,
+      "wall_ns": 7093127666,
+      "exchanges": 1344,
+      "exchange_ns": 5132044404,
+      "coordinator_ns": 1961083262,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4779841490,
+        "execute_ns": 4716349528,
+        "experts_ns": 4708369628,
+        "queue_ns": 11997358,
+        "unattributed_exchange_ns": 352202914.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.42041015625,
+      3.18505859375,
+      3.07666015625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725003,
+      "relay_late_mean_ns": 374.18203286905396,
+      "relay_late_max_ns": 6708,
+      "relay_late_per_position_ns": 35943.99537037037,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:23:26Z",
+    "ended_utc": "2026-11-15T15:23:55Z",
+    "started_monotonic": 409355.930948583,
+    "ended_monotonic": 409384.608939958,
+    "exchange_remainder": {
+      "largest_ns": 378083.0,
+      "median_ns": 259791.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-052",
+    "pair": 13,
+    "round": 2,
+    "pair_arm": "sequential",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126860415.92857143,
+      "wall_ns": 7104183292,
+      "exchanges": 1344,
+      "exchange_ns": 5132478767,
+      "coordinator_ns": 1971704525,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4779363240,
+        "execute_ns": 4716088415,
+        "experts_ns": 4708163759,
+        "queue_ns": 11672315,
+        "unattributed_exchange_ns": 353115527.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.64111328125,
+      3.27392578125,
+      3.11279296875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724870,
+      "relay_late_mean_ns": 381.0088678972481,
+      "relay_late_max_ns": 12333,
+      "relay_late_per_position_ns": 36599.78240740741,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:23:55Z",
+    "ended_utc": "2026-11-15T15:24:23Z",
+    "started_monotonic": 409384.613893125,
+    "ended_monotonic": 409413.314692541,
+    "exchange_remainder": {
+      "largest_ns": 335000.0,
+      "median_ns": 260708.5
+    },
+    "suspensions": [],
+    "pair_valid": false,
+    "valid": false,
+    "trial_defects": [],
+    "void_reasons": [
+      "brackets differ by 0.0390",
+      "coordinator time differs by 0.0565 between the pair's delays",
+      "worker execution time differs by 0.0764 between the pair's delays"
+    ]
+  },
+  {
+    "label": "trial-053",
+    "pair": 13,
+    "round": 2,
+    "pair_arm": "sequential",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 606918752.2321428,
+      "wall_ns": 33987450125,
+      "exchanges": 1344,
+      "exchange_ns": 32025100628,
+      "coordinator_ns": 1962349497,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4760230142,
+        "execute_ns": 4694825380,
+        "experts_ns": 4686793170,
+        "queue_ns": 11624832,
+        "unattributed_exchange_ns": 384870486.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      1.80322265625,
+      2.6982421875,
+      2.90380859375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724801,
+      "relay_late_mean_ns": 2018.9105981011132,
+      "relay_late_max_ns": 24542,
+      "relay_late_per_position_ns": 193936.92592592593,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:24:23Z",
+    "ended_utc": "2026-11-15T15:26:36Z",
+    "started_monotonic": 409413.3194005,
+    "ended_monotonic": 409545.826298083,
+    "exchange_remainder": {
+      "largest_ns": 382499.0,
+      "median_ns": 283604.5
+    },
+    "suspensions": [],
+    "pair_valid": false,
+    "valid": false,
+    "trial_defects": [],
+    "void_reasons": [
+      "brackets differ by 0.0390",
+      "coordinator time differs by 0.0565 between the pair's delays",
+      "worker execution time differs by 0.0764 between the pair's delays"
+    ]
+  },
+  {
+    "label": "trial-054",
+    "pair": 13,
+    "round": 2,
+    "pair_arm": "sequential",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 257570098.94642857,
+      "wall_ns": 14423925541,
+      "exchanges": 1344,
+      "exchange_ns": 12350642868,
+      "coordinator_ns": 2073282673,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5142527362,
+        "execute_ns": 5053545328,
+        "experts_ns": 5043009365,
+        "queue_ns": 16561595,
+        "unattributed_exchange_ns": 488115506.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.19091796875,
+      2.943359375,
+      2.98193359375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301726506,
+      "relay_late_mean_ns": 2401.8354619499737,
+      "relay_late_max_ns": 74083,
+      "relay_late_per_position_ns": 230720.75925925927,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:26:36Z",
+    "ended_utc": "2026-11-15T15:27:32Z",
+    "started_monotonic": 409545.833379458,
+    "ended_monotonic": 409601.928499208,
+    "exchange_remainder": {
+      "largest_ns": 5944167.0,
+      "median_ns": 356625.0
+    },
+    "suspensions": [],
+    "pair_valid": false,
+    "valid": false,
+    "trial_defects": [],
+    "void_reasons": [
+      "brackets differ by 0.0390",
+      "coordinator time differs by 0.0565 between the pair's delays",
+      "worker execution time differs by 0.0764 between the pair's delays"
+    ]
+  },
+  {
+    "label": "trial-055",
+    "pair": 13,
+    "round": 2,
+    "pair_arm": "sequential",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 131901369.05357143,
+      "wall_ns": 7386476667,
+      "exchanges": 1344,
+      "exchange_ns": 5358547554,
+      "coordinator_ns": 2027929113,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4975095559,
+        "execute_ns": 4902568749,
+        "experts_ns": 4893875524,
+        "queue_ns": 13214884,
+        "unattributed_exchange_ns": 383451995.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.33056640625,
+      2.99560546875,
+      2.99951171875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725304,
+      "relay_late_mean_ns": 538.901778398959,
+      "relay_late_max_ns": 12250,
+      "relay_late_per_position_ns": 51767.00462962963,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:27:32Z",
+    "ended_utc": "2026-11-15T15:28:02Z",
+    "started_monotonic": 409601.932484833,
+    "ended_monotonic": 409631.88941125,
+    "exchange_remainder": {
+      "largest_ns": 1040042.0,
+      "median_ns": 277166.0
+    },
+    "suspensions": [],
+    "pair_valid": false,
+    "valid": false,
+    "trial_defects": [],
+    "void_reasons": [
+      "brackets differ by 0.0390",
+      "coordinator time differs by 0.0565 between the pair's delays",
+      "worker execution time differs by 0.0764 between the pair's delays"
+    ]
+  },
+  {
+    "label": "trial-056",
+    "pair": 14,
+    "round": 2,
+    "pair_arm": "block-1",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 134197408.48214285,
+      "wall_ns": 7515054875,
+      "exchanges": 1344,
+      "exchange_ns": 5476926129,
+      "coordinator_ns": 2038128746,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5049979914,
+        "execute_ns": 4971750930,
+        "experts_ns": 4962349043,
+        "queue_ns": 13837098,
+        "unattributed_exchange_ns": 426946215.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      4.70654296875,
+      3.31005859375,
+      3.10986328125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725727,
+      "relay_late_mean_ns": 565.0796182948576,
+      "relay_late_max_ns": 19750,
+      "relay_late_per_position_ns": 54281.65277777778,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:28:02Z",
+    "ended_utc": "2026-11-15T15:28:32Z",
+    "started_monotonic": 409631.893406125,
+    "ended_monotonic": 409661.971695125,
+    "exchange_remainder": {
+      "largest_ns": 17414583.0,
+      "median_ns": 298874.5
+    },
+    "suspensions": [],
+    "pair_valid": false,
+    "valid": false,
+    "trial_defects": [],
+    "void_reasons": [
+      "brackets differ by 0.0534"
+    ]
+  },
+  {
+    "label": "trial-057",
+    "pair": 14,
+    "round": 2,
+    "pair_arm": "block-1",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 616806185.2678572,
+      "wall_ns": 34541146375,
+      "exchanges": 1344,
+      "exchange_ns": 32042438052,
+      "coordinator_ns": 2498708323,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 4766931101,
+        "execute_ns": 4703832342,
+        "experts_ns": 4694776770,
+        "queue_ns": 11748444,
+        "unattributed_exchange_ns": 395506951.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.04296875,
+      2.810546875,
+      2.93896484375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302414746,
+      "relay_late_mean_ns": 2326.4034893247867,
+      "relay_late_max_ns": 44375,
+      "relay_late_per_position_ns": 223474.75,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:28:32Z",
+    "ended_utc": "2026-11-15T15:30:47Z",
+    "started_monotonic": 409661.974519208,
+    "ended_monotonic": 409796.966041791,
+    "exchange_remainder": {
+      "largest_ns": 423084.0,
+      "median_ns": 290353.5
+    },
+    "suspensions": [],
+    "pair_valid": false,
+    "valid": false,
+    "trial_defects": [],
+    "void_reasons": [
+      "brackets differ by 0.0534"
+    ]
+  },
+  {
+    "label": "trial-058",
+    "pair": 14,
+    "round": 2,
+    "pair_arm": "block-1",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 256091337.05357143,
+      "wall_ns": 14341114875,
+      "exchanges": 1344,
+      "exchange_ns": 11854226457,
+      "coordinator_ns": 2486888418,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 4765079368,
+        "execute_ns": 4704871631,
+        "experts_ns": 4695992606,
+        "queue_ns": 11983285,
+        "unattributed_exchange_ns": 369147089.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.71533203125,
+      2.87109375,
+      2.951171875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302414450,
+      "relay_late_mean_ns": 2069.449178273652,
+      "relay_late_max_ns": 37000,
+      "relay_late_per_position_ns": 198791.6712962963,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:30:47Z",
+    "ended_utc": "2026-11-15T15:31:44Z",
+    "started_monotonic": 409796.973008916,
+    "ended_monotonic": 409853.584250916,
+    "exchange_remainder": {
+      "largest_ns": 395333.0,
+      "median_ns": 272021.0
+    },
+    "suspensions": [],
+    "pair_valid": false,
+    "valid": false,
+    "trial_defects": [],
+    "void_reasons": [
+      "brackets differ by 0.0534"
+    ]
+  },
+  {
+    "label": "trial-059",
+    "pair": 14,
+    "round": 2,
+    "pair_arm": "block-1",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 127222867.57142857,
+      "wall_ns": 7124480584,
+      "exchanges": 1344,
+      "exchange_ns": 5140961988,
+      "coordinator_ns": 1983518596,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4792616871,
+        "execute_ns": 4729651076,
+        "experts_ns": 4721699546,
+        "queue_ns": 11811248,
+        "unattributed_exchange_ns": 348345117.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.31298828125,
+      2.982421875,
+      2.986328125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724820,
+      "relay_late_mean_ns": 379.12352402525426,
+      "relay_late_max_ns": 16791,
+      "relay_late_per_position_ns": 36418.67592592593,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:31:44Z",
+    "ended_utc": "2026-11-15T15:32:12Z",
+    "started_monotonic": 409853.589292458,
+    "ended_monotonic": 409882.339267791,
+    "exchange_remainder": {
+      "largest_ns": 362209.0,
+      "median_ns": 256625.0
+    },
+    "suspensions": [],
+    "pair_valid": false,
+    "valid": false,
+    "trial_defects": [],
+    "void_reasons": [
+      "brackets differ by 0.0534"
+    ]
+  },
+  {
+    "label": "trial-060",
+    "pair": 15,
+    "round": 3,
+    "pair_arm": "block-4",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126987217.26785715,
+      "wall_ns": 7111284167,
+      "exchanges": 1344,
+      "exchange_ns": 5138311502,
+      "coordinator_ns": 1972972665,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4788420082,
+        "execute_ns": 4725663555,
+        "experts_ns": 4717752558,
+        "queue_ns": 11741797,
+        "unattributed_exchange_ns": 349891420.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.9140625,
+      3.18359375,
+      3.06005859375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725021,
+      "relay_late_mean_ns": 389.4931321991421,
+      "relay_late_max_ns": 7750,
+      "relay_late_per_position_ns": 37414.78240740741,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:32:12Z",
+    "ended_utc": "2026-11-15T15:32:41Z",
+    "started_monotonic": 409882.3438415,
+    "ended_monotonic": 409911.08204875,
+    "exchange_remainder": {
+      "largest_ns": 334500.0,
+      "median_ns": 258354.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-061",
+    "pair": 15,
+    "round": 3,
+    "pair_arm": "block-4",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 152627057.30357143,
+      "wall_ns": 8547115209,
+      "exchanges": 336,
+      "exchange_ns": 6549970957,
+      "coordinator_ns": 1997144252,
+      "configured_delay_ns": 1680000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 4724254667,
+        "execute_ns": 4696929049,
+        "experts_ns": 4688930273,
+        "queue_ns": 3473827,
+        "unattributed_exchange_ns": 145716290.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.51953125,
+      3.1494140625,
+      3.05078125
+    ],
+    "relay": {
+      "relay_chunks": 19454,
+      "relay_bytes": 299921393,
+      "relay_late_mean_ns": 1652.9161612007813,
+      "relay_late_max_ns": 26959,
+      "relay_late_per_position_ns": 148869.58796296295,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:32:41Z",
+    "ended_utc": "2026-11-15T15:33:15Z",
+    "started_monotonic": 409911.086794208,
+    "ended_monotonic": 409945.242411916,
+    "exchange_remainder": {
+      "largest_ns": 8358584.0,
+      "median_ns": 405334.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-062",
+    "pair": 15,
+    "round": 3,
+    "pair_arm": "block-4",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 242116344.5,
+      "wall_ns": 13558515292,
+      "exchanges": 336,
+      "exchange_ns": 11565846087,
+      "coordinator_ns": 1992669205,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 4706694451,
+        "execute_ns": 4679871992,
+        "experts_ns": 4671890853,
+        "queue_ns": 3236574,
+        "unattributed_exchange_ns": 139151636.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.73095703125,
+      2.98583984375,
+      2.99365234375
+    ],
+    "relay": {
+      "relay_chunks": 19454,
+      "relay_bytes": 299921261,
+      "relay_late_mean_ns": 1662.8788938007608,
+      "relay_late_max_ns": 23084,
+      "relay_late_per_position_ns": 149766.87962962964,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:33:15Z",
+    "ended_utc": "2026-11-15T15:34:09Z",
+    "started_monotonic": 409945.249566375,
+    "ended_monotonic": 409998.853932708,
+    "exchange_remainder": {
+      "largest_ns": 536374.0,
+      "median_ns": 411416.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-063",
+    "pair": 15,
+    "round": 3,
+    "pair_arm": "block-4",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 127305836.30357143,
+      "wall_ns": 7129126833,
+      "exchanges": 1344,
+      "exchange_ns": 5159235082,
+      "coordinator_ns": 1969891751,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4813562582,
+        "execute_ns": 4750545557,
+        "experts_ns": 4742593672,
+        "queue_ns": 11898470,
+        "unattributed_exchange_ns": 345672500.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.70556640625,
+      2.9541015625,
+      2.98193359375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724976,
+      "relay_late_mean_ns": 364.1381271386573,
+      "relay_late_max_ns": 6458,
+      "relay_late_per_position_ns": 34979.17592592593,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:34:09Z",
+    "ended_utc": "2026-11-15T15:34:38Z",
+    "started_monotonic": 409998.860249708,
+    "ended_monotonic": 410027.626132541,
+    "exchange_remainder": {
+      "largest_ns": 361083.0,
+      "median_ns": 257438.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-064",
+    "pair": 16,
+    "round": 3,
+    "pair_arm": "block-2",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 127028504.46428572,
+      "wall_ns": 7113596250,
+      "exchanges": 1344,
+      "exchange_ns": 5143352752,
+      "coordinator_ns": 1970243498,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4789080092,
+        "execute_ns": 4725865819,
+        "experts_ns": 4717913568,
+        "queue_ns": 11623285,
+        "unattributed_exchange_ns": 354272660.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.26123046875,
+      3.0556640625,
+      3.01611328125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724843,
+      "relay_late_mean_ns": 372.6975757867849,
+      "relay_late_max_ns": 6541,
+      "relay_late_per_position_ns": 35801.398148148146,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:34:38Z",
+    "ended_utc": "2026-11-15T15:35:06Z",
+    "started_monotonic": 410027.631637583,
+    "ended_monotonic": 410056.344353208,
+    "exchange_remainder": {
+      "largest_ns": 336583.0,
+      "median_ns": 261479.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-065",
+    "pair": 16,
+    "round": 3,
+    "pair_arm": "block-2",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 188403857.14285713,
+      "wall_ns": 10550616000,
+      "exchanges": 672,
+      "exchange_ns": 8354782083,
+      "coordinator_ns": 2195833917,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 4778792426,
+        "execute_ns": 4740339315,
+        "experts_ns": 4732071804,
+        "queue_ns": 6083376,
+        "unattributed_exchange_ns": 215989657.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.61669921875,
+      3.14599609375,
+      3.04736328125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300746813,
+      "relay_late_mean_ns": 1617.9305026748277,
+      "relay_late_max_ns": 29625,
+      "relay_late_per_position_ns": 155418.7037037037,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:35:06Z",
+    "ended_utc": "2026-11-15T15:35:48Z",
+    "started_monotonic": 410056.349146708,
+    "ended_monotonic": 410098.344060041,
+    "exchange_remainder": {
+      "largest_ns": 399500.0,
+      "median_ns": 329333.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-066",
+    "pair": 16,
+    "round": 3,
+    "pair_arm": "block-2",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 367869928.5714286,
+      "wall_ns": 20600716000,
+      "exchanges": 672,
+      "exchange_ns": 18405834751,
+      "coordinator_ns": 2194881249,
+      "configured_delay_ns": 13440000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 4727782281,
+        "execute_ns": 4687751271,
+        "experts_ns": 4679364731,
+        "queue_ns": 6224259,
+        "unattributed_exchange_ns": 238052470.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.23388671875,
+      2.81396484375,
+      2.92724609375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300746823,
+      "relay_late_mean_ns": 1668.3206419586486,
+      "relay_late_max_ns": 29667,
+      "relay_late_per_position_ns": 160259.1898148148,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:35:48Z",
+    "ended_utc": "2026-11-15T15:37:09Z",
+    "started_monotonic": 410098.351025083,
+    "ended_monotonic": 410179.232887458,
+    "exchange_remainder": {
+      "largest_ns": 445916.0,
+      "median_ns": 351750.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-067",
+    "pair": 16,
+    "round": 3,
+    "pair_arm": "block-2",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 127404187.5,
+      "wall_ns": 7134634500,
+      "exchanges": 1344,
+      "exchange_ns": 5160211784,
+      "coordinator_ns": 1974422716,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4804743984,
+        "execute_ns": 4741004740,
+        "experts_ns": 4732984829,
+        "queue_ns": 11684308,
+        "unattributed_exchange_ns": 355467800.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.86376953125,
+      2.91015625,
+      2.95703125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724842,
+      "relay_late_mean_ns": 397.6739601908526,
+      "relay_late_max_ns": 14875,
+      "relay_late_per_position_ns": 38200.63425925926,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:37:09Z",
+    "ended_utc": "2026-11-15T15:37:38Z",
+    "started_monotonic": 410179.2359245,
+    "ended_monotonic": 410208.161302708,
+    "exchange_remainder": {
+      "largest_ns": 336459.0,
+      "median_ns": 261979.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-068",
+    "pair": 17,
+    "round": 3,
+    "pair_arm": "sequential",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 127080872.03571428,
+      "wall_ns": 7116528834,
+      "exchanges": 1344,
+      "exchange_ns": 5144934054,
+      "coordinator_ns": 1971594780,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4789945197,
+        "execute_ns": 4726909785,
+        "experts_ns": 4718980432,
+        "queue_ns": 11554821,
+        "unattributed_exchange_ns": 354988857.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.486328125,
+      3.07275390625,
+      3.01416015625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724792,
+      "relay_late_mean_ns": 373.2099860234228,
+      "relay_late_max_ns": 6125,
+      "relay_late_per_position_ns": 35850.62037037037,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:37:38Z",
+    "ended_utc": "2026-11-15T15:38:07Z",
+    "started_monotonic": 410208.167179583,
+    "ended_monotonic": 410237.000791083,
+    "exchange_remainder": {
+      "largest_ns": 353917.0,
+      "median_ns": 262604.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-069",
+    "pair": 17,
+    "round": 3,
+    "pair_arm": "sequential",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 247910840.7857143,
+      "wall_ns": 13883007084,
+      "exchanges": 1344,
+      "exchange_ns": 11907823668,
+      "coordinator_ns": 1975183416,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4811251097,
+        "execute_ns": 4742495786,
+        "experts_ns": 4734386651,
+        "queue_ns": 14578807,
+        "unattributed_exchange_ns": 376572571.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      4.5517578125,
+      3.43115234375,
+      3.1474609375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724883,
+      "relay_late_mean_ns": 2086.617427345896,
+      "relay_late_max_ns": 27875,
+      "relay_late_per_position_ns": 200440.8564814815,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:38:07Z",
+    "ended_utc": "2026-11-15T15:39:02Z",
+    "started_monotonic": 410237.007458333,
+    "ended_monotonic": 410291.815298208,
+    "exchange_remainder": {
+      "largest_ns": 598501.0,
+      "median_ns": 275729.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-070",
+    "pair": 17,
+    "round": 3,
+    "pair_arm": "sequential",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 607188147.3214285,
+      "wall_ns": 34002536250,
+      "exchanges": 1344,
+      "exchange_ns": 32035652956,
+      "coordinator_ns": 1966883294,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4764487596,
+        "execute_ns": 4699286387,
+        "experts_ns": 4691256694,
+        "queue_ns": 11598123,
+        "unattributed_exchange_ns": 391165360.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.01953125,
+      3.24462890625,
+      3.1103515625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724726,
+      "relay_late_mean_ns": 1954.4634440213986,
+      "relay_late_max_ns": 24584,
+      "relay_late_per_position_ns": 187746.12037037036,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:39:02Z",
+    "ended_utc": "2026-11-15T15:41:14Z",
+    "started_monotonic": 410291.821314916,
+    "ended_monotonic": 410424.396333333,
+    "exchange_remainder": {
+      "largest_ns": 403458.0,
+      "median_ns": 287000.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-071",
+    "pair": 17,
+    "round": 3,
+    "pair_arm": "sequential",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126656771.57142857,
+      "wall_ns": 7092779208,
+      "exchanges": 1344,
+      "exchange_ns": 5126393005,
+      "coordinator_ns": 1966386203,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4776222247,
+        "execute_ns": 4712792390,
+        "experts_ns": 4704843605,
+        "queue_ns": 11932621,
+        "unattributed_exchange_ns": 350170758.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.154296875,
+      3.265625,
+      3.1220703125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724925,
+      "relay_late_mean_ns": 360.32719649139716,
+      "relay_late_max_ns": 7250,
+      "relay_late_per_position_ns": 34613.09722222222,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:41:14Z",
+    "ended_utc": "2026-11-15T15:41:43Z",
+    "started_monotonic": 410424.401155208,
+    "ended_monotonic": 410453.027679583,
+    "exchange_remainder": {
+      "largest_ns": 333667.0,
+      "median_ns": 258249.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-072",
+    "pair": 18,
+    "round": 3,
+    "pair_arm": "block-1",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126687811.01785715,
+      "wall_ns": 7094517417,
+      "exchanges": 1344,
+      "exchange_ns": 5129054969,
+      "coordinator_ns": 1965462448,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4777567647,
+        "execute_ns": 4714469130,
+        "experts_ns": 4706480375,
+        "queue_ns": 11584255,
+        "unattributed_exchange_ns": 351487322.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      4.10693359375,
+      3.49169921875,
+      3.20849609375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724775,
+      "relay_late_mean_ns": 368.8875126512121,
+      "relay_late_max_ns": 6875,
+      "relay_late_per_position_ns": 35435.40277777778,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:41:43Z",
+    "ended_utc": "2026-11-15T15:42:12Z",
+    "started_monotonic": 410453.037388333,
+    "ended_monotonic": 410481.712315208,
+    "exchange_remainder": {
+      "largest_ns": 370209.0,
+      "median_ns": 260208.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-073",
+    "pair": 18,
+    "round": 3,
+    "pair_arm": "block-1",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 256598869.7857143,
+      "wall_ns": 14369536708,
+      "exchanges": 1344,
+      "exchange_ns": 11868290543,
+      "coordinator_ns": 2501246165,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 4774600497,
+        "execute_ns": 4714105733,
+        "experts_ns": 4705165522,
+        "queue_ns": 11967235,
+        "unattributed_exchange_ns": 373690046.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.4462890625,
+      3.14306640625,
+      3.09521484375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302414407,
+      "relay_late_mean_ns": 2138.1121499831315,
+      "relay_late_max_ns": 32250,
+      "relay_late_per_position_ns": 205387.44907407407,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:42:12Z",
+    "ended_utc": "2026-11-15T15:43:09Z",
+    "started_monotonic": 410481.718603541,
+    "ended_monotonic": 410538.467638041,
+    "exchange_remainder": {
+      "largest_ns": 370958.0,
+      "median_ns": 273374.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-074",
+    "pair": 18,
+    "round": 3,
+    "pair_arm": "block-1",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 616689929.3214285,
+      "wall_ns": 34534636042,
+      "exchanges": 1344,
+      "exchange_ns": 32035028346,
+      "coordinator_ns": 2499607696,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 4763882910,
+        "execute_ns": 4701491432,
+        "experts_ns": 4692518685,
+        "queue_ns": 11814537,
+        "unattributed_exchange_ns": 391145436.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      2.52587890625,
+      2.8515625,
+      2.97607421875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302414513,
+      "relay_late_mean_ns": 2205.2948093884042,
+      "relay_late_max_ns": 90375,
+      "relay_late_per_position_ns": 211841.02777777778,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:43:09Z",
+    "ended_utc": "2026-11-15T15:45:23Z",
+    "started_monotonic": 410538.476111375,
+    "ended_monotonic": 410673.313670125,
+    "exchange_remainder": {
+      "largest_ns": 406542.0,
+      "median_ns": 287791.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-075",
+    "pair": 18,
+    "round": 3,
+    "pair_arm": "block-1",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126942421.875,
+      "wall_ns": 7108775625,
+      "exchanges": 1344,
+      "exchange_ns": 5137674832,
+      "coordinator_ns": 1971100793,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4784992702,
+        "execute_ns": 4722135469,
+        "experts_ns": 4714161031,
+        "queue_ns": 11713748,
+        "unattributed_exchange_ns": 352682130.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.45166015625,
+      3.06640625,
+      3.0498046875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724813,
+      "relay_late_mean_ns": 387.8211962022266,
+      "relay_late_max_ns": 19417,
+      "relay_late_per_position_ns": 37254.17592592593,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:45:23Z",
+    "ended_utc": "2026-11-15T15:45:52Z",
+    "started_monotonic": 410673.32201975,
+    "ended_monotonic": 410701.986143291,
+    "exchange_remainder": {
+      "largest_ns": 335000.0,
+      "median_ns": 259478.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-076",
+    "pair": 19,
+    "round": 3,
+    "pair_arm": "block-8",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126897290.17857143,
+      "wall_ns": 7106248250,
+      "exchanges": 1344,
+      "exchange_ns": 5139091728,
+      "coordinator_ns": 1967156522,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4789166246,
+        "execute_ns": 4726228899,
+        "experts_ns": 4718273696,
+        "queue_ns": 11981153,
+        "unattributed_exchange_ns": 349925482.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.8359375,
+      3.17529296875,
+      3.08837890625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724923,
+      "relay_late_mean_ns": 374.00848233649816,
+      "relay_late_max_ns": 8833,
+      "relay_late_per_position_ns": 35927.32407407407,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:45:52Z",
+    "ended_utc": "2026-11-15T15:46:21Z",
+    "started_monotonic": 410701.992505125,
+    "ended_monotonic": 410730.705260791,
+    "exchange_remainder": {
+      "largest_ns": 466832.0,
+      "median_ns": 258541.5
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-077",
+    "pair": 19,
+    "round": 3,
+    "pair_arm": "block-8",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 134495919.64285713,
+      "wall_ns": 7531771500,
+      "exchanges": 168,
+      "exchange_ns": 5638196125,
+      "coordinator_ns": 1893575375,
+      "configured_delay_ns": 840000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 4706330886,
+        "execute_ns": 4682957826,
+        "experts_ns": 4675249965,
+        "queue_ns": 1607583,
+        "unattributed_exchange_ns": 91865239.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.111328125,
+      3.06201171875,
+      3.0498046875
+    ],
+    "relay": {
+      "relay_chunks": 18810,
+      "relay_bytes": 299501116,
+      "relay_late_mean_ns": 1853.17437533227,
+      "relay_late_max_ns": 34334,
+      "relay_late_per_position_ns": 161380.60185185185,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:46:21Z",
+    "ended_utc": "2026-11-15T15:46:51Z",
+    "started_monotonic": 410730.713390541,
+    "ended_monotonic": 410760.898801791,
+    "exchange_remainder": {
+      "largest_ns": 703708.0,
+      "median_ns": 540812.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-078",
+    "pair": 19,
+    "round": 3,
+    "pair_arm": "block-8",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 179113576.64285713,
+      "wall_ns": 10030360292,
+      "exchanges": 168,
+      "exchange_ns": 8151878453,
+      "coordinator_ns": 1878481839,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 4692298622,
+        "execute_ns": 4668880286,
+        "experts_ns": 4661177902,
+        "queue_ns": 1560168,
+        "unattributed_exchange_ns": 99579831.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.0322265625,
+      3.0390625,
+      3.0400390625
+    ],
+    "relay": {
+      "relay_chunks": 18809,
+      "relay_bytes": 299501071,
+      "relay_late_mean_ns": 1905.6701047370939,
+      "relay_late_max_ns": 46791,
+      "relay_late_per_position_ns": 165943.28240740742,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:46:51Z",
+    "ended_utc": "2026-11-15T15:47:31Z",
+    "started_monotonic": 410760.907246833,
+    "ended_monotonic": 410800.83564275,
+    "exchange_remainder": {
+      "largest_ns": 8716416.0,
+      "median_ns": 541417.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  },
+  {
+    "label": "trial-079",
+    "pair": 19,
+    "round": 3,
+    "pair_arm": "block-8",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 127051776.78571428,
+      "wall_ns": 7114899500,
+      "exchanges": 1344,
+      "exchange_ns": 5144356427,
+      "coordinator_ns": 1970543073,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4795417457,
+        "execute_ns": 4732810244,
+        "experts_ns": 4724905486,
+        "queue_ns": 11668626,
+        "unattributed_exchange_ns": 348938970.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.12841796875,
+      3.06494140625,
+      3.048828125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724817,
+      "relay_late_mean_ns": 367.4980962937973,
+      "relay_late_max_ns": 7541,
+      "relay_late_per_position_ns": 35301.93518518518,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T15:47:31Z",
+    "ended_utc": "2026-11-15T15:48:00Z",
+    "started_monotonic": 410800.843600125,
+    "ended_monotonic": 410829.560130666,
+    "exchange_remainder": {
+      "largest_ns": 348042.0,
+      "median_ns": 257667.0
+    },
+    "suspensions": [],
+    "pair_valid": true,
+    "valid": true,
+    "trial_defects": [],
+    "void_reasons": []
+  }
+]
