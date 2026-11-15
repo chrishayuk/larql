@@ -24,14 +24,13 @@
 //!     --arm sequential|block-1|block-2|block-4|block-8 \
 //!     --measure-from <position> --profile yes|no --out <trial.json>
 //! ```
+#[path = "support/timing.rs"]
+mod timing;
+
 use larql_inference::vindex3::routed_block::RoutedBlockSession;
-use larql_inference::vindex3::routed_experts::{self, ExpertOutput, ExpertTransport};
+use larql_inference::vindex3::routed_experts;
 use larql_inference::vindex3::{OpenPolicy, Vindex3Runtime};
 use larql_router::vindex3_experts::HttpExpertShards;
-use larql_router_protocol::provider_calls::{self, ProviderCallObserver};
-use larql_router_protocol::{
-    vindex3_expert_rows as rows_wire, vindex3_experts as wire, vindex3_experts::Binding,
-};
 use larql_vindex::format::vindex3::opplan::exec::{
     continuation::plan_continuation_geometry, continuation_authority::ContinuationConfig,
     decode::DecodeSession, kv::RowKvState, operands::RepresentationSource,
@@ -40,9 +39,9 @@ use larql_vindex::format::vindex3::opplan::exec::{
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+use timing::{Exchange, Recorder, Timed, MULTI_ROW, SINGLE_ROW};
 
 type BoxErr = Box<dyn std::error::Error>;
 
@@ -52,107 +51,6 @@ const SEQUENTIAL: &str = "sequential";
 const BLOCK_PREFIX: &str = "block-";
 /// Block widths the protocol admits.
 const WIDTHS: [usize; 4] = [1, 2, 4, 8];
-const SINGLE_ROW: &str = "single-row";
-const MULTI_ROW: &str = "multi-row";
-/// `wire` values of the transport's per-request profile records.
-const PROFILE_WIRES: [&str; 2] = ["experts-binary-f32-v1", "expert-rows-f32-v1"];
-
-/// One exchange as the coordinator saw it.
-struct Exchange {
-    route: &'static str,
-    layer: usize,
-    rows: usize,
-    pairs: usize,
-    request_bytes: usize,
-    response_bytes: usize,
-    roundtrip_ns: u64,
-}
-
-impl Exchange {
-    fn json(&self) -> serde_json::Value {
-        serde_json::json!({
-            "route": self.route, "layer": self.layer, "rows": self.rows, "pairs": self.pairs,
-            "request_bytes": self.request_bytes, "response_bytes": self.response_bytes,
-            "roundtrip_ns": self.roundtrip_ns,
-        })
-    }
-}
-
-/// The HTTP transport, timing each exchange and noting its frame sizes.
-struct Timed {
-    inner: HttpExpertShards,
-    exchanges: Arc<Mutex<Vec<Exchange>>>,
-}
-
-impl ExpertTransport for Timed {
-    fn bindings(&self) -> Vec<Binding> {
-        self.inner.bindings()
-    }
-
-    fn forward(
-        &self,
-        shard: usize,
-        layer: usize,
-        experts: &[usize],
-        row: &[f32],
-    ) -> Result<Vec<ExpertOutput>, String> {
-        let started = Instant::now();
-        let outputs = self.inner.forward(shard, layer, experts, row)?;
-        let roundtrip_ns = started.elapsed().as_nanos() as u64;
-        self.exchanges.lock().unwrap().push(Exchange {
-            route: SINGLE_ROW,
-            layer,
-            rows: 1,
-            pairs: experts.len(),
-            request_bytes: wire::HEADER_BYTES + 4 * experts.len() + 4 * row.len(),
-            response_bytes: wire::response_len(row.len(), experts.len())?,
-            roundtrip_ns,
-        });
-        Ok(outputs)
-    }
-
-    fn forward_rows(
-        &self,
-        shard: usize,
-        layer: usize,
-        rows: &[rows_wire::Row],
-    ) -> Result<Vec<rows_wire::Output>, String> {
-        let started = Instant::now();
-        let outputs = self.inner.forward_rows(shard, layer, rows)?;
-        let roundtrip_ns = started.elapsed().as_nanos() as u64;
-        let pairs: usize = rows.iter().map(|r| r.experts.len()).sum();
-        let hidden = rows.first().map_or(0, |r| r.input.len());
-        self.exchanges.lock().unwrap().push(Exchange {
-            route: MULTI_ROW,
-            layer,
-            rows: rows.len(),
-            pairs,
-            request_bytes: rows_wire::request_len(hidden, rows.len(), pairs)?,
-            response_bytes: rows_wire::response_len(hidden, pairs)?,
-            roundtrip_ns,
-        });
-        Ok(outputs)
-    }
-}
-
-/// Collects the transport's own profile records, which carry the worker's
-/// timing. Installed only for a profiled trial.
-struct Recorder {
-    on: AtomicBool,
-    records: Mutex<Vec<serde_json::Value>>,
-}
-
-impl ProviderCallObserver for Recorder {
-    fn enabled(&self) -> bool {
-        self.on.load(Ordering::SeqCst)
-    }
-
-    fn record(&self, call: serde_json::Value) {
-        if PROFILE_WIRES.iter().any(|w| call["wire"] == *w) {
-            self.records.lock().unwrap().push(call);
-        }
-    }
-}
 
 struct Args {
     model: PathBuf,
@@ -255,13 +153,7 @@ fn main() -> Result<(), BoxErr> {
 
     // Before the coordinator is prepared, so this observer is the one the
     // transport reports to. Left uninstalled for an unprofiled trial.
-    let recorder: &'static Recorder = Box::leak(Box::new(Recorder {
-        on: AtomicBool::new(args.profile),
-        records: Mutex::new(Vec::new()),
-    }));
-    if args.profile && !provider_calls::install_observer(recorder) {
-        return Err("another profile observer is already installed".into());
-    }
+    let recorder = Recorder::install(args.profile)?;
 
     let policy = OpenPolicy {
         want: None,
@@ -337,7 +229,7 @@ fn main() -> Result<(), BoxErr> {
         .ok_or("the measured region never started")?
         .elapsed()
         .as_nanos() as u64;
-    recorder.on.store(false, Ordering::SeqCst);
+    recorder.stop();
 
     let exchanges = exchanges.lock().unwrap();
     let count = |from: usize, route: &str| {
