@@ -1,15 +1,66 @@
 # LINK-2 block-frame addendum: runs
 
-Runs under the LINK-2 block-frame addendum. Both runs below were made under
-[revision 1](../../LINK-2-block-frames.md), which
-[revision 2](../../LINK-2-block-frames-revision-2.md) supersedes because of
-what they found. Nothing here qualifies the relay at these frame sizes, and
-nothing here counts under revision 2.
+Runs under the LINK-2 block-frame addendum.
 
-| Run | Kind | Result |
-|---|---|---|
-| [`20261114-01-diagnostic`](20261114-01-diagnostic/calibration.json) | Declared diagnostic; does not count | **Fails**: 15 of 16 points pass; width 8 at 1 ms reads −53.7 µs against a 50 µs tolerance |
-| [`20261114-02-chunk-trace`](20261114-02-chunk-trace/) | Mechanism investigation with a tracing copy of the relay; qualifies nothing | Locates the shortfall: see below |
+**The frozen relay is qualified at these frame sizes under
+[revision 2](../../LINK-2-block-frames-revision-2.md)**: two qualifying runs,
+both passing all twelve points (24 of 24), with no threshold, binary or
+protocol changed. The qualification covers the frozen relay `7b1097f8…` at
+the frame sizes of block widths 1, 2, 4 and 8, unlimited rate, at the null
+point and at 5 and 20 ms round trips. It does not cover a 1 ms round trip,
+any rate-limited link, a physical network, or the timing of the inference
+endpoints.
+
+The two earlier runs were made under
+[revision 1](../../LINK-2-block-frames.md), which revision 2 supersedes
+because of what they found. They are kept unchanged below; neither counts
+under revision 2.
+
+| Run | Revision | Kind | Result |
+|---|---|---|---|
+| [`20261115-01-qualifying-1`](20261115-01-qualifying-1/calibration.json) | 2 | Qualifying | **Passes**: 12 of 12 points |
+| [`20261115-02-qualifying-2`](20261115-02-qualifying-2/calibration.json) | 2 | Qualifying | **Passes**: 12 of 12 points |
+| [`20261114-01-diagnostic`](20261114-01-diagnostic/calibration.json) | 1 | Declared diagnostic; does not count | **Fails**: 15 of 16 points pass; width 8 at 1 ms reads −53.7 µs against a 50 µs tolerance |
+| [`20261114-02-chunk-trace`](20261114-02-chunk-trace/) | 1 | Mechanism investigation with a tracing copy of the relay; qualifies nothing | Locates the shortfall: see below |
+
+## Revision 2 qualification (2026-11-15)
+
+Both runs: frozen relay `7b1097f8…`, probe `c1efe687…` (the binaries
+revision 3 qualified with; probe sources unchanged since `dc46e89c`), at
+revision `a5e9c79f` with no uncommitted change except the runs' own output
+directories. Frozen protocol hashes in
+[`frozen-protocols.json`](../../frozen-protocols.json) were verified before
+the runs. Run 1 started 00:29:31 UTC, run 2 at 00:36:48 UTC, back to back.
+
+Error against the configured round trip (judged half-width in brackets),
+run 1 / run 2:
+
+| Width | Null | 5 ms | 20 ms |
+|---|---|---|---|
+| 1 | +0.2 (±1.2) / +0.8 (±2.8) µs | +28.2 (±5.6) / +31.2 (±6.7) µs | +51.3 (±2.7) / +51.9 (±5.3) µs |
+| 2 | +0.4 (±1.7) / +0.6 (±1.3) µs | +6.4 (±3.0) / +11.8 (±2.0) µs | +31.9 (±5.4) / +54.6 (±11.2) µs |
+| 4 | +0.5 (±5.0) / −2.5 (±1.5) µs | −35.8 (±3.8) / −9.5 (±2.3) µs | −12.6 (±5.4) / +3.8 (±1.9) µs |
+| 8 | −4.0 (±5.8) / −1.7 (±2.4) µs | **−96.3 (±2.7) / −95.5 (±1.9) µs** | −43.4 (±7.3) / −46.5 (±2.6) µs |
+
+Tolerances: 25 µs at the null point, 250 µs at 5 ms, 1,000 µs at 20 ms. The
+worst point, width 8 at 5 ms, is at about 39% of its tolerance in both runs.
+The error moves from positive at width 1 to negative at width 8, the pattern
+the revision 1 diagnostic and the chunk trace below describe.
+
+Host state, recorded in each receipt:
+
+- All three other sessions confirmed quiet before run 1; one had suspended
+  its runner. The harness found no compiler or model process at the start
+  or end of either run.
+- Before run 1 the host was left to settle until the one-minute load was
+  below 2.0 and the five-minute load below 3.5. **Load rose during the runs
+  with no other heavy process present**, which is consistent with the
+  spin-polling probe and relays themselves: run 1 went from 1.39 to 5.20
+  (one minute), and run 2, started straight after, from 4.05 to 7.05. Run 2
+  therefore began on a machine that was quiet by its process list but still
+  carrying run 1's load. The protocol does not gate on load average; this is
+  recorded, not judged.
+- Console output of each run is in its `run.log`.
 
 ## 20261114-01-diagnostic
 
