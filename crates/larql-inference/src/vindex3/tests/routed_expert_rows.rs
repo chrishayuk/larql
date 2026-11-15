@@ -70,6 +70,9 @@ pub(super) struct Probe {
     pub(super) exchanges: Arc<Mutex<Vec<(usize, usize, usize)>>>,
     /// When set, only a multi-row exchange for this layer is faulted.
     pub(super) fault_layer: Arc<Mutex<Option<usize>>>,
+    /// When set, a single-row exchange for this layer fails. Separate from
+    /// `fault`, which faults only the multi-row path.
+    pub(super) single_fault_layer: Arc<Mutex<Option<usize>>>,
 }
 
 pub(super) struct InProcess {
@@ -91,6 +94,9 @@ impl ExpertTransport for InProcess {
         row: &[f32],
     ) -> Result<Vec<ExpertOutput>, String> {
         self.probe.single_calls.fetch_add(1, Ordering::SeqCst);
+        if *self.probe.single_fault_layer.lock().unwrap() == Some(layer) {
+            return Err("injected single-row worker timeout".into());
+        }
         Ok(self.workers[shard]
             .apply(layer, experts, row)
             .map_err(|e| e.to_string())?

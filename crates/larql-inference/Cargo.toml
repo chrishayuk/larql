@@ -121,6 +121,9 @@ assert_approx_eq = "1"
 tempfile = "3"
 criterion = { version = "0.5", features = ["html_reports"] }
 larql-kv = { path = "../larql-kv" }
+# The hyper-connected container fixture, for the routed block session's
+# construction refusals.
+larql-vindex = { path = "../larql-vindex", features = ["test-utils"] }
 # map7_kshape_capture example: corpus/container digests (capture spec §2/§7)
 sha2 = "0.10"
 

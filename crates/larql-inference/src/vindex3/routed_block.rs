@@ -13,8 +13,14 @@
 //! ```text
 //! verify(tokens)   run the block; return every position's logits; nothing committed
 //! commit(count)    keep the first `count` positions of that block, discard the rest
+//! step(token)      run one position on the single-row route and commit it
 //! position()       the committed position
 //! ```
+//!
+//! `step` exists so a caller with nothing to verify does not pay for a
+//! one-row block: it runs the decode session's ordinary `step`, which sends
+//! each contacted worker one single-row frame per routed layer, over the
+//! same continuation, and commits the position it adds.
 //!
 //! Acceptance is the caller's. The session reports logits and keeps or
 //! discards what it is told to; it holds no drafting or acceptance policy.
@@ -28,7 +34,11 @@
 //!   provider itself, by rewinding a fresh one to where it already is:
 //!   rollback is a capability a provider states by implementing it, so a
 //!   provider that cannot honour it refuses here by name;
-//! - no recurrent or latent continuation state, which cannot be rewound.
+//! - no recurrent or latent continuation state, which cannot be rewound;
+//! - an output head and a single-stream residual: the block traversal
+//!   returns every position's logits only for those, so a plan without
+//!   them could step but never verify, and is refused before it can do
+//!   either.
 //!
 //! Failure is the single-position session's rule: any failed block
 //! invalidates the session. Its committed position does not move, and the
@@ -63,6 +73,23 @@ impl<'a, B: PlanBackend> RoutedBlockSession<'a, B> {
         backend: &'a B,
         continuation: &SelectedContinuation,
     ) -> Result<Self, InferenceError> {
+        // What block verification itself cannot do is refused first, for
+        // any operands: these refusals hold whatever the slice.
+        if ops.carries_hyper_connection() || ops.carries_attention_residual() {
+            return Err(InferenceError::Parse(
+                "a routed block session needs a single-stream residual: this component leaves \
+                 the stack through a per-position reduction, which block verification does not \
+                 implement"
+                    .into(),
+            ));
+        }
+        if !ops.has_output() {
+            return Err(InferenceError::Parse(
+                "a routed block session needs an output head: these operands have no logits to \
+                 return"
+                    .into(),
+            ));
+        }
         if !matches!(ops.slice(), ExecutionSlice::RoutedExpertCoordinator) {
             return Err(InferenceError::Parse(
                 "a routed block session requires routed-expert coordinator operands".into(),
@@ -143,6 +170,57 @@ impl<'a, B: PlanBackend> RoutedBlockSession<'a, B> {
             Err(error) => {
                 // Earlier layers have already appended this block's rows.
                 // Nothing of it is committed, and nothing more will run here.
+                self.failed = true;
+                Err(error.into())
+            }
+        }
+    }
+
+    /// Run one position from the committed position on the single-row
+    /// route, commit it, and return its logits. Refused while a verified
+    /// block awaits commit.
+    ///
+    /// The position succeeds or the session is invalidated, as for a block.
+    /// Construction refuses operands with no output head, so a step without
+    /// logits cannot happen; if one ever did, the position would already be
+    /// in the continuation with nothing to return, and the session is
+    /// invalidated rather than left ahead of its caller.
+    pub fn step(&mut self, token: u32) -> Result<Vec<f32>, InferenceError> {
+        if self.failed {
+            return Err(InferenceError::Parse(
+                "routed block session is invalid after a failed block; start a fresh session \
+                 and replay committed input"
+                    .into(),
+            ));
+        }
+        if self.pending.is_some() {
+            return Err(InferenceError::Parse(
+                "a verified block is awaiting commit; commit it (or commit 0 to discard it) \
+                 before stepping"
+                    .into(),
+            ));
+        }
+        let result = (|| {
+            let mut session =
+                DecodeSession::over_prepared(self.plan, self.ops, self.backend, &mut *self.state)?;
+            session.step(token)
+        })();
+        match result {
+            Ok(output) => match output.logits {
+                Some(logits) => {
+                    self.committed += 1;
+                    Ok(logits)
+                }
+                None => {
+                    self.failed = true;
+                    Err(InferenceError::Parse(
+                        "a routed block session step produced no logits: the plan has no output \
+                         head"
+                            .into(),
+                    ))
+                }
+            },
+            Err(error) => {
                 self.failed = true;
                 Err(error.into())
             }
