@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import time
 
 import block_time as b1
 import block_time_2_model as b2
@@ -28,6 +29,32 @@ from profile_exact import agreement, save, sha, workers
 HARNESS = ("block_time_2.py", "block_time_2_model.py", "host_telemetry.py", "block_time.py",
            "block_time_model.py", "link_model.py", "link_sweep.py", "link_block_frames_model.py",
            "profile_exact.py")
+# Another session that needs the machine creates this file in the run
+# directory; the driver finishes the pair it is in, then waits until the file
+# is removed. Pausing only between pairs voids nothing, because every pair is
+# bracketed on its own.
+PAUSE_FILE = "PAUSE"
+PAUSE_POLL_S = 5.0
+BEFORE_WARM_UP = -1
+
+
+def is_pause_point(entry):
+    """The first trial of a pair: the only place the run may hold."""
+    return entry["role"] == bt.ROLE_BRACKET and entry["bracket"] == "before"
+
+
+def wait_while_paused(out, before_pair, pauses, sleep=time.sleep, now=None):
+    """Hold at a pair boundary while the pause file exists; record the pause, if any."""
+    now = now or ht.utc_now
+    flag = out / PAUSE_FILE
+    if not flag.exists():
+        return
+    started = now()
+    print(f"paused before pair {before_pair} at {started}: remove {flag} to resume", flush=True)
+    while flag.exists():
+        sleep(PAUSE_POLL_S)
+    pauses.append({"before_pair": before_pair, "paused_utc": started, "resumed_utc": now()})
+    print(f"resumed before pair {before_pair}", flush=True)
 
 
 def timed_trial(root, model, ids, out, env, entry, worker_urls):
@@ -95,15 +122,20 @@ def execute(args, root, model, out, kind):
         "telemetry": {"process_interval_s": ht.PROCESS_INTERVAL_S, "state_interval_s": ht.STATE_INTERVAL_S,
                       "gates_anything": False},
         "clock": "monotonic wall time around the measured region inside each trial process",
+        "pause": {"file": PAUSE_FILE, "where": "between pairs only", "poll_s": PAUSE_POLL_S},
         "started_utc": started,
     }
     save(out / "manifest.json", manifest)
-    observations, stop = [], None
+    observations, stop, pauses = [], None, []
     with ht.Sampler(out / "telemetry.jsonl") as sampler:
         try:
             with workers(root, model, out, b1.TOPOLOGY, args.port, env) as worker_urls:
+                wait_while_paused(out, BEFORE_WARM_UP, pauses)
                 reference, floor_ns = warm_up(root, model, args, out, env, worker_urls, saved, stream)
                 for entry in order:
+                    if is_pause_point(entry):
+                        wait_while_paused(out, entry["pair"], pauses)
+                        save(out / "pauses.json", pauses)
                     trial, relay_records, clock = timed_trial(root, model, args.ids, out, env, entry, worker_urls)
                     observation = b1.observe(entry, trial, relay_records, reference, floor_ns)
                     observation.update(clock)
@@ -122,6 +154,7 @@ def execute(args, root, model, out, kind):
     report = b2.analyse(observations, verdicts) if complete else {"note": "the run stopped; nothing is analysed"}
     report.update(kind=kind, counts=kind == "admissible" and complete, complete=complete, stopped=stop,
                   scheduled=len(order), observed=len(observations), telemetry_samples=sampler.samples,
+                  pauses=pauses,
                   outcomes={
                       "valid_pairs": [v["pair"] for v in verdicts if v["valid"]],
                       "void_pairs": {str(v["pair"]): v["void_reasons"] for v in verdicts if not v["valid"]},

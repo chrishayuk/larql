@@ -262,6 +262,44 @@ class Analysis(unittest.TestCase):
         self.assertIn("no speed comparison", report["reading"])
 
 
+class Pausing(unittest.TestCase):
+    """Another session can hold the run between pairs; nothing inside a pair."""
+
+    def test_the_run_may_hold_only_at_the_start_of_each_pair(self):
+        import block_time_2 as driver
+        points = [entry for entry in b2.schedule() if driver.is_pause_point(entry)]
+        self.assertEqual([entry["pair"] for entry in points], list(range(20)))
+        self.assertTrue(all(entry["bracket"] == "before" for entry in points))
+
+    def test_no_pause_file_means_no_wait_and_no_record(self):
+        import tempfile
+        from pathlib import Path
+        import block_time_2 as driver
+        pauses = []
+        with tempfile.TemporaryDirectory() as folder:
+            driver.wait_while_paused(Path(folder), 3, pauses, sleep=self.fail)
+        self.assertEqual(pauses, [])
+
+    def test_a_pause_holds_until_the_file_is_removed_and_is_recorded(self):
+        import tempfile
+        from pathlib import Path
+        import block_time_2 as driver
+        pauses, polls = [], []
+        clock = iter(["2026-11-15T12:00:00Z", "2026-11-15T12:10:00Z"])
+        with tempfile.TemporaryDirectory() as folder:
+            flag = Path(folder) / driver.PAUSE_FILE
+            flag.touch()
+
+            def sleep(seconds):
+                polls.append(seconds)
+                if len(polls) == 3:
+                    flag.unlink()
+            driver.wait_while_paused(Path(folder), 7, pauses, sleep=sleep, now=lambda: next(clock))
+        self.assertEqual(polls, [driver.PAUSE_POLL_S] * 3)
+        self.assertEqual(pauses, [{"before_pair": 7, "paused_utc": "2026-11-15T12:00:00Z",
+                                   "resumed_utc": "2026-11-15T12:10:00Z"}])
+
+
 class Admission(unittest.TestCase):
     def test_a_draft_protocol_admits_no_run_and_starts_nothing(self):
         import contextlib
