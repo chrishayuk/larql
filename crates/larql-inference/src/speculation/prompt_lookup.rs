@@ -1,10 +1,18 @@
-//! Prompt-lookup proposals for VERIFY-N: guess the next tokens by copying
-//! what followed an earlier occurrence, in the PROMPT, of the context's
-//! trailing n-gram. Costs no model and no training; it pays exactly where
-//! the output repeats its input — edits, rewrites, structured transforms.
+//! Prompt-lookup proposals: guess the next tokens by copying what followed
+//! an earlier occurrence, in the PROMPT, of the context's trailing n-gram.
+//! Costs no model and no training; it pays exactly where the output repeats
+//! its input — edits, rewrites, structured transforms.
 //!
-//! The rules were chosen by replaying the engine's own greedy ids for
-//! Gemma 3 4B under each candidate rule (exact for greedy):
+//! **Contract:** [`propose`] returns at most `max` tokens, all taken from
+//! `ctx[..source_len]`, and none when nothing matches. Which match it
+//! picks is a heuristic, not a guarantee: a caller verifies every proposal
+//! against the target model and keeps only what the target agrees with
+//! ([`accepted_prefix`]), so a different rule changes speed, never output.
+//!
+//! **Provenance of the heuristic** (VERIFY-N, #559): the rules were chosen
+//! by replaying the local engine's greedy ids for Gemma 3 4B under each
+//! candidate rule. That was evidence for that model and prompt set, not a
+//! property of the rule elsewhere:
 //!
 //! - **Prompt only.** On an edit the source is the prompt; the output's
 //!   own recent n-grams mislead, and on free prose they are the only
