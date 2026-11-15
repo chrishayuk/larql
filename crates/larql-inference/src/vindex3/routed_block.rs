@@ -34,7 +34,11 @@
 //!   provider itself, by rewinding a fresh one to where it already is:
 //!   rollback is a capability a provider states by implementing it, so a
 //!   provider that cannot honour it refuses here by name;
-//! - no recurrent or latent continuation state, which cannot be rewound.
+//! - no recurrent or latent continuation state, which cannot be rewound;
+//! - an output head and a single-stream residual: the block traversal
+//!   returns every position's logits only for those, so a plan without
+//!   them could step but never verify, and is refused before it can do
+//!   either.
 //!
 //! Failure is the single-position session's rule: any failed block
 //! invalidates the session. Its committed position does not move, and the
@@ -72,6 +76,21 @@ impl<'a, B: PlanBackend> RoutedBlockSession<'a, B> {
         if !matches!(ops.slice(), ExecutionSlice::RoutedExpertCoordinator) {
             return Err(InferenceError::Parse(
                 "a routed block session requires routed-expert coordinator operands".into(),
+            ));
+        }
+        if ops.carries_hyper_connection() || ops.carries_attention_residual() {
+            return Err(InferenceError::Parse(
+                "a routed block session needs a single-stream residual: this component leaves \
+                 the stack through a per-position reduction, which block verification does not \
+                 implement"
+                    .into(),
+            ));
+        }
+        if !ops.has_output() {
+            return Err(InferenceError::Parse(
+                "a routed block session needs an output head: these operands have no logits to \
+                 return"
+                    .into(),
             ));
         }
         let geometry = plan_continuation_geometry(plan).map_err(InferenceError::Parse)?;
@@ -160,9 +179,10 @@ impl<'a, B: PlanBackend> RoutedBlockSession<'a, B> {
     /// block awaits commit.
     ///
     /// The position succeeds or the session is invalidated, as for a block.
-    /// A plan with no output head also invalidates it: the position has
-    /// already been added to the continuation, and it would be committed
-    /// with nothing to return.
+    /// Construction refuses operands with no output head, so a step without
+    /// logits cannot happen; if one ever did, the position would already be
+    /// in the continuation with nothing to return, and the session is
+    /// invalidated rather than left ahead of its caller.
     pub fn step(&mut self, token: u32) -> Result<Vec<f32>, InferenceError> {
         if self.failed {
             return Err(InferenceError::Parse(
