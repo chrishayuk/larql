@@ -37,6 +37,7 @@ pub mod op_target;
 mod op_target_check;
 pub mod structured;
 pub mod structured_op;
+pub mod tensor_name;
 
 mod apply;
 
@@ -56,6 +57,7 @@ pub use ledger::{
 pub use low_rank_op::LowRankColumnsOp;
 pub use op::{bind_source, record_op, DeltaEdit, SourceBinding, WeightDeltaOp};
 pub use structured_op::StructuredWeightOp;
+pub use tensor_name::{qualified, TensorName, QUALIFIER};
 
 /// The most elements one patch may edit, across all its tensors. A patch is
 /// a bounded, reviewable change; a rewrite of a tensor is a different

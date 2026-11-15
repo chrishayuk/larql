@@ -85,7 +85,7 @@ impl StructuredWeightOp {
         };
         let mut op = Self {
             source,
-            tensor: tensor.to_string(),
+            tensor: super::TensorName::parse(tensor).tensor.to_string(),
             numerics: numerics.to_string(),
             operand: hex(operand),
             alpha,
@@ -168,13 +168,16 @@ impl StructuredWeightOp {
         self.check_intact()?;
         self.check_binding(container)?;
         let (operand, alpha) = self.operands()?;
-        resolve_on_container(container, &self.tensor, &self.numerics, |_| {
-            OpKind::RemoveDirection {
+        resolve_on_container(
+            container,
+            &super::qualified(&self.source.representation, &self.tensor),
+            &self.numerics,
+            |_| OpKind::RemoveDirection {
                 u: operand,
                 alpha,
                 columns: self.columns.clone(),
-            }
-        })
+            },
+        )
     }
 }
 
