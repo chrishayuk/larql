@@ -162,6 +162,15 @@ enum Commands {
     )]
     Lql(LqlArgs),
 
+    #[cfg(unix)]
+    #[command(next_help_heading = "LQL", name = "serve-session")]
+    /// Serve one VINDEX3 container to one client over a Unix socket: typed
+    /// operations only (no LQL text), under a policy that fixes the
+    /// container, the workdir, the allowed operations, the budget of
+    /// edited-model executions and the limits, with an append-only audit
+    /// log. Not an OS sandbox.
+    ServeSession(session_service::ServeSessionArgs),
+
     // ── Build / extract ─────────────────────────────────────────────
     #[command(next_help_heading = "Build")]
     /// Build a .vindex by decompiling a HuggingFace model.
@@ -499,6 +508,9 @@ fn real_main() -> i32 {
             }
             return outcome.exit_code();
         }
+
+        #[cfg(unix)]
+        Commands::ServeSession(args) => session_service::run(args),
 
         // ── Factory ──
         Commands::Recipe(cmd) => recipe_cmd::run(cmd),

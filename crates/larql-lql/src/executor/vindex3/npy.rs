@@ -24,7 +24,7 @@ const WRITE_BUFFER_BYTES: usize = 1 << 20;
 
 /// The element type of the array, as NumPy's `descr` names it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum NpyDescr {
+pub enum NpyDescr {
     /// Little-endian float32.
     F4,
     /// Little-endian uint16.
@@ -34,7 +34,8 @@ pub(super) enum NpyDescr {
 }
 
 impl NpyDescr {
-    pub(super) fn label(self) -> &'static str {
+    /// NumPy's spelling of the element type: `<f4`, `<u2` or `<u4`.
+    pub fn label(self) -> &'static str {
         match self {
             Self::F4 => "<f4",
             Self::U2 => "<u2",
@@ -76,6 +77,24 @@ fn header(descr: NpyDescr, shape: &[usize]) -> std::io::Result<Vec<u8>> {
     bytes.extend_from_slice(&VERSION);
     bytes.extend_from_slice(&length.to_le_bytes());
     bytes.extend_from_slice(dict.as_bytes());
+    Ok(bytes)
+}
+
+/// The SHA-256 of the `.npy` file an array of `descr` and `shape` with this body would be, lowercase hex: the
+/// digest [`NpyWriter::finish`] gives for the same array, computed without writing a file.
+pub(super) fn npy_sha256(descr: NpyDescr, shape: &[usize], body: &[u8]) -> std::io::Result<String> {
+    let mut hash = Sha256::new();
+    hash.update(header(descr, shape)?);
+    hash.update(body);
+    Ok(format!("{:x}", hash.finalize()))
+}
+
+/// The whole `.npy` file an array of `descr` and `shape` with this body is, in memory: the bytes
+/// [`NpyWriter`] writes for the same array, so their SHA-256 is the `npy_sha256` a typed operation's
+/// provenance records. `body` is the elements, little-endian, C order.
+pub fn npy_file_bytes(descr: NpyDescr, shape: &[usize], body: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut bytes = header(descr, shape)?;
+    bytes.extend_from_slice(body);
     Ok(bytes)
 }
 

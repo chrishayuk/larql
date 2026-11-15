@@ -1,0 +1,104 @@
+# larql-python CI
+#
+# The PyO3 extension (`larql._native`) and its pure-Python client, built with maturin and tested with pytest. The
+# typed VINDEX3 operations are held to the LQL statements bit for bit here, so a change to either side that breaks
+# that equality fails this workflow, not a user's script. The session-service tests start the `larql` binary, so
+# it is built too.
+#
+# Linux and macOS only: the session service and its tests are Unix (a Unix-domain socket).
+
+name: larql-python
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/larql-python/**'
+      - 'crates/larql-lql/**'
+      - 'crates/larql-vindex/**'
+      - 'crates/larql-inference/src/**'
+      - 'crates/larql-models/**'
+      - 'crates/larql-core/**'
+      - 'crates/larql-cli/src/commands/primary/session_service/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/larql-python.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/larql-python/**'
+      - 'crates/larql-lql/**'
+      - 'crates/larql-vindex/**'
+      - 'crates/larql-inference/src/**'
+      - 'crates/larql-models/**'
+      - 'crates/larql-core/**'
+      - 'crates/larql-cli/src/commands/primary/session_service/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/larql-python.yml'
+  workflow_dispatch: {}
+
+# Same rule as the other crate workflows: supersede in-flight PR runs; every non-PR run is alone in its group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pytest:
+    name: pytest - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install OpenBLAS (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenblas-dev pkg-config
+
+      - name: Cache cargo registry (downloads only, never target/)
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-reg2-python-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-reg2-python-
+
+      - name: No compiled workspace artefacts may be restored
+        shell: bash
+        run: |
+          if [ -e target ]; then
+            echo "::error::target/ was restored from cache - the cache key or path is wrong"
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Build the larql binary the session-service tests start
+        run: cargo build --release -p larql-cli --bin larql
+
+      - name: Build the extension and run pytest
+        working-directory: crates/larql-python
+        env:
+          LARQL_BIN: ${{ github.workspace }}/target/release/larql
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install 'maturin>=1.7' 'pytest>=8' 'numpy>=1.26'
+          maturin develop --release
+          python -m pytest tests/ -q

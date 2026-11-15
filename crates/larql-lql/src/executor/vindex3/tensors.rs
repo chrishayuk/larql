@@ -1,6 +1,6 @@
 //! `SHOW TENSORS ["filter"]`: every tensor of every representation by its qualified name.
 
-use larql_vindex::format::vindex3::stored_tensor::{list_tensors, BareName};
+use larql_vindex::format::vindex3::stored_tensor::{list_tensors, BareName, TensorListing};
 
 use crate::error::LqlError;
 use crate::executor::Session;
@@ -14,14 +14,20 @@ const HEADING_BARE: &str = "Bare";
 const GUTTER: usize = 2;
 
 impl Session {
-    pub(crate) fn exec_show_tensors(&self, filter: Option<&str>) -> Result<Vec<String>, LqlError> {
+    /// The typed operation behind `SHOW TENSORS`: every tensor of every representation of the bound container,
+    /// kept where `filter` is part of its representation id or its object's name.
+    pub fn tensors(&self, filter: Option<&str>) -> Result<Vec<TensorListing>, LqlError> {
         let root = self.v3_container_root(STATEMENT)?;
         let listings =
             list_tensors(root).map_err(|e| LqlError::exec("read the tensor tables", e))?;
-        let kept: Vec<_> = listings
+        Ok(listings
             .into_iter()
             .filter(|l| filter.is_none_or(|f| l.representation.contains(f) || l.object.contains(f)))
-            .collect();
+            .collect())
+    }
+
+    pub(crate) fn exec_show_tensors(&self, filter: Option<&str>) -> Result<Vec<String>, LqlError> {
+        let kept = self.tensors(filter)?;
         if kept.is_empty() {
             return Ok(vec![match filter {
                 Some(f) => format!("  (no representations match \"{f}\")"),
