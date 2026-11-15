@@ -46,6 +46,28 @@ STATEMENT = (
     "to the base and consistent with both containers (ledger integrity and provenance)"
 )
 LEDGER_SCHEMA_V4 = "weight-patches/v4"
+# The element-only ledgers, each under its own contract so that `WEIGHT_PATCHES_V4` keeps meaning exactly v4. A `v2`
+# ledger holds delta edits only and is recomputable from the ledger alone. A `v3` ledger holds result-bits edits of
+# `remove_direction` ops it does not carry (their digests are in `origins`), so its numerics need the patch.
+CONTRACT_V2 = "WEIGHT_PATCHES_V2"
+CONTRACT_V3 = "WEIGHT_PATCHES_V3"
+LEDGER_SCHEMA_V2 = "weight-patches/v2"
+LEDGER_SCHEMA_V3 = "weight-patches/v3"
+SCHEMA_OF = {CONTRACT: LEDGER_SCHEMA_V4, CONTRACT_V2: LEDGER_SCHEMA_V2, CONTRACT_V3: LEDGER_SCHEMA_V3}
+STATEMENTS = {
+    CONTRACT: STATEMENT,
+    CONTRACT_V2: (
+        "the compiled container is the base with exactly the delta edits its weight-patches/v2 ledger declares, each "
+        "recomputed independently as the BF16 nearest the exact sum (numerical satisfaction), and the ledger is bound "
+        "to the base and consistent with both containers (ledger integrity and provenance)"
+    ),
+    CONTRACT_V3: (
+        "the compiled container is the base with exactly the edits its weight-patches/v3 ledger declares, the "
+        "result-bits edits recomputed independently from the base weights and the remove_direction ops of the patch "
+        "given (numerical satisfaction), and the ledger is bound to the base, to that patch and consistent with both "
+        "containers (ledger integrity and provenance)"
+    ),
+}
 NUMERICAL = "numerical_satisfaction"
 LEDGER = "ledger_integrity_and_provenance"
 OP_LOW_RANK = "low_rank_columns_weight"
@@ -414,6 +436,8 @@ class Judge:
         #: `remove_direction` ops of the `.vlp` the caller supplied, by tensor; `None` when no patch was given.
         self.patch_ops: dict[str, list] | None = None
         self.patch: str | None = None
+        #: The one ledger schema this run judges: the contract's.
+        self.schema = LEDGER_SCHEMA_V4
         self.recomputed_from_patch = 0
         self.L, self.N = Half(LEDGER), Half(NUMERICAL)
         self.engine: dict = {}
@@ -456,9 +480,9 @@ class Judge:
             return
         schema = ledger.get("schema")
         self.engine.update(schema=schema, writer=ledger.get("writer"), rounding=ledger.get("rounding"))
-        if schema != LEDGER_SCHEMA_V4:
-            self.L.cannot(f"unknown ledger schema {schema!r}: this contract judges {LEDGER_SCHEMA_V4!r} only (§7 step 5)")
-            self.N.cannot("the ledger is not a v4 ledger, so its ops are not reconstructed")
+        if schema != self.schema:
+            self.L.cannot(f"unknown ledger schema {schema!r}: this contract judges {self.schema!r} only (§7 step 5)")
+            self.N.cannot(f"the ledger is not a {self.schema} ledger, so its edits are not reconstructed")
             return
         self.ledger = ledger
         self.L.judged = True
@@ -498,8 +522,7 @@ class Judge:
             N.cannot("the ledger is bound to another base (§7 step 5: a stale binding is refused), so its ops are not "
                      "recomputed against this one")
         plans = [self.plan_target(i, t) for i, t in enumerate(targets)]
-        if not any(isinstance(t, dict) and "operations" in t for t in targets):
-            L.violate("targets", "a v4 ledger is written only when at least one target is an operation target (§2)")
+        self.check_schema_form(targets)
         self.check_work(plans)
         self.check_patch_elements(plans)
         for plan in plans:
@@ -514,6 +537,25 @@ class Judge:
         digests = [op.get("digest") for p in plans if p and p["kind"] == "operations" for op in p["raw_ops"]]
         L.measure("op digests listed in origins (informational: origins is not defined by v4)",
                   f"{sum(d in listed for d in digests)}/{len(digests)}")
+
+    def check_schema_form(self, targets) -> None:
+        """Each schema is written for one form of edit, and only for it: `v4` when some target is an operation target
+        (§2), `v3` when some edit is a result-bits edit and none is an operation target, `v2` when every edit is a
+        delta. A ledger whose contents belong under another schema is not the ledger its schema says it is."""
+        L = self.L
+        has_operations = any("operations" in t for t in targets)
+        has_results = any(isinstance(e, dict) and e.get("encoding") == RESULT_BITS
+                          for t in targets for e in (t.get("edits") if isinstance(t.get("edits"), list) else []))
+        if self.schema == LEDGER_SCHEMA_V4:
+            if not has_operations:
+                L.violate("targets", "a v4 ledger is written only when at least one target is an operation target (§2)")
+            return
+        if has_operations:
+            L.violate("targets", f"an operation target needs {LEDGER_SCHEMA_V4!r}; this ledger is {self.schema!r}")
+        if self.schema == LEDGER_SCHEMA_V2 and has_results:
+            L.violate("targets", f"a result-bits edit needs {LEDGER_SCHEMA_V3!r}; this ledger is {LEDGER_SCHEMA_V2!r}")
+        if self.schema == LEDGER_SCHEMA_V3 and not has_results:
+            L.violate("targets", f"a {LEDGER_SCHEMA_V3!r} ledger is written only when some edit is a result-bits edit")
 
     def parse_judged_segments(self) -> None:
         """Parse and verify the edited and re-derived segments of both containers (a failure is `could_not_evaluate`).
@@ -1173,7 +1215,7 @@ def could_not(out: dict, *reasons: str) -> dict:
     return out
 
 
-def evaluate(out: dict, base: str, container: str, patch: str | None = None) -> dict:
+def evaluate(out: dict, base: str, container: str, patch: str | None = None, contract: str = CONTRACT) -> dict:
     """Fill `out` with the two verdicts and the combined status. Never raises for a bad input. `patch`, when given, is
     the `.vlp` the container was compiled from: it supplies the `remove_direction` ops a v4 ledger records only by
     their result bits (§3b), so those tensors can be recomputed too."""
@@ -1183,6 +1225,7 @@ def evaluate(out: dict, base: str, container: str, patch: str | None = None) -> 
         out["recomputed_from"] += ("; for a tensor the ledger records only by result bits, the remove_direction ops of "
                                    "the patch given, each held to the ledger's origins")
     judge = Judge(base, container)
+    judge.schema = SCHEMA_OF[contract]
     judge.patch = patch
     judge.recomputed_from_patch = 0
     judge.shams = 0

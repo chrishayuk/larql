@@ -152,14 +152,15 @@ def evaluate_ledger(contract: str, base: str, container: str, patch: str | None 
     satisfaction and ledger integrity and provenance, recomputed from the base and the recorded ops, never from the
     ledger's own hashes or counts. `verifier` identifies this program; `engine_reported` is what the ledger says about
     the engine that wrote it."""
-    out = {"schema": LEDGER_SCHEMA, "contract": contract, "contract_statement": weight_patches_v4.STATEMENT,
+    out = {"schema": LEDGER_SCHEMA, "contract": contract, "contract_statement": weight_patches_v4.STATEMENTS.get(contract, ""),
            "evidence_kind": "numerical_measurement", "status": None, "violations": 0,
            "base": {"path": base, "sha256": None}, "container": {"path": container, "sha256": None},
            "measurements": [], "offending": [], "reasons": [],
            "verifier": {"name": "larql-contract-verifier", "version": __version__, "refcheck_commit": REFCHECK_COMMIT,
                         "code_sha256": code_sha256()}}
-    if contract != weight_patches_v4.CONTRACT:
-        return q8_0_t2.could_not(out, f"unknown contract {contract!r}; this verifier knows {[weight_patches_v4.CONTRACT]}")
+    if contract not in weight_patches_v4.SCHEMA_OF:
+        return q8_0_t2.could_not(out, f"unknown contract {contract!r}; this verifier knows "
+                                      f"{sorted(weight_patches_v4.SCHEMA_OF)}")
     if not os.path.isdir(base) or not os.path.isdir(container):
         return q8_0_t2.could_not(out, "the base and the container must be directories")
     if patch is not None:
@@ -172,7 +173,7 @@ def evaluate_ledger(contract: str, base: str, container: str, patch: str | None 
         except OSError as e:
             return q8_0_t2.could_not(out, f"the patch can't be read: {e}")
     weight_patches_v4.evaluate(out, os.path.abspath(base), os.path.abspath(container),
-                               None if patch is None else os.path.abspath(patch))
+                               None if patch is None else os.path.abspath(patch), contract)
     if out["status"] == "could_not_evaluate":
         return out
     # The digests and the bytes judged came from separate reads, so a verdict needs the inputs not to have changed.
