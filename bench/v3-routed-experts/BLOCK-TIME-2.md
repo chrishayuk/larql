@@ -59,17 +59,32 @@ sequential 0 ms bracket → arm at one delay → same arm at the other delay →
 ```
 
 Each pair has its own two brackets; brackets are never shared between
-pairs. **Delay order alternates**: within each arm, its pairs run 5→20,
-20→5, 20→5, 5→20 in the order they occur, so every arm has two pairs in
-each order.
+pairs.
 
 ### Schedule
 
-- **Four pairs per arm, twenty pairs, eighty trials**, after warm-up. No
-  zero-delay arm trials, no unprofiled trials, no no-relay controls.
-- **The order of the twenty pairs is a seeded shuffle**, seed `20261115`,
-  computed by `block_time_2_model.schedule()` and recorded in the manifest
-  before the first trial. Changing the seed is a new revision.
+- **Four rounds of five pairs, one pair of each arm per round**: twenty
+  pairs, eighty trials, after warm-up. No zero-delay arm trials, no
+  unprofiled trials, no no-relay controls. Rounds spread a slow drift of the
+  host over every arm alike; a global shuffle could, and in an earlier draft
+  did, put all four `sequential` pairs in the second half.
+- **Arms are shuffled within each round** by one generator seeded
+  `20261115`, one shuffle per round. The schedule is computed by
+  `block_time_2_model.schedule()` and recorded in the manifest before the
+  first trial. With this seed the rounds are:
+
+  | Round | Delay order | Arms, in run order |
+  |---|---|---|
+  | 1 | 5→20 | `block-8`, `block-4`, `block-1`, `sequential`, `block-2` |
+  | 2 | 20→5 | `sequential`, `block-4`, `block-8`, `block-1`, `block-2` |
+  | 3 | 20→5 | `block-8`, `block-2`, `block-4`, `sequential`, `block-1` |
+  | 4 | 5→20 | `block-4`, `block-2`, `sequential`, `block-1`, `block-8` |
+
+- **Delay order is set by the round, A-B-B-A**: 5→20, 20→5, 20→5, 5→20.
+  Every arm has two pairs in each order, and a linear drift across the run
+  weighs on the two orders alike.
+- Changing the seed, the round composition or the delay pattern is a new
+  revision; the contract tests pin all three.
 - **Nothing is ever added to the schedule.** A void pair is not rerun or
   replaced, and nothing is run because something else failed.
 
