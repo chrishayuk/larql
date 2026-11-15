@@ -342,7 +342,7 @@ fn speculative_decode(
     stop: &std::collections::HashSet<u32>,
     out: &mut Vec<u32>,
 ) -> Result<SpeculationStats, Box<dyn std::error::Error>> {
-    use super::prompt_lookup::{accepted_prefix, propose};
+    use larql_inference::speculation::{accepted_prefix, propose, truncate_at_stop};
     let mut stats = SpeculationStats {
         width,
         ..Default::default()
@@ -405,19 +405,4 @@ fn speculative_decode(
     session.quiesce();
     truncate_at_stop(out, stop, n);
     Ok(stats)
-}
-
-/// The generated-ids contract every `exec --generate` loop keeps: at most
-/// `n` ids, ending at the first stop id, which is itself kept. A
-/// speculative block may run past a stop; the ids after it were never
-/// wanted.
-pub(super) fn truncate_at_stop(
-    out: &mut Vec<u32>,
-    stop: &std::collections::HashSet<u32>,
-    n: usize,
-) {
-    if let Some(end) = out.iter().position(|id| stop.contains(id)) {
-        out.truncate(end + 1);
-    }
-    out.truncate(n);
 }
