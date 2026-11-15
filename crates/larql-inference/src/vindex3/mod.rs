@@ -135,3 +135,4 @@ pub mod provider_observer;
 
 pub mod routed_block;
 pub mod routed_experts;
+pub mod speculate;
