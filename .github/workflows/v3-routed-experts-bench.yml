@@ -1,0 +1,50 @@
+name: v3 routed-experts protocols
+
+# The research protocols under bench/v3-routed-experts: LINK-2's block-frame
+# addendum, BLOCK-TIME-1 and BLOCK-TIME-2. Their tests pin each protocol's
+# registered schedule, seed, gates and reporting rules, and the hash check
+# fails if a frozen protocol file no longer matches frozen-protocols.json.
+# Python standard library only; no model, relay or worker is started.
+#
+# Path-filtered, so it is not itself a required check: `ci-gate` waits for
+# every workflow a pull request starts and fails if this one fails.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bench/v3-routed-experts/**'
+      - '.github/workflows/v3-routed-experts-bench.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'bench/v3-routed-experts/**'
+      - '.github/workflows/v3-routed-experts-bench.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: v3 routed-experts protocol tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: bench/v3-routed-experts
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Frozen protocol files match frozen-protocols.json
+        run: python3 frozen_protocols.py --check
+      - name: Protocol, driver and telemetry tests (every test_*.py here)
+        run: python3 -I -m unittest discover -s . -p 'test_*.py' -v

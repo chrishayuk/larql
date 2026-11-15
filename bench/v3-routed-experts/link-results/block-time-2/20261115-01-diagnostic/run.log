@@ -1,0 +1,99 @@
+       0
+a9e7a185 ci: run the v3 routed-experts protocol tests and frozen-hash check
+11:14:10
+running warm-0: warm sequential rtt=0.0ms profiled
+running warm-1: warm sequential rtt=0.0ms profiled
+running warm-2: warm sequential rtt=0.0ms profiled
+running warm-3: warm sequential rtt=0.0ms profiled
+warm-up never settled within 0.01; continuing as declared: [131682704.60714285, 136891386.1607143, 131592915.17857143, 130048473.96428572]
+running trial-000: bracket sequential rtt=0.0ms profiled
+running trial-001: arm block-8 rtt=5.0ms profiled
+running trial-002: arm block-8 rtt=20.0ms profiled
+running trial-003: bracket sequential rtt=0.0ms profiled
+running trial-004: bracket sequential rtt=0.0ms profiled
+running trial-005: arm block-4 rtt=5.0ms profiled
+running trial-006: arm block-4 rtt=20.0ms profiled
+running trial-007: bracket sequential rtt=0.0ms profiled
+running trial-008: bracket sequential rtt=0.0ms profiled
+running trial-009: arm block-1 rtt=5.0ms profiled
+running trial-010: arm block-1 rtt=20.0ms profiled
+running trial-011: bracket sequential rtt=0.0ms profiled
+running trial-012: bracket sequential rtt=0.0ms profiled
+running trial-013: arm sequential rtt=5.0ms profiled
+running trial-014: arm sequential rtt=20.0ms profiled
+running trial-015: bracket sequential rtt=0.0ms profiled
+running trial-016: bracket sequential rtt=0.0ms profiled
+running trial-017: arm block-2 rtt=5.0ms profiled
+running trial-018: arm block-2 rtt=20.0ms profiled
+running trial-019: bracket sequential rtt=0.0ms profiled
+running trial-020: bracket sequential rtt=0.0ms profiled
+running trial-021: arm sequential rtt=20.0ms profiled
+running trial-022: arm sequential rtt=5.0ms profiled
+running trial-023: bracket sequential rtt=0.0ms profiled
+running trial-024: bracket sequential rtt=0.0ms profiled
+running trial-025: arm block-4 rtt=20.0ms profiled
+running trial-026: arm block-4 rtt=5.0ms profiled
+running trial-027: bracket sequential rtt=0.0ms profiled
+running trial-028: bracket sequential rtt=0.0ms profiled
+running trial-029: arm block-8 rtt=20.0ms profiled
+running trial-030: arm block-8 rtt=5.0ms profiled
+running trial-031: bracket sequential rtt=0.0ms profiled
+running trial-032: bracket sequential rtt=0.0ms profiled
+running trial-033: arm block-1 rtt=20.0ms profiled
+running trial-034: arm block-1 rtt=5.0ms profiled
+running trial-035: bracket sequential rtt=0.0ms profiled
+running trial-036: bracket sequential rtt=0.0ms profiled
+running trial-037: arm block-2 rtt=20.0ms profiled
+running trial-038: arm block-2 rtt=5.0ms profiled
+running trial-039: bracket sequential rtt=0.0ms profiled
+running trial-040: bracket sequential rtt=0.0ms profiled
+running trial-041: arm block-8 rtt=20.0ms profiled
+running trial-042: arm block-8 rtt=5.0ms profiled
+running trial-043: bracket sequential rtt=0.0ms profiled
+running trial-044: bracket sequential rtt=0.0ms profiled
+running trial-045: arm block-2 rtt=20.0ms profiled
+running trial-046: arm block-2 rtt=5.0ms profiled
+running trial-047: bracket sequential rtt=0.0ms profiled
+running trial-048: bracket sequential rtt=0.0ms profiled
+running trial-049: arm block-4 rtt=20.0ms profiled
+running trial-050: arm block-4 rtt=5.0ms profiled
+running trial-051: bracket sequential rtt=0.0ms profiled
+running trial-052: bracket sequential rtt=0.0ms profiled
+running trial-053: arm sequential rtt=20.0ms profiled
+running trial-054: arm sequential rtt=5.0ms profiled
+running trial-055: bracket sequential rtt=0.0ms profiled
+running trial-056: bracket sequential rtt=0.0ms profiled
+running trial-057: arm block-1 rtt=20.0ms profiled
+running trial-058: arm block-1 rtt=5.0ms profiled
+running trial-059: bracket sequential rtt=0.0ms profiled
+running trial-060: bracket sequential rtt=0.0ms profiled
+running trial-061: arm block-4 rtt=5.0ms profiled
+running trial-062: arm block-4 rtt=20.0ms profiled
+running trial-063: bracket sequential rtt=0.0ms profiled
+running trial-064: bracket sequential rtt=0.0ms profiled
+running trial-065: arm block-2 rtt=5.0ms profiled
+running trial-066: arm block-2 rtt=20.0ms profiled
+running trial-067: bracket sequential rtt=0.0ms profiled
+running trial-068: bracket sequential rtt=0.0ms profiled
+running trial-069: arm sequential rtt=5.0ms profiled
+running trial-070: arm sequential rtt=20.0ms profiled
+running trial-071: bracket sequential rtt=0.0ms profiled
+running trial-072: bracket sequential rtt=0.0ms profiled
+running trial-073: arm block-1 rtt=5.0ms profiled
+running trial-074: arm block-1 rtt=20.0ms profiled
+running trial-075: bracket sequential rtt=0.0ms profiled
+running trial-076: bracket sequential rtt=0.0ms profiled
+running trial-077: arm block-8 rtt=5.0ms profiled
+running trial-078: arm block-8 rtt=20.0ms profiled
+running trial-079: bracket sequential rtt=0.0ms profiled
+{
+  "kind": "diagnostic",
+  "complete": true,
+  "stopped": null,
+  "valid_pairs": 1,
+  "void_pairs": 19
+}
+exit=0
+12:44:39
+
+[exited with code 0]
