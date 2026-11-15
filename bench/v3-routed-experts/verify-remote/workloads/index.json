@@ -1,0 +1,22 @@
+{
+ "json_edit": {
+  "kind": "copy-heavy",
+  "tokens": 256,
+  "sha256": "53d1656f498b8499391d18abd46ec4694364d0180afd77e4f64d43947c32d0e0"
+ },
+ "code_docstring": {
+  "kind": "copy-heavy",
+  "tokens": 215,
+  "sha256": "4844c4ae7c7f256e7864ccf7f126bc4ead9a1f1d60cc6dc204d0dff878265a21"
+ },
+ "prose_free": {
+  "kind": "low-copy",
+  "tokens": 84,
+  "sha256": "25555291697748ffa252da558e92fe3ab19fbf7a4d0159711005e678c6c467ae"
+ },
+ "explain": {
+  "kind": "low-copy",
+  "tokens": 87,
+  "sha256": "2883ba37bd4cccf3ef71a9f5ab11fd58b02405481429b104035c9e342cac5929"
+ }
+}

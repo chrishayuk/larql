@@ -1,9 +1,16 @@
 # VERIFY-REMOTE-1: prompt-lookup speculation over remote experts
 
-Status: **DRAFT, revision 0. Unqualified, not approved for any model run,
-not frozen.** Nothing below has been built or measured. This document holds
-the interface audit, the proposed protocol, the blockers and the testing
-plan, for review.
+Status: **DRAFT, revision 1. Unqualified, not approved for any model run,
+not frozen.** No model has been run under it. Revision 1 records the review
+decisions on revision 0 and what implementing seams 1 to 3 established.
+
+| Seam | PR | State |
+|---|---|---|
+| 1. Proposer and stop handling moved to `larql_inference::speculation` | #855 | open |
+| 2. `RoutedBlockSession::step` | #856 | open |
+| 3. `greedy_speculate` with event ledger (stacked on #855, #856) | #857 | draft |
+| 4. Trial binary | | not started |
+| 5. Driver | | not started |
 
 ## Question
 
@@ -62,7 +69,7 @@ The two sessions' contracts differ:
    single-row route) and commits that one position. It needs tests that its
    logits and continuation equal the sequential session's, and that it
    refuses while a block is pending.
-3. **A remote speculative loop.** This is a second loop, and the
+3. **A remote speculative loop** (built in #857). This is a second loop, and the
    justification is specific: the local loop's structure is its Metal
    decode-chain pipelining (a committed look-ahead step collected by
    `quiesce`), which has no remote counterpart. The remote session reports
@@ -70,9 +77,19 @@ The two sessions' contracts differ:
    duplicated: it calls the moved `propose`, `accepted_prefix` and
    `truncate_at_stop`, and keeps the same accounting (proposed, accepted,
    verify blocks, single steps, rewinds). Proposed home:
-   `larql_inference::vindex3::speculation::greedy_speculate(session,
-   prompt, first, n, width, stop)`. It is generic over the session only
-   through `verify`, `commit`, `step` and `position`.
+   `larql_inference::vindex3::speculate::greedy_speculate(target, prompt,
+   first, n, width, stop, proposer)`, generic over a `BlockTarget` trait
+   (`verify`, `commit`, `step`, `position`), which `RoutedBlockSession`
+   implements. The greedy choice is shared too (`speculation::greedy_id`:
+   first maximum, so ties go to the lowest id; empty or non-finite logits
+   refuse). Two properties came out of building it:
+   - **The proposer is asked for at most `min(W − 1, still wanted − 1)`
+     tokens.** A block yields its accepted proposals plus the target's own
+     correction, so a longer proposal would verify a position the output
+     cannot use. With one id left, nothing is proposed and that id is a
+     single step.
+   - **The shared policy owns no K/V.** The loop tells the target what to
+     keep; only the session holds continuation state.
 4. **A trial binary** (`examples/v3_verify_remote.rs`), sharing `Timed`
    and `Recorder` with `v3_block_time` through one examples support module
    rather than a copy. It records per-exchange routes and sizes, worker
@@ -105,17 +122,23 @@ verified-against-committed state on the remote path.
 
 ### Workloads
 
-Four prompts, committed as text and token ids before any run. Neither the
-selection nor any prompt is changed after a run.
+**Recovered from #729's archive** and committed in
+`verify-remote/workloads/` as the exact token ids #729 ran (GPT-OSS chat
+template), with the archive file's hash. The text was not archived; it is
+decoded for reading at freeze, and the ids are authoritative.
 
-- **Copy-heavy**: two edit-style prompts whose answers repeat much of the
-  prompt: a JSON edit and a code docstring transform. Proposed: the two
-  prompts #729 measured locally, recovered from that run's archive. If the
-  originals cannot be recovered, two new prompts of the same kinds are
-  written and committed blind.
-- **Low-copy**: two ordinary prose prompts (an explanation and an
-  open-ended paragraph), where prompt lookup is expected to propose
-  little.
+| Workload | Kind | Prompt tokens |
+|---|---|---|
+| `json_edit` | copy-heavy | 256 |
+| `code_docstring` | copy-heavy | 215 |
+| `prose_free` | low-copy | 84 |
+| `explain` | low-copy | 87 |
+
+All four come from #729's set, chosen there before this programme; none
+was picked from remote results. #729's local results (json_edit 1.33×,
+code_docstring 1.25×, prose about 1.0×, on a different representation and
+backend) are a historical reference only, not a prediction. The selection
+and the ids do not change after a run.
 
 **Copy-heavy and low-copy results are reported separately and never
 aggregated into one figure.**
@@ -145,10 +168,16 @@ Per trial, recorded:
    `sequential` arm's for the same workload, at every delay, through any
    stop id. Any mismatch stops the run. A mismatch is a correctness
    finding, reported with the first differing position.
-2. **Acceptance accounting.** The trial's counts must reconcile: generated
-   ids = 1 (the prompt's own greedy id, from prefill) + accepted proposals +
-   verify blocks (each adds the target's id after its accepted prefix) +
-   single steps, less any ids after a stop. Proposed, accepted, rejected and committed positions are
+2. **Acceptance accounting by event ledger.** Every generated id is
+   recorded once, with its source and whether it was emitted (an id after a
+   stop is not). The sources are: the prefill prediction, an accepted
+   proposal, a target correction (the target's id after a block's accepted
+   prefix), or a single step. The emitted events must be exactly the
+   generated ids, in order. The counts by source must match the blocks and
+   steps run: one prefill, accepted proposals equal to the blocks' accepted
+   counts, one correction per block, one per single step.
+   `SpeculativeRun::reconcile` checks this; a trial that fails it is void
+   by name. Proposed, accepted, rejected and committed positions are
    reported separately; verified positions are never counted as generated
    tokens.
 3. **Remote-execution integrity.**
@@ -180,10 +209,13 @@ quiet-machine and handshake rules apply unchanged.
 - **Validity**: a unit is void if its brackets differ by more than 1%, or
   if any of its trials fails gate 3, the relay gate or the stall rule.
   Void units are kept and never rerun. Only a gate 1 failure stops the run.
-- A within-unit cost-stability rule like BLOCK-TIME-2's rule 4 is **open
-  for review**. The arms here do different work by design, so coordinator
-  time is not expected to match between them. A candidate is worker
-  execution per verified position.
+- **No within-unit cost-stability gate** (decided at review). BLOCK-TIME-2's
+  rule 4 compared the same operation at two delays. These arms do
+  different work by design, with different acceptance lengths, block
+  shapes and expert sharing, so no invariance is established. Worker
+  execution per verified position, block widths and acceptance lengths are
+  recorded **as diagnostics**. A gate on any of them needs a demonstrated
+  invariance first.
 
 ### Statements, fixed in advance
 
@@ -208,24 +240,33 @@ For each workload, delay and width, with both repeats' units valid:
 
 The block-frame qualification covers frames of widths 1, 2, 4 and 8.
 Speculative blocks also run at widths 3, 5, 6 and 7, whose frame sizes fall
-between qualified sizes. Those widths are **interpolated, not qualified**,
-and the results say so. The largest qualified error (−96 µs per exchange at
-width 8 and 5 ms) is about 0.1 ms per exchange.
+between qualified sizes. Those geometries are **not qualified**, and the
+qualification says nothing about their individual accuracy. Every trial
+records each exchange's width. The report gives the share of exchanges and
+of bytes at each width, and the share at unqualified widths, per workload,
+delay and arm. If unqualified widths carry much of the traffic where an
+advantage is narrow, that limits the claim, and the report says so. For
+scale, the largest qualified error was −96 µs per exchange (width 8,
+5 ms).
 
 ### Budget (estimate, to be confirmed by the diagnostic)
 
-Per trial: prefill of a prompt of about 150 tokens at width 8, untimed
-(about 20 s at 0 ms, about 30 s at 20 ms), plus 64 generated ids. At
-20 ms, `sequential` takes about 40 s for those; speculative arms take
-less in proportion to acceptance. About 100 trials, plus brackets, comes
-to roughly **90 to 120 minutes**. The run can be held between units.
+Prompts are 84 to 256 tokens, prefilled untimed at width 8. From BLOCK-TIME
+timings that is about 11 to 47 s per trial at 20 ms, and less at 0 and
+5 ms. Generation is 64 new ids: at 20 ms `sequential` takes about 40 s;
+speculative arms take less in proportion to acceptance. Four workloads,
+three delays, four arms and two repeats make 96 trials, plus brackets:
+roughly **2 to 2.5 hours**, holdable between units. **Open:** #729
+generated 256 ids. Longer generation gives more acceptance data per
+prefill, but costs about four times as long.
 
 ## Blockers before any model run
 
 1. Seams 1 to 5 built, with tests, reviewed and merged through the normal
-   ruleset.
-2. Workload prompts recovered or written, and committed as text and ids.
-3. The within-unit cost-stability rule decided.
+   ruleset (1 to 3 are in #855, #856 and #857).
+2. ~~Workload prompts recovered~~ (done); their text decoded for the record.
+3. ~~The within-unit cost-stability rule~~ (decided: none; diagnostics
+   only). Generation length decided.
 4. One declared functional diagnostic (busy host allowed, never counted)
    showing gates 1 to 3 working end to end.
 5. Independent review of this protocol and the implementation, then a
