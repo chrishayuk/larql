@@ -34,15 +34,16 @@ const READ_CHUNK: usize = 64 * 1024;
 pub enum Stopped {
     /// The shutdown flag was set.
     Shutdown,
-    /// The audit log could not be written, so nothing more may be answered.
-    AuditFailed(String),
+    /// The service faulted (the audit log could not be written, or its gate missed an edited execution), so
+    /// nothing more may be answered.
+    Fault(String),
 }
 
 impl Stopped {
     pub fn reason(&self) -> String {
         match self {
             Stopped::Shutdown => "shutdown".into(),
-            Stopped::AuditFailed(why) => why.clone(),
+            Stopped::Fault(why) => why.clone(),
         }
     }
 }
@@ -103,7 +104,7 @@ pub fn serve_with(
 ) -> Stopped {
     loop {
         if let Some(why) = service.fatal() {
-            return Stopped::AuditFailed(why.to_string());
+            return Stopped::Fault(why.to_string());
         }
         if shutdown.load(Ordering::SeqCst) {
             return Stopped::Shutdown;
@@ -192,6 +193,7 @@ fn reject_waiting(service: &mut Service, listener: &UnixListener) {
         );
         let meta = Meta {
             seq: 0,
+            request_uid: Value::Null,
             budget: Value::Null,
             edited: false,
             counted: false,
@@ -218,22 +220,27 @@ fn converse(
     // socket); its request is still read and answered, and the write then fails.
     let _ = stream.set_nonblocking(false);
     let _ = stream.set_read_timeout(Some(POLL));
-    let _ = stream.set_write_timeout(Some(write_timeout));
+    let _ = stream.set_write_timeout(Some(POLL));
     let max_line = service.limits.max_request_bytes as usize;
     let mut pending: Vec<u8> = Vec::new();
+    // Bytes of `pending` already scanned for a newline: each byte is scanned once.
+    let mut scanned = 0;
     let mut chunk = vec![0u8; READ_CHUNK];
     loop {
-        while let Some(end) = pending.iter().position(|&b| b == b'\n') {
+        while let Some(at) = pending[scanned..].iter().position(|&b| b == b'\n') {
+            let end = scanned + at;
             let line: Vec<u8> = pending.drain(..=end).collect();
+            scanned = 0;
             let mut answer = service.handle_line(&line[..line.len() - 1]);
             answer.push(b'\n');
-            if stream.write_all(&answer).is_err() {
-                return "client_gone";
+            if let Err(how) = write_response(&mut stream, &answer, write_timeout, shutdown) {
+                return how;
             }
             if service.fatal().is_some() {
-                return "audit_failed";
+                return "service_fault";
             }
         }
+        scanned = pending.len();
         if pending.len() > max_line {
             // The rest of an over-long line cannot be told from the next request: answer and hang up.
             let mut answer = service.refuse_line(Failure::refused(format!(
@@ -241,7 +248,7 @@ fn converse(
                  the connection is closed"
             )));
             answer.push(b'\n');
-            let _ = stream.write_all(&answer);
+            let _ = write_response(&mut stream, &answer, write_timeout, shutdown);
             return "request_too_long";
         }
         if shutdown.load(Ordering::SeqCst) {
@@ -259,4 +266,36 @@ fn converse(
             Err(_) => return "socket_error",
         }
     }
+}
+
+/// Write a whole response within `deadline` of starting, a chunk at a time, giving up on shutdown between
+/// chunks. Each `write` waits at most [`POLL`], so neither a stalled client nor a signal waits longer.
+fn write_response(
+    stream: &mut UnixStream,
+    bytes: &[u8],
+    deadline: Duration,
+    shutdown: &AtomicBool,
+) -> Result<(), &'static str> {
+    let started = std::time::Instant::now();
+    let mut written = 0;
+    while written < bytes.len() {
+        if shutdown.load(Ordering::SeqCst) {
+            return Err("shutdown");
+        }
+        if started.elapsed() >= deadline {
+            return Err("client_gone");
+        }
+        let end = (written + READ_CHUNK).min(bytes.len());
+        match stream.write(&bytes[written..end]) {
+            Ok(0) => return Err("client_gone"),
+            Ok(n) => written += n,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    IoKind::WouldBlock | IoKind::TimedOut | IoKind::Interrupted
+                ) => {}
+            Err(_) => return Err("client_gone"),
+        }
+    }
+    Ok(())
 }

@@ -50,20 +50,23 @@ impl AuditLog {
         container_index_sha256: &str,
     ) -> Result<(Self, Resumed), String> {
         let exists = path.symlink_metadata().is_ok();
-        if exists && !resume {
-            return Err(format!(
-                "the audit log {} already exists; set \"resume\": true in the policy to continue it",
-                path.display()
-            ));
-        }
-        let resumed = if exists {
-            Self::read_existing(path, container_index_sha256)?
-        } else {
-            Resumed {
-                next_seq: 1,
-                budget_used: 0,
+        match (exists, resume) {
+            (true, false) => {
+                return Err(format!(
+                    "the audit log {} already exists; set \"resume\": true in the policy to continue it",
+                    path.display()
+                ))
             }
-        };
+            // A resume that finds no log would start from a fresh budget: refused.
+            (false, true) => {
+                return Err(format!(
+                    "the policy resumes the audit log {}, which does not exist; refusing to start from a fresh \
+                     budget",
+                    path.display()
+                ))
+            }
+            _ => {}
+        }
         let mut options = OpenOptions::new();
         options.append(true);
         if exists {
@@ -76,6 +79,23 @@ impl AuditLog {
         let file = options
             .open(path)
             .map_err(|e| format!("open the audit log {}: {e}", path.display()))?;
+        // One service per log, for the service's lifetime: the lock goes with the descriptor.
+        use std::os::fd::AsRawFd;
+        // SAFETY: `file` is an open descriptor.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            return Err(format!(
+                "the audit log {} is locked by another service",
+                path.display()
+            ));
+        }
+        let resumed = if exists {
+            Self::read_existing(path, container_index_sha256)?
+        } else {
+            Resumed {
+                next_seq: 1,
+                budget_used: 0,
+            }
+        };
         Ok((
             Self {
                 file,

@@ -519,3 +519,26 @@ fn capture_geometry_is_the_width_every_site_captures() {
         .capture_geometry(CaptureSite::Logits, &[])
         .is_err());
 }
+
+#[test]
+fn edits_in_effect_are_what_a_capture_records() {
+    let fx = Fixture::new();
+    let vlp = fx.patch("applied.vlp");
+    let mut s = fx.session();
+    assert_eq!(s.edits_in_effect().unwrap(), serde_json::json!([]));
+    run(&mut s, &format!("APPLY PATCH \"{}\";", q(&vlp)));
+    s.stage_weight_delta(TENSOR, 6, &[0], 2.0).unwrap();
+    let captured = s
+        .capture(&CaptureSpec {
+            site: CaptureSite::Logits,
+            layers: None,
+            prompt: PROMPT,
+            continuation: None,
+            positions: &CapturePositions::Last,
+        })
+        .unwrap();
+    let edits = s.edits_in_effect().unwrap();
+    assert_eq!(edits, captured.provenance["patches"]);
+    assert_eq!(edits.as_array().unwrap().len(), 2);
+    assert!(larql_lql::Session::new().edits_in_effect().is_err());
+}

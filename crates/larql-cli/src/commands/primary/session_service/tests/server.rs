@@ -166,7 +166,7 @@ fn a_fatal_audit_log_stops_the_loop() {
     svc.mark_fatal_for_test("disk full");
     let socket = BoundSocket::bind(&socket_path(&fx)).unwrap();
     let stopped = serve(&mut svc, &socket.listener, &AtomicBool::new(false));
-    assert_eq!(stopped, Stopped::AuditFailed("disk full".into()));
+    assert_eq!(stopped, Stopped::Fault("disk full".into()));
     assert_eq!(stopped.reason(), "disk full");
 }
 

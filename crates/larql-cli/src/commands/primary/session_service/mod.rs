@@ -75,7 +75,7 @@ pub fn run(args: ServeSessionArgs) -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("larql serve-session: stopped ({})", stopped.reason());
     match stopped {
         server::Stopped::Shutdown => Ok(()),
-        server::Stopped::AuditFailed(why) => Err(why.into()),
+        server::Stopped::Fault(why) => Err(why.into()),
     }
 }
 

@@ -10,6 +10,7 @@ mod operations;
 mod paths;
 mod policy;
 mod protocol;
+mod review;
 mod server;
 
 use std::path::{Path, PathBuf};

@@ -225,6 +225,16 @@ fn sigkill_during_an_admitted_execution_leaves_it_spent_on_resume() {
     let before = records(&d.log);
     let admitted = before.iter().find(|r| r["event"] == "admitted").unwrap();
     assert_eq!(admitted["id"], "long");
+    // The log alone says which request was charged, with what arguments, and under which patch set.
+    use sha2::{Digest, Sha256};
+    let vlp_sha = format!("{:x}", Sha256::digest(std::fs::read(&vlp).unwrap()));
+    assert_eq!(admitted["op"], "generate");
+    assert!(admitted["request_uid"].as_str().unwrap().contains('-'));
+    assert_eq!(admitted["args"]["n"], LONG_GENERATE);
+    assert_eq!(admitted["args_sha256"].as_str().unwrap().len(), 64);
+    assert_eq!(admitted["applied_vlp_sha256"], json!([vlp_sha]));
+    assert_eq!(admitted["weight_op_digests"].as_array().unwrap().len(), 1);
+    assert_eq!(admitted["budget_used"], 1);
     assert!(
         !before
             .iter()

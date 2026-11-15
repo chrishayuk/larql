@@ -195,12 +195,12 @@ fn a_link_planted_in_staging_is_removed_never_followed() {
     std::fs::write(&victim, "keep me").unwrap();
     let mut svc = fx.start(5);
     // At the staged copy's place, before an apply.
-    symlink(&victim, svc.staged_path("edit.vlp")).unwrap();
+    symlink(&victim, svc.upcoming_staged_path()).unwrap();
     ok(&mut svc, "apply_patch", json!({"path": "edit.vlp"}));
     assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
     // The staged copy is deleted when the patch is removed.
     ok(&mut svc, "remove_patch", json!({"path": "edit.vlp"}));
-    assert!(svc.staged_path("edit.vlp").symlink_metadata().is_err());
+    assert_eq!(std::fs::read_dir(svc.staging.path()).unwrap().count(), 0);
 
     // At a recording's staged place, between begin and save.
     ok(&mut svc, "begin_patch", json!({"path": "rec.vlp"}));
@@ -209,11 +209,11 @@ fn a_link_planted_in_staging_is_removed_never_followed() {
         "update_weights",
         json!({"tensor": TENSOR, "row": ROW, "cols": [0], "delta": 2.0}),
     );
-    symlink(&victim, svc.staged_path("rec.vlp")).unwrap();
+    symlink(&victim, &svc.recording.as_ref().unwrap().path).unwrap();
     ok(&mut svc, "save_patch", json!({}));
     assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
     assert!(fx.workdir().join("rec.vlp").is_file());
-    assert!(svc.staged_path("rec.vlp").symlink_metadata().is_err());
+    assert_eq!(std::fs::read_dir(svc.staging.path()).unwrap().count(), 0);
 }
 
 #[test]

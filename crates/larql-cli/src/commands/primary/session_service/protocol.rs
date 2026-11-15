@@ -124,7 +124,10 @@ impl ErrorKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Failure {
     pub kind: ErrorKind,
+    /// What the client is told.
     pub reason: String,
+    /// What the audit log records besides, when the client is told less (a reason withheld or generalised).
+    pub internal: Option<String>,
 }
 
 impl Failure {
@@ -132,6 +135,16 @@ impl Failure {
         Self {
             kind,
             reason: reason.into(),
+            internal: None,
+        }
+    }
+    /// A failure the client is told `public` about, while the log keeps the reason it replaces.
+    pub fn withheld(self, public: impl Into<String>) -> Self {
+        let internal = self.internal.unwrap_or(self.reason);
+        Self {
+            kind: self.kind,
+            reason: public.into(),
+            internal: Some(internal),
         }
     }
     pub fn invalid(reason: impl Into<String>) -> Self {
@@ -228,6 +241,8 @@ pub fn budget_value(limit: u64, used: u64) -> Value {
 /// What a response says besides its result or error.
 pub struct Meta {
     pub seq: u64,
+    /// The service's own identifier of the request (the client's `id` is only echoed).
+    pub request_uid: Value,
     pub budget: Value,
     pub edited: bool,
     pub counted: bool,
@@ -239,6 +254,7 @@ pub fn response(id: &Value, meta: &Meta, outcome: &Result<Value, Failure>) -> Ve
         "protocol": PROTOCOL,
         "id": id,
         "seq": meta.seq,
+        "request_uid": meta.request_uid,
         "ok": outcome.is_ok(),
         "budget": meta.budget,
         "edited": meta.edited,

@@ -22,6 +22,8 @@ const POSITION_WORDS: &str = "LAST, PROMPT_END, REPLY or ALL";
 /// What a capture's provenance says when the stored weights executed.
 const EXECUTES_STORED: &str = "stored";
 const DEFAULT_TOP: usize = 5;
+/// What a capture under `generate=` that LARQL refused after running is told.
+pub(super) const BEYOND_GENERATED: &str = "position is beyond the generated sequence";
 /// The bytes of one f32 element.
 const F32_BYTES: u64 = 4;
 /// At most this many bytes of `.npy` header precede a capture's body (a 1.0 header for up to three dims).
@@ -60,6 +62,17 @@ pub(super) fn capture_bound(
         limit,
         "max_response_bytes",
     )
+}
+
+/// What the client is told of a capture LARQL refused after running. Under `generate=`, the refusal can only
+/// be about where the model's own generation stopped, and its text would tell how many tokens it generated;
+/// it is generalised to one message that carries no length or token. Other reasons are told as they are.
+fn after_running(continuation: &Option<CaptureContinuation>, failure: Failure) -> Failure {
+    if matches!(continuation, Some(CaptureContinuation::Generate(_))) {
+        failure.withheld(BEYOND_GENERATED)
+    } else {
+        failure
+    }
 }
 
 fn no_repeats(what: &str, list: &[usize]) -> Result<(), Failure> {
@@ -222,6 +235,7 @@ impl Service {
             Op::Tensor => self.tensor(args(name, a)?),
             Op::Tokenize => {
                 let t: TokenizeArgs = args(name, a)?;
+                self.check_text("text", &t.text)?;
                 let ids = self
                     .session
                     .tokenize(&t.text, !t.raw)
@@ -230,10 +244,20 @@ impl Service {
             }
             Op::Decode => {
                 let d: DecodeArgs = args(name, a)?;
-                Ok(json!(self
-                    .session
-                    .decode(&d.ids)
-                    .map_err(Failure::failed)?))
+                over(
+                    "the ids to decode",
+                    d.ids.len() as u64,
+                    self.limits.max_sequence_tokens,
+                    "max_sequence_tokens",
+                )?;
+                let text = self.session.decode(&d.ids).map_err(Failure::failed)?;
+                over(
+                    "the decoded text's bytes",
+                    text.len() as u64,
+                    self.limits.max_text_bytes,
+                    "max_text_bytes",
+                )?;
+                Ok(json!(text))
             }
             Op::Capture => self.capture(args(name, a)?),
             Op::Infer => self.infer(args(name, a)?),
@@ -290,6 +314,16 @@ impl Service {
         ))
     }
 
+    /// Refuse a text longer than the policy allows, before it is tokenized.
+    fn check_text(&self, what: &str, text: &str) -> Result<(), Failure> {
+        over(
+            &format!("the bytes of `{what}`"),
+            text.len() as u64,
+            self.limits.max_text_bytes,
+            "max_text_bytes",
+        )
+    }
+
     /// Refuse a response whose arrays together exceed the limit, before they are sent.
     fn check_response_bytes(&self, bytes: u64) -> Result<(), Failure> {
         over(
@@ -308,7 +342,7 @@ impl Service {
             "shape": encoded.value["shape"],
             "bytes": encoded.bytes,
         }));
-        Ok(json!({"array": encoded.value, "provenance": provenance}))
+        Ok(json!({"array": encoded.value, "provenance": self.redact_provenance(provenance)}))
     }
 
     /// The most bytes a read of `name` with this selection could return, from the tensor listing: so a read
@@ -348,6 +382,7 @@ impl Service {
 
     /// The prompt's length in tokens, as INFER and CAPTURE encode it.
     fn prompt_tokens(&self, prompt: &str) -> Result<u64, Failure> {
+        self.check_text("prompt", prompt)?;
         Ok(self
             .session
             .tokenize(prompt, true)
@@ -411,6 +446,10 @@ impl Service {
         // Charged now, before it runs: whatever happens from here on (a refusal LARQL makes after running, a
         // response too large to send), an edited model has executed.
         let edited = self.gate()?;
+        #[cfg(test)]
+        if let Some(reason) = self.fail_capture_with.clone() {
+            return Err(after_running(&continuation, Failure::failed(reason)));
+        }
         let captured = self
             .session
             .capture(&CaptureSpec {
@@ -420,11 +459,11 @@ impl Service {
                 continuation: continuation.as_ref(),
                 positions: &positions,
             })
-            .map_err(Failure::failed)?;
-        // The capture's own record of what executed is the second witness: if it says the stored weights
-        // did not execute, the run is charged even if the session's report said otherwise.
+            .map_err(|e| after_running(&continuation, Failure::failed(e)))?;
+        // The capture's own record of what executed is the second witness. If it says edited weights ran
+        // when the gate said stored, the run has happened: it is charged, and the service stops.
         if !edited && captured.provenance["executes"] != EXECUTES_STORED {
-            self.charge()?;
+            return Err(self.charge_unpredicted());
         }
         let body: Vec<u8> = captured
             .values()
@@ -488,6 +527,7 @@ impl Service {
         let (reply, exact) = match continuation {
             None => (0, true),
             Some(CaptureContinuation::Text(t)) => {
+                self.check_text("continue_text", t)?;
                 let n = self
                     .session
                     .tokenize(t, false)
@@ -621,24 +661,18 @@ impl Service {
         }))
     }
 
-    /// The staging path for workdir name `name`, as LARQL is given it.
-    fn staging_path(&self, name: &str) -> Result<String, Failure> {
-        self.staged_path(name)
-            .to_str()
-            .map(str::to_string)
-            .ok_or_else(|| Failure::refused("the staging path is not valid UTF-8"))
-    }
-
     fn begin_patch(&mut self, p: PathArgs) -> Result<Value, Failure> {
         let name = self.workdir.name(&p.path)?;
         // Refuse a destination that could never be written now, rather than at SAVE PATCH, when the
         // recording could only be kept. (Checked again at the save: the workdir can change in between.)
         self.workdir.open_for_write(&name)?.discard();
-        let staged = self.staging_path(&name)?;
+        let staged = self.next_staged(&name)?;
         // LARQL creates the staged file at the save; nothing may be there before it.
-        self.staged.clear(&name)?;
-        self.session.begin_patch(&staged).map_err(Failure::failed)?;
-        self.recording = Some(name);
+        self.staged.clear(&staged.file)?;
+        self.session
+            .begin_patch(&staged.path)
+            .map_err(Failure::failed)?;
+        self.recording = Some(staged);
         Ok(Value::Null)
     }
 
@@ -696,7 +730,7 @@ impl Service {
     }
 
     fn save_patch(&mut self) -> Result<Value, Failure> {
-        let Some(name) = self.recording.clone() else {
+        let Some(recording) = self.recording.clone() else {
             // No recording this service began: LARQL's own refusal (none open, or the anonymous one, which
             // it never writes) is the answer.
             return match self.session.save_patch() {
@@ -706,10 +740,11 @@ impl Service {
                 )),
             };
         };
+        let name = recording.name.clone();
         // The destination is opened (and checked) before LARQL writes anything, so a refused destination
         // leaves the recording in the session.
         let mut target = self.workdir.open_for_write(&name)?;
-        if let Err(f) = self.staged.clear(&name) {
+        if let Err(f) = self.staged.clear(&recording.file) {
             target.discard();
             return Err(f);
         }
@@ -723,8 +758,10 @@ impl Service {
         self.recording = None;
         // Read back as confined as the workdir: a staged file that is not the regular, singly linked file
         // LARQL just wrote is refused.
-        let bytes = self.staged.read(&name, self.limits.max_patch_bytes);
-        let _ = self.staged.clear(&name);
+        let bytes = self
+            .staged
+            .read(&recording.file, self.limits.max_patch_bytes);
+        let _ = self.staged.clear(&recording.file);
         let bytes = bytes?;
         let delivered = {
             use std::io::Write;
@@ -751,31 +788,50 @@ impl Service {
 
     fn apply_patch(&mut self, p: PathArgs) -> Result<Value, Failure> {
         let name = self.workdir.name(&p.path)?;
-        let applied_now = self
-            .session
-            .patches()
-            .map_err(Failure::failed)?
-            .applied
-            .len() as u64;
         over(
             "the patches applied",
-            applied_now + 1,
+            self.applied.len() as u64 + 1,
             self.limits.max_applied_patches,
             "max_applied_patches",
         )?;
         let bytes = self.workdir.read(&name, self.limits.max_patch_bytes)?;
-        let staged = self.staging_path(&name)?;
-        self.staged.clear(&name)?;
-        {
+        over(
+            "the staged patch bytes",
+            self.staged_bytes() + bytes.len() as u64,
+            self.limits.max_staging_bytes,
+            "max_staging_bytes",
+        )?;
+        let mut copy = self.next_staged(&name)?;
+        copy.bytes = bytes.len() as u64;
+        self.staged.clear(&copy.file)?;
+        let written = {
             use std::io::Write;
-            let mut copy = self.staged.create_new(&name)?;
-            copy.write_all(&bytes)
-                .and_then(|_| copy.sync_all())
-                .map_err(Failure::failed)?;
-        }
-        let applied = self.session.apply_patch(&staged).map_err(Failure::failed)?;
+            self.staged.create_new(&copy.file).and_then(|mut f| {
+                f.write_all(&bytes)
+                    .and_then(|_| f.sync_all())
+                    .map_err(Failure::failed)
+            })
+        };
+        let applied = written.and_then(|_| {
+            self.session
+                .apply_patch(&copy.path)
+                .map_err(Failure::failed)
+        });
+        let applied = match applied {
+            Ok(applied) => applied,
+            Err(f) => {
+                // Not applied: the copy goes. (Told by its workdir name while it is known.)
+                let f = Failure {
+                    reason: f.reason.replace(&copy.path, &name),
+                    ..f
+                };
+                let _ = self.staged.clear(&copy.file);
+                return Err(f);
+            }
+        };
+        self.applied.push(copy);
         Ok(json!({
-            "path": applied.path,
+            "path": name,
             "sha256": applied.sha256,
             "operations": applied.operations,
             "inserts": applied.inserts,
@@ -787,23 +843,24 @@ impl Service {
     }
 
     fn remove_patch(&mut self, p: PathArgs) -> Result<Value, Failure> {
-        // A patch applied from the workdir is named by its staged copy; one carrying a description of its own
-        // is named by that description. Removal touches no file.
+        // A patch applied from the workdir is named by its staged copy (the earliest applied under that
+        // name); one carrying a description of its own is named by that description. Removal touches no
+        // file; afterwards every staged copy whose patch is gone is deleted, however it was named.
         let name = self.workdir.name(&p.path).ok();
-        let staged = name.as_ref().and_then(|n| self.staging_path(n).ok());
+        let staged = name.as_ref().and_then(|n| {
+            self.applied
+                .iter()
+                .find(|c| &c.name == n)
+                .map(|c| c.path.clone())
+        });
         let removed = match staged.map(|s| self.session.remove_patch(&s)) {
-            Some(Ok(removed)) => {
-                if let Some(n) = &name {
-                    // The staged copy is no longer applied.
-                    let _ = self.staged.clear(n);
-                }
-                removed
-            }
+            Some(Ok(removed)) => removed,
             _ => self
                 .session
                 .remove_patch(&p.path)
                 .map_err(Failure::failed)?,
         };
+        self.reconcile_staged();
         Ok(json!({
             "number": removed.number,
             "carried_weight_ops": removed.carried_weight_ops,
@@ -812,7 +869,7 @@ impl Service {
 
     fn patches(&mut self) -> Result<Value, Failure> {
         let report = self.session.patches().map_err(Failure::failed)?;
-        Ok(json!({
+        let mut listed = json!({
             "applied": report.applied.iter().map(|p| json!({
                 "name": p.name,
                 "path": p.path,
@@ -828,6 +885,15 @@ impl Service {
             "recording": report.recording.as_ref().map(|(path, operations)| json!({
                 "path": path, "operations": operations,
             })),
-        }))
+        });
+        if let Some(entries) = listed["applied"].as_array_mut() {
+            for entry in entries {
+                self.redact_patch_entry(entry);
+            }
+        }
+        if !listed["recording"].is_null() {
+            self.redact_patch_entry(&mut listed["recording"]);
+        }
+        Ok(listed)
     }
 }

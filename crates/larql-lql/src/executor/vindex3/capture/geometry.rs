@@ -69,3 +69,31 @@ impl Session {
         })
     }
 }
+
+impl Session {
+    /// Every edit in effect now, exactly as a capture's provenance records it under `patches`: each applied
+    /// patch with its file's path and SHA-256 and the digests of its weight ops, then the weight ops staged
+    /// directly in the session. A caller that must name the model state before running (the session service's
+    /// budget record) reads it here.
+    pub fn edits_in_effect(&self) -> Result<serde_json::Value, LqlError> {
+        let Backend::Vindex3 {
+            overlay,
+            patch_files,
+            ..
+        } = &self.backend
+        else {
+            return Err(not_v3(&self.backend, "the edits in effect"));
+        };
+        Ok(super::provenance::patches(overlay, patch_files))
+    }
+}
+
+/// The refusal for `what` asked of a session that is not bound to a VINDEX3 container.
+fn not_v3(backend: &Backend, what: &str) -> LqlError {
+    match backend {
+        Backend::None => LqlError::NoBackend,
+        _ => LqlError::Execution(format!(
+            "{what} belongs to a VINDEX3 binding, and this session is not bound to one"
+        )),
+    }
+}

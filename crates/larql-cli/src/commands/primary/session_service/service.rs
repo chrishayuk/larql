@@ -22,6 +22,13 @@ use crate::commands::primary::lql_session::parse_representation_source;
 pub const CONTAINER_LABEL: &str = "<bound container>";
 /// Argument strings longer than this are logged by digest.
 pub const MAX_LOGGED_STRING_BYTES: usize = 1024;
+/// A request's arguments, summarised, longer than this as JSON are logged by digest and length alone.
+pub const MAX_LOGGED_ARGS_BYTES: usize = 4096;
+/// What the client is told in place of a LARQL reason that names a path the client must not learn about.
+pub const WITHHELD_PATH_REASON: &str =
+    "LARQL refused the request; its reason names a path and is withheld (it is in the audit log)";
+/// The bytes of the instance identifier the service draws at start.
+const INSTANCE_ID_BYTES: usize = 8;
 /// The prefix of the service's private staging directory.
 const STAGING_PREFIX: &str = "larql-session-";
 /// The container file whose digest identifies the container in the audit log.
@@ -38,11 +45,29 @@ pub(super) struct Turn {
     pub counted: bool,
     /// The arrays returned: their digests, dtypes and shapes.
     pub arrays: Vec<Value>,
-    /// The request's id and op, for the `admitted` record.
+    /// The request's id (the client's, echoed) and op, for the `admitted` record.
     pub id: Value,
     pub op: Value,
+    /// The service's own identifier of the request: unique for the service's lifetime and across resumes.
+    pub request_uid: Value,
+    /// The arguments as the log records them, and the SHA-256 of the arguments as sent.
+    pub args: Value,
+    pub args_sha256: Value,
+    /// The client's strings that look like paths: a LARQL reason that echoes one is withheld.
+    pub path_like: Vec<String>,
     /// The sequence number of the `admitted` record, when the request was charged.
     pub admitted: Option<u64>,
+}
+
+/// A copy of a workdir file in the private staging directory, under a name unique to the service's lifetime.
+#[derive(Debug, Clone)]
+pub(super) struct StagedCopy {
+    /// The workdir name the client used.
+    pub name: String,
+    /// The staged file's name in the staging directory, and its path as LARQL was given it.
+    pub file: String,
+    pub path: String,
+    pub bytes: u64,
 }
 
 pub struct Service {
@@ -56,12 +81,19 @@ pub struct Service {
     pub(super) staging: tempfile::TempDir,
     /// The same directory, for confined opens.
     pub(super) staged: Workdir,
-    /// The staging directory's path, with a trailing separator: removed from everything sent back.
+    /// The staging directory's path, with a trailing separator.
     pub(super) staging_prefix: String,
-    /// The container's paths as the service knows them, longest first: replaced in everything sent back.
+    /// The container's paths as the service knows them: a LARQL reason naming one is withheld.
     container_texts: Vec<String>,
-    /// The workdir name of the open recording, if one was begun.
-    pub(super) recording: Option<String>,
+    /// The open recording: the workdir name and the staged file LARQL saves into.
+    pub(super) recording: Option<StagedCopy>,
+    /// The staged copies of the patches applied now, in the order applied.
+    pub(super) applied: Vec<StagedCopy>,
+    /// Staged file names are `<counter>.vlp`: never reused in the service's lifetime.
+    pub(super) staged_counter: u64,
+    /// Drawn at start: with a counter, the request identifiers.
+    instance_id: String,
+    requests: u64,
     pub(super) turn: Turn,
     audit: AuditLog,
     container: PathBuf,
@@ -73,6 +105,22 @@ pub struct Service {
     /// Test hook: treat every site as one the plan gives no width.
     #[cfg(test)]
     pub(super) forget_capture_width: bool,
+    /// Test hook: the edited predicate always answers "not edited".
+    #[cfg(test)]
+    pub(super) blind_predicate: bool,
+    /// Test hook: a capture fails, after admission, with this LARQL reason instead of running.
+    #[cfg(test)]
+    pub(super) fail_capture_with: Option<String>,
+}
+
+/// Eight random bytes from the OS, as hex.
+fn instance_id() -> Result<String, String> {
+    use std::io::Read;
+    let mut bytes = [0u8; INSTANCE_ID_BYTES];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut bytes))
+        .map_err(|e| format!("draw the instance identifier: {e}"))?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 fn inside(path: &Path, dir: &Path) -> bool {
@@ -144,13 +192,9 @@ impl Service {
         let staging_path = canonical_dir("staging directory", staging.path())?;
         let staging_prefix = format!("{}{}", staging_path.display(), std::path::MAIN_SEPARATOR);
         let staged = Workdir::open(&staging_path)?;
-        let mut container_texts: Vec<String> = [container.clone(), policy.container.clone()]
-            .iter()
-            .map(|p| p.display().to_string())
-            .filter(|t| !t.is_empty())
-            .collect();
-        container_texts.sort_by_key(|t| std::cmp::Reverse(t.len()));
-        container_texts.dedup();
+        // LARQL is given the canonical path, so that is the one its text can name.
+        let container_texts = vec![container.display().to_string()];
+        let instance_id = instance_id()?;
 
         let index = std::fs::read(container.join(INDEX_JSON)).map_err(|e| {
             format!(
@@ -176,6 +220,10 @@ impl Service {
             staging_prefix,
             container_texts,
             recording: None,
+            applied: Vec::new(),
+            staged_counter: 0,
+            instance_id,
+            requests: 0,
             turn: Turn::default(),
             audit,
             container,
@@ -184,6 +232,10 @@ impl Service {
             require_capture_bound: policy.require_capture_bound,
             #[cfg(test)]
             forget_capture_width: false,
+            #[cfg(test)]
+            blind_predicate: false,
+            #[cfg(test)]
+            fail_capture_with: None,
         };
         let env: serde_json::Map<String, Value> = std::env::vars()
             .filter(|(k, _)| k.starts_with(RECORDED_ENV_PREFIX))
@@ -193,6 +245,7 @@ impl Service {
             "protocol": PROTOCOL,
             "larql_version": env!("CARGO_PKG_VERSION"),
             "pid": std::process::id(),
+            "instance_id": service.instance_id,
             "policy_sha256": policy_sha256,
             "container": service.container.display().to_string(),
             "container_index_sha256": service.container_index_sha256,
@@ -245,54 +298,90 @@ impl Service {
 
     /// Answer one request line (without its newline) and append its audit record.
     pub fn handle_line(&mut self, line: &[u8]) -> Vec<u8> {
-        self.turn = Turn::default();
-        let (id, op, args, outcome) = match parse_request(line) {
+        self.begin_turn();
+        let (id, op, outcome) = match parse_request(line) {
             Err((id, failure)) => {
                 // What could not be read as a request is logged by digest, never verbatim.
-                let digest = json!({
+                self.turn.args = json!({
                     "unparsed_line_sha256": format!("{:x}", Sha256::digest(line)),
                     "bytes": line.len(),
                 });
-                (id, Value::Null, digest, Err(failure))
+                (id, Value::Null, Err(failure))
             }
             Ok(request) => {
                 self.turn.id = request.id.clone();
                 self.turn.op = Value::String(request.op.clone());
-                let outcome = match &self.fatal {
-                    Some(why) => Err(Failure::failed(why.clone())),
-                    None => self.dispatch(&request.op, &request.args),
+                let raw = serde_json::to_vec(&request.args).unwrap_or_default();
+                self.turn.args_sha256 = json!(format!("{:x}", Sha256::digest(&raw)));
+                self.turn.args = logged_args(&request.args, raw.len());
+                self.turn.path_like = path_like_strings(&request.args);
+                let outcome = if let Some(why) = &self.fatal {
+                    Err(Failure::failed(why.clone()))
+                } else if self.audit.next_seq() > self.limits.max_audit_records {
+                    Err(Failure::refused(format!(
+                        "the audit log holds the policy's max_audit_records ({}); no more requests are answered",
+                        self.limits.max_audit_records
+                    )))
+                } else {
+                    self.dispatch(&request.op, &request.args)
                 };
-                (
-                    request.id,
-                    Value::String(request.op),
-                    summarise_args(&request.args),
-                    outcome,
-                )
+                (request.id, Value::String(request.op), outcome)
             }
         };
-        self.finish(id, op, args, outcome)
+        self.finish(id, op, outcome)
+    }
+
+    fn begin_turn(&mut self) {
+        self.requests += 1;
+        self.turn = Turn {
+            request_uid: json!(format!("{}-{}", self.instance_id, self.requests)),
+            ..Turn::default()
+        };
     }
 
     /// Answer a line that could not be read as a request at all (one longer than the policy allows).
     pub fn refuse_line(&mut self, failure: Failure) -> Vec<u8> {
-        self.turn = Turn::default();
-        self.finish(Value::Null, Value::Null, Value::Null, Err(failure))
+        self.begin_turn();
+        self.finish(Value::Null, Value::Null, Err(failure))
+    }
+
+    /// What the client is told of a failure. A LARQL reason (`failed`) that names the container, the
+    /// staging directory, or echoes a path-like string the client sent is withheld whole: replacing only the
+    /// path would let the client confirm a guess. A staged copy's path is told as its workdir name.
+    fn outward(&self, failure: Failure) -> Failure {
+        if failure.kind != ErrorKind::Failed {
+            return failure;
+        }
+        let echoes = self
+            .container_texts
+            .iter()
+            .chain(self.turn.path_like.iter())
+            .any(|p| failure.reason.contains(p.as_str()));
+        if echoes {
+            return failure.withheld(WITHHELD_PATH_REASON);
+        }
+        // The service's own staged paths (random, never sent) are told as the workdir names they stand for.
+        let mut told = failure.reason.clone();
+        for copy in self.applied.iter().chain(self.recording.iter()) {
+            told = told.replace(&copy.path, &copy.name);
+        }
+        let raw_staging = self.staging.path().display().to_string();
+        if told.contains(&self.staging_prefix) || told.contains(&raw_staging) {
+            return failure.withheld(WITHHELD_PATH_REASON);
+        }
+        if told == failure.reason {
+            failure
+        } else {
+            failure.withheld(told)
+        }
     }
 
     /// The response to a request, its audit record appended.
-    fn finish(
-        &mut self,
-        id: Value,
-        op: Value,
-        args: Value,
-        outcome: Result<Value, Failure>,
-    ) -> Vec<u8> {
-        let outcome = outcome.map(|v| self.unstage(v)).map_err(|f| Failure {
-            reason: self.unstage_text(&f.reason),
-            ..f
-        });
+    fn finish(&mut self, id: Value, op: Value, outcome: Result<Value, Failure>) -> Vec<u8> {
+        let outcome = outcome.map_err(|f| self.outward(f));
         let meta = Meta {
             seq: self.audit.next_seq(),
+            request_uid: self.turn.request_uid.clone(),
             budget: budget_value(self.budget_limit, self.budget_used),
             edited: self.turn.edited,
             counted: self.turn.counted,
@@ -300,10 +389,14 @@ impl Service {
         let line = response(&id, &meta, &outcome);
         let record = json!({
             "id": id,
+            "request_uid": self.turn.request_uid,
             "op": op,
-            "args": args,
+            "args": self.turn.args,
+            "args_sha256": self.turn.args_sha256,
             "ok": outcome.is_ok(),
-            "error": outcome.as_ref().err().map(|f| json!({"kind": f.kind.label(), "reason": f.reason})),
+            "error": outcome.as_ref().err().map(|f| json!({
+                "kind": f.kind.label(), "reason": f.reason, "internal": f.internal,
+            })),
             "edited": self.turn.edited,
             "counted": self.turn.counted,
             "admitted_seq": self.turn.admitted,
@@ -360,6 +453,10 @@ impl Service {
     /// Whether what the session executes now is not the stored model: a patch applied, a weight op staged, or
     /// an override in the session overlay.
     pub(super) fn model_is_edited(&self) -> Result<bool, Failure> {
+        #[cfg(test)]
+        if self.blind_predicate {
+            return Ok(false);
+        }
         let pending = self.session.has_pending_edits().map_err(Failure::failed)?;
         let report = self.session.patches().map_err(Failure::failed)?;
         Ok(pending || !report.applied.is_empty() || report.weight_ops > 0)
@@ -389,8 +486,9 @@ impl Service {
     }
 
     /// Charge one execution of an edited model, or refuse it when the budget is spent. The charge is made
-    /// durable first: an `admitted` record carrying the budget after it is appended and synced, and only then
-    /// may the model run. A resumed log recounts the budget from these records.
+    /// durable first: an `admitted` record (the request, its arguments' digest and summary, and the edits in
+    /// effect with their digest) carrying the budget after it is appended and synced, and only then may the
+    /// model run. A resumed log recounts the budget from these records.
     pub(super) fn charge(&mut self) -> Result<(), Failure> {
         self.turn.edited = true;
         if self.turn.counted {
@@ -399,11 +497,59 @@ impl Service {
         if self.remaining() == 0 {
             return Err(self.exhausted());
         }
+        self.admit(false)
+    }
+
+    /// An execution ran edited weights that the predicate called stored: it is charged whatever the budget
+    /// (which may go past its limit, and is recorded so), and the service stops answering, since its gate
+    /// cannot be trusted.
+    pub(super) fn charge_unpredicted(&mut self) -> Failure {
+        self.turn.edited = true;
+        let why = format!(
+            "request {} executed edited weights the service's gate called stored; it is charged, and the \
+             service stops answering",
+            self.turn.request_uid
+        );
+        if !self.turn.counted {
+            if let Err(f) = self.admit(true) {
+                return f;
+            }
+        }
+        self.fatal = Some(why.clone());
+        Failure::failed(why)
+    }
+
+    fn admit(&mut self, unpredicted: bool) -> Result<(), Failure> {
         let used = self.budget_used + 1;
+        let edits = self.session.edits_in_effect().map_err(Failure::failed)?;
+        let edits_bytes = serde_json::to_vec(&edits).unwrap_or_default();
+        let applied_vlp_sha256: Vec<Value> = edits
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.get("sha256").filter(|s| s.is_string()).cloned())
+            .collect();
+        let weight_op_digests: Vec<Value> = edits
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|e| e["weight_ops"].as_array().cloned().unwrap_or_default())
+            .map(|op| op["digest"].clone())
+            .collect();
         let record = json!({
+            "request_uid": self.turn.request_uid,
             "id": self.turn.id,
             "op": self.turn.op,
+            "args_sha256": self.turn.args_sha256,
+            "args": self.turn.args,
+            "edits_sha256": format!("{:x}", Sha256::digest(&edits_bytes)),
+            "applied_vlp_sha256": applied_vlp_sha256,
+            "weight_op_digests": weight_op_digests,
+            "edits": edits,
+            "budget_limit": self.budget_limit,
             "budget_remaining": self.budget_limit.saturating_sub(used),
+            "overdrawn": used > self.budget_limit,
+            "unpredicted": unpredicted,
         });
         match self.audit.append(EVENT_ADMITTED, used, record) {
             Ok(seq) => self.turn.admitted = Some(seq),
@@ -418,37 +564,117 @@ impl Service {
         Ok(())
     }
 
-    /// The staging path of a workdir name.
-    pub(super) fn staged_path(&self, name: &str) -> PathBuf {
-        self.staging.path().join(name)
+    /// A fresh staged file for workdir name `name`: its name in staging and its path as LARQL is given it.
+    pub(super) fn next_staged(&mut self, name: &str) -> Result<StagedCopy, Failure> {
+        self.staged_counter += 1;
+        let file = format!("{}.vlp", self.staged_counter);
+        let path = self
+            .staging
+            .path()
+            .join(&file)
+            .to_str()
+            .map(str::to_string)
+            .ok_or_else(|| Failure::refused("the staging path is not valid UTF-8"))?;
+        Ok(StagedCopy {
+            name: name.to_string(),
+            file,
+            path,
+            bytes: 0,
+        })
     }
 
-    /// `text` with every mention of the staging directory removed, so a staged copy reads as its workdir
-    /// name, and the container's path replaced by [`CONTAINER_LABEL`].
-    pub(super) fn unstage_text(&self, text: &str) -> String {
-        let raw = format!(
-            "{}{}",
-            self.staging.path().display(),
-            std::path::MAIN_SEPARATOR
-        );
-        let mut out = text.replace(&self.staging_prefix, "").replace(&raw, "");
-        for path in &self.container_texts {
-            out = out.replace(path.as_str(), CONTAINER_LABEL);
-        }
-        out
+    /// The staged file name the next copy will get (for tests that plant something there).
+    #[cfg(test)]
+    pub(super) fn upcoming_staged_path(&self) -> PathBuf {
+        self.staging
+            .path()
+            .join(format!("{}.vlp", self.staged_counter + 1))
     }
 
-    fn unstage(&self, value: Value) -> Value {
-        match value {
-            Value::String(s) => Value::String(self.unstage_text(&s)),
-            Value::Array(items) => {
-                Value::Array(items.into_iter().map(|v| self.unstage(v)).collect())
-            }
-            Value::Object(map) => {
-                Value::Object(map.into_iter().map(|(k, v)| (k, self.unstage(v))).collect())
-            }
-            other => other,
+    /// The bytes the staged copies of applied patches hold.
+    pub(super) fn staged_bytes(&self) -> u64 {
+        self.applied.iter().map(|c| c.bytes).sum()
+    }
+
+    /// Delete every staged copy whose patch is no longer applied.
+    pub(super) fn reconcile_staged(&mut self) {
+        let live: Vec<String> = self
+            .session
+            .patches()
+            .map(|r| r.applied.into_iter().filter_map(|p| p.path).collect())
+            .unwrap_or_default();
+        let (keep, gone): (Vec<StagedCopy>, Vec<StagedCopy>) = std::mem::take(&mut self.applied)
+            .into_iter()
+            .partition(|c| live.contains(&c.path));
+        for copy in gone {
+            let _ = self.staged.clear(&copy.file);
         }
+        self.applied = keep;
+    }
+
+    /// The workdir name a staged path stands for, if it is one.
+    fn name_of(&self, text: &str) -> Option<String> {
+        self.applied
+            .iter()
+            .chain(self.recording.iter())
+            .find(|c| c.path == text)
+            .map(|c| c.name.clone())
+    }
+
+    /// A patch entry's `path` and `description` (and `name`), told as the workdir name when they are a
+    /// staged path.
+    pub(super) fn redact_patch_entry(&self, entry: &mut Value) {
+        for key in ["path", "description", "name"] {
+            if let Some(text) = entry.get(key).and_then(Value::as_str) {
+                if let Some(name) = self.name_of(text) {
+                    entry[key] = json!(name);
+                }
+            }
+        }
+    }
+
+    /// A provenance record as the client is told it: the container's path replaced by [`CONTAINER_LABEL`],
+    /// each patch's staged path by its workdir name. Nothing else is rewritten: the arrays and the strings
+    /// the client sent are not searched.
+    pub(super) fn redact_provenance(&self, mut provenance: Value) -> Value {
+        if provenance.get("container").is_some() {
+            provenance["container"] = json!(CONTAINER_LABEL);
+        }
+        if let Some(patches) = provenance.get_mut("patches").and_then(Value::as_array_mut) {
+            for entry in patches {
+                self.redact_patch_entry(entry);
+            }
+        }
+        provenance
+    }
+}
+
+/// The client's strings that could name an absolute path (the only form a container's path takes in LARQL's
+/// text): a LARQL reason that repeats one is withheld, whether or not it names the container.
+fn path_like_strings(args: &Value) -> Vec<String> {
+    match args {
+        Value::String(s) if s.starts_with('/') || s.starts_with('~') || s.contains("/..") => {
+            vec![s.clone()]
+        }
+        Value::Array(items) => items.iter().flat_map(path_like_strings).collect(),
+        Value::Object(map) => map
+            .iter()
+            .filter(|(k, _)| k.as_str() != "npy_base64")
+            .flat_map(|(_, v)| path_like_strings(v))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The arguments as the log records them: summarised, or by digest and length alone when even the summary is
+/// long.
+fn logged_args(args: &Value, raw_bytes: usize) -> Value {
+    let summary = summarise_args(args);
+    let summary_bytes = serde_json::to_vec(&summary).map(|v| v.len()).unwrap_or(0);
+    if summary_bytes > MAX_LOGGED_ARGS_BYTES {
+        json!({"summary_bytes": summary_bytes, "bytes": raw_bytes, "logged": "by digest (args_sha256)"})
+    } else {
+        summary
     }
 }
 

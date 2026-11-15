@@ -17,8 +17,18 @@ pub const POLICY_VERSION: &str = "larql-session-policy/v1";
 const MIB: u64 = 1 << 20;
 /// Default: the largest total of array bytes one response may carry.
 pub const DEFAULT_MAX_RESPONSE_BYTES: u64 = 256 * MIB;
-/// Default: the longest request line accepted, in bytes.
-pub const DEFAULT_MAX_REQUEST_BYTES: u64 = 64 * MIB;
+/// Default: the longest request line accepted, in bytes. The largest request is an `add_low_rank` operand:
+/// a float64 `rows x rank` array, base64 (4/3 larger). Over Gemma 3 4B's largest tensor (262,208 rows, the
+/// embedding and head) one rank is 2.8 MB of base64, so 16 MiB carries a rank-5 operand there and a rank-200
+/// one over a 10,240-row FFN tensor.
+pub const DEFAULT_MAX_REQUEST_BYTES: u64 = 16 * MIB;
+/// Default: the longest text a request may carry (a prompt, a continuation, text to tokenize), and the
+/// longest text `decode` returns, in bytes.
+pub const DEFAULT_MAX_TEXT_BYTES: u64 = 64 * 1024;
+/// Default: the bytes the service's staged patch copies may hold at once.
+pub const DEFAULT_MAX_STAGING_BYTES: u64 = 256 * MIB;
+/// Default: the most records the audit log holds; past it, every request is refused.
+pub const DEFAULT_MAX_AUDIT_RECORDS: u64 = 10_000_000;
 /// Default: the most tokens a `generate`, or a capture's `generate`, may produce.
 pub const DEFAULT_MAX_GENERATE_TOKENS: u64 = 256;
 /// Default: the most positions one capture may return.
@@ -94,6 +104,9 @@ pub struct Limits {
     pub max_patch_bytes: u64,
     pub max_infer_top: u64,
     pub max_applied_patches: u64,
+    pub max_text_bytes: u64,
+    pub max_staging_bytes: u64,
+    pub max_audit_records: u64,
 }
 
 impl Default for Limits {
@@ -108,6 +121,9 @@ impl Default for Limits {
             max_patch_bytes: DEFAULT_MAX_PATCH_BYTES,
             max_infer_top: DEFAULT_MAX_INFER_TOP,
             max_applied_patches: DEFAULT_MAX_APPLIED_PATCHES,
+            max_text_bytes: DEFAULT_MAX_TEXT_BYTES,
+            max_staging_bytes: DEFAULT_MAX_STAGING_BYTES,
+            max_audit_records: DEFAULT_MAX_AUDIT_RECORDS,
         }
     }
 }
