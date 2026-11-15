@@ -77,10 +77,10 @@ logits = s.capture("logits", "The capital of France is").array   # [1, vocab]
 row = s.tensor("target.embedding@BF16::weight", rows=[9079])
 row.provenance["index_sha256"]
 
-a = np.full((64, 1), 0.125)          # rows x rank
-b = np.ones((1, 3))                  # rank x len(columns)
+a = np.full((64, 2), 0.125)          # rows x rank
+b = np.ones((2, 3))                  # rank x len(columns)
 with larql.recording(s, "edit.vlp"):
-    s.add_low_rank("1.mlp.down_proj.weight", a, b, [8, 9, 33], numerics="f64-seq-rne1/v1")
+    s.add_low_rank("1.self_attn.o_proj.weight", a, b, [8, 9, 10], numerics="f64-seq-rne1/v1")
 ```
 
 - **Provenance** is the dict the statement's sidecar holds, with `statement`
