@@ -5,10 +5,11 @@
 //! the measure arm — is library code in
 //! [`larql_vindex::format::vindex3::opplan::exec::metal_lowered`]. What
 //! stays here is front-end: argument handling and output (`run`), the
-//! per-layer and teacher-forced dumps, and prompt-lookup speculation.
+//! per-layer and teacher-forced dumps, and the speculative decode loop.
+//! Its policy (prompt lookup, accepted prefix, stop handling) is shared,
+//! in [`larql_inference::speculation`].
 
 mod dump;
-mod prompt_lookup;
 mod run;
 mod teacher_force;
 #[cfg(test)]

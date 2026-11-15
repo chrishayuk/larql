@@ -72,6 +72,7 @@ pub mod prompt;
 pub mod residual;
 pub mod residual_diff;
 pub mod row_major;
+pub mod speculation;
 pub mod speech;
 pub mod ternary;
 pub mod test_utils;

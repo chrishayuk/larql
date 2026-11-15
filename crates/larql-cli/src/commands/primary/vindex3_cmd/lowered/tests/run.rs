@@ -30,10 +30,9 @@ fn a_bank_path_is_refused_with_a_clear_message() {
 // ── `--stop-at-eos` (#752) on the lowered drivers ────────────────────
 //
 // Device-free: the stop set is resolved (or refused) before any Metal
-// state, and the generated-ids contract is a pure function both lowered
-// loops end with, so neither needs a GPU.
-
-use std::collections::HashSet;
+// state, so no GPU is needed. The generated-ids contract both lowered
+// loops end with, `truncate_at_stop`, is tested where it now lives, in
+// `larql_inference::speculation`.
 
 use clap::Parser;
 use larql_vindex::format::vindex3::fixtures::{dense_f32_model, encode_fixture_container};
@@ -42,26 +41,7 @@ use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
 use super::super::super::plugins::Plugins;
 use super::super::super::prepare::{lowered_formats, prepare, DEFAULT_COMPONENT};
 use super::super::super::{ExecArgs, ExecBackend};
-use super::super::run::{run_lowered, truncate_at_stop};
-
-#[test]
-fn the_generated_ids_end_at_the_first_stop_which_is_kept() {
-    let stop = HashSet::from([7]);
-    let mut out = vec![1, 2, 7, 3, 7];
-    truncate_at_stop(&mut out, &stop, 10);
-    assert_eq!(out, vec![1, 2, 7]);
-    // The count still bounds a run that stops later than it.
-    let mut out = vec![1, 2, 3, 7];
-    truncate_at_stop(&mut out, &stop, 2);
-    assert_eq!(out, vec![1, 2]);
-    // No stop in the ids, or no stop at all: only the count applies.
-    let mut out = vec![1, 2, 3];
-    truncate_at_stop(&mut out, &stop, 10);
-    assert_eq!(out, vec![1, 2, 3]);
-    let mut out = vec![7, 7];
-    truncate_at_stop(&mut out, &HashSet::new(), 1);
-    assert_eq!(out, vec![7]);
-}
+use super::super::run::run_lowered;
 
 #[derive(Parser)]
 struct ExecCli {
