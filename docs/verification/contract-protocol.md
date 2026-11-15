@@ -173,7 +173,7 @@ There's no `source`.
 
 | Contract | What it measures | What `violated` means |
 |---|---|---|
-| `STRUCTURED_REMOVE_DIRECTION` | Every element of each edited tensor equals the BF16 result of the declared `remove_direction` recomputed on exact rationals (declared columns), or the base (all other elements), and every other BF16 tensor equals the base | Some element differs. `offending` names the tensor and the first element, with the expected and found bits |
+| `STRUCTURED_REMOVE_DIRECTION` | Every element of each edited tensor equals the BF16 result of the declared `remove_direction` recomputed on exact rationals (declared columns), or the base (all other elements), and every other BF16 tensor equals the base | Some element differs. `offending` names the tensor and the first element, with the expected and found bits, worst first, and sums to `violations`. Past ten entries, the rest are folded into one |
 
 **Before judging anything, the verifier checks** that the patch holds only `structured_weight` operations of an implemented profile (`f64-seq-rne1/v1`, `f64-seq-rne2/v1`), that each op's binding matches the base (the SHA-256 of its `index.json` and the representation's payload digest), that operands and columns fit the tensor, and that no two ops declare the same column. Otherwise the answer is `could_not_evaluate`. Both containers are read by the validating reader, and all three inputs are digested again afterwards: a change during the evaluation is `could_not_evaluate`.
 
