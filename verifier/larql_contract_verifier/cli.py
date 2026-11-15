@@ -1,6 +1,7 @@
 """`larql-verifier contract`, `operator`, `patch`, `ledger` and `pack`: protocols `larql-verify-contract/1`,
 `larql-verify-operator/1`, `larql-verify-patch/1` (docs/verification/contract-protocol.md), `larql-verify-ledger/1`
-(`WEIGHT_PATCHES_V4`, docs/verification/weight-patches-v4.md §7) and `larql-verify-pack/1` (`Q8_0_PACK_DERIVATION`,
+(`WEIGHT_PATCHES_V4`, docs/verification/weight-patches-v4.md §7; `WEIGHT_PATCHES_V2` and `WEIGHT_PATCHES_V3`,
+docs/verification/weight-patches-v2-v3.md §7) and `larql-verify-pack/1` (`Q8_0_PACK_DERIVATION`,
 docs/verification/q8-0-pack-derivation.md).
 
 One JSON object on stdout, and nothing else there. Exit 0 whenever the contract was judged or could not be evaluated. A
@@ -21,8 +22,8 @@ from pathlib import Path
 import refcheck
 
 from . import __version__, checkpoint
-from .contracts import (CONTRACTS, OPERATOR_CONTRACTS, execution_residency, q8_0_gemv, q8_0_pack, q8_0_t2,
-                        structured_patch, weight_patches_v4)
+from .contracts import (CONTRACTS, LEDGER_CONTRACTS, OPERATOR_CONTRACTS, execution_residency, q8_0_gemv, q8_0_pack,
+                        q8_0_t2, structured_patch)
 
 SCHEMA = "larql-verify-contract/1"
 OPERATOR_SCHEMA = "larql-verify-operator/1"
@@ -155,23 +156,25 @@ def judge_patch(contract: str, patch: str, base: str, container: str) -> dict:
 
 
 def evaluate_ledger(contract: str, base: str, container: str, patch: str | None = None) -> dict:
-    """`ledger`: does `container` hold what its `weight-patches/v4` ledger declares of `base`? Two verdicts, numerical
-    satisfaction and ledger integrity and provenance, recomputed from the base and the recorded ops, never from the
-    ledger's own hashes or counts. `verifier` identifies this program; `engine_reported` is what the ledger says about
-    the engine that wrote it."""
-    out = {"schema": LEDGER_SCHEMA, "contract": contract, "contract_statement": weight_patches_v4.STATEMENT,
+    """`ledger`: does `container` hold what its weight-patch ledger declares of `base`? The contract names the one
+    ledger schema it judges (`LEDGER_CONTRACTS`). Two verdicts, numerical satisfaction and ledger integrity and
+    provenance, recomputed from the base and the recorded ops, never from the ledger's own hashes or counts.
+    `verifier` identifies this program; `engine_reported` is what the ledger says about the engine that wrote it."""
+    judge = LEDGER_CONTRACTS.get(contract)
+    out = {"schema": LEDGER_SCHEMA, "contract": contract,
+           "contract_statement": judge.STATEMENTS[contract] if judge else "",
            "evidence_kind": "numerical_measurement", "status": None, "violations": 0,
            "base": {"path": base, "sha256": None}, "container": {"path": container, "sha256": None},
            "measurements": [], "offending": [], "reasons": [],
            "verifier": {"name": "larql-contract-verifier", "version": __version__, "refcheck_commit": REFCHECK_COMMIT,
                         "code_sha256": code_sha256()}}
-    if contract != weight_patches_v4.CONTRACT:
-        return q8_0_t2.could_not(out, f"unknown contract {contract!r}; this verifier knows {[weight_patches_v4.CONTRACT]}")
+    if judge is None:
+        return q8_0_t2.could_not(out, f"unknown contract {contract!r}; this verifier knows {sorted(LEDGER_CONTRACTS)}")
     if not os.path.isdir(base) or not os.path.isdir(container):
         return q8_0_t2.could_not(out, "the base and the container must be directories")
     patch_bytes, patch_problem = None, None
     if patch is not None:
-        # Optional: the `.vlp` the container was compiled from, for the tensors a v4 ledger records only by result bits.
+        # Optional: the `.vlp` the container was compiled from, for the tensors a ledger records only by result bits.
         out["patch"] = {"path": patch, "sha256": None}
         # A patch that cannot be read is not a reason to judge nothing: the ledger is judged without it.
         if os.path.islink(patch):
@@ -185,7 +188,7 @@ def evaluate_ledger(contract: str, base: str, container: str, patch: str | None 
                 out["patch"]["sha256"] = hashlib.sha256(patch_bytes).hexdigest()
             except OSError as e:
                 patch_problem = f"the patch can't be read: {e}"
-    weight_patches_v4.evaluate(out, os.path.abspath(base), os.path.abspath(container), patch_bytes, patch_problem)
+    judge.evaluate(out, os.path.abspath(base), os.path.abspath(container), patch_bytes, patch_problem)
     if out["status"] == "could_not_evaluate":
         return out
     # The digests and the bytes judged came from separate reads, so a verdict needs the inputs not to have changed.

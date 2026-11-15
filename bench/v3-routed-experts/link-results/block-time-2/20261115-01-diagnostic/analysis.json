@@ -1,0 +1,702 @@
+{
+  "protocol": "BLOCK-TIME-2 revision 1 (draft)",
+  "pairs": [
+    {
+      "pair": 0,
+      "round": 0,
+      "arm": "block-8",
+      "arm_pair": 0,
+      "order": "5->20",
+      "bracket_drift": 0.007022234459918984,
+      "valid": true,
+      "void_reasons": [],
+      "slope": 8.976118452380954,
+      "low_ns": 135992540.17857143,
+      "high_ns": 270634316.96428573
+    },
+    {
+      "pair": 1,
+      "round": 0,
+      "arm": "block-4",
+      "arm_pair": 0,
+      "order": "5->20",
+      "bracket_drift": 0.14423630386602895,
+      "valid": false,
+      "void_reasons": [
+        "brackets differ by 0.1442"
+      ],
+      "slope": 6.910988145238096,
+      "low_ns": 153820613.8392857,
+      "high_ns": 257485436.01785713
+    },
+    {
+      "pair": 2,
+      "round": 0,
+      "arm": "block-1",
+      "arm_pair": 0,
+      "order": "5->20",
+      "bracket_drift": 0.06790963158972224,
+      "valid": false,
+      "void_reasons": [
+        "trial-009: relay behind schedule",
+        "trial-010: relay behind schedule",
+        "brackets differ by 0.0679"
+      ],
+      "slope": 20.262496378571427,
+      "low_ns": 335097216.51785713,
+      "high_ns": 639034662.1964285
+    },
+    {
+      "pair": 3,
+      "round": 0,
+      "arm": "sequential",
+      "arm_pair": 0,
+      "order": "5->20",
+      "bracket_drift": 0.4785105378883985,
+      "valid": false,
+      "void_reasons": [
+        "trial-013: relay behind schedule",
+        "brackets differ by 0.4785"
+      ],
+      "slope": 17.44400133928572,
+      "low_ns": 390522680.0535714,
+      "high_ns": 652182700.1428572
+    },
+    {
+      "pair": 4,
+      "round": 0,
+      "arm": "block-2",
+      "arm_pair": 0,
+      "order": "5->20",
+      "bracket_drift": 0.8874528675668372,
+      "valid": false,
+      "void_reasons": [
+        "trial-017: relay behind schedule",
+        "brackets differ by 0.8875"
+      ],
+      "slope": 4.039573065476191,
+      "low_ns": 311193340.76785713,
+      "high_ns": 371786936.75
+    },
+    {
+      "pair": 5,
+      "round": 1,
+      "arm": "sequential",
+      "arm_pair": 1,
+      "order": "20->5",
+      "bracket_drift": 0.0278661198992882,
+      "valid": false,
+      "void_reasons": [
+        "trial-021: relay behind schedule",
+        "brackets differ by 0.0279"
+      ],
+      "slope": 31.77377113214286,
+      "low_ns": 269191063.23214287,
+      "high_ns": 745797630.2142857
+    },
+    {
+      "pair": 6,
+      "round": 1,
+      "arm": "block-4",
+      "arm_pair": 1,
+      "order": "20->5",
+      "bracket_drift": 0.07459254676343359,
+      "valid": false,
+      "void_reasons": [
+        "trial-026: relay behind schedule",
+        "brackets differ by 0.0746"
+      ],
+      "slope": 6.0745920130952396,
+      "low_ns": 156530755.2142857,
+      "high_ns": 247649635.4107143
+    },
+    {
+      "pair": 7,
+      "round": 1,
+      "arm": "block-8",
+      "arm_pair": 1,
+      "order": "20->5",
+      "bracket_drift": 0.1474311800973485,
+      "valid": false,
+      "void_reasons": [
+        "trial-030: relay behind schedule",
+        "brackets differ by 0.1474"
+      ],
+      "slope": -31.426573015476187,
+      "low_ns": 654690892.1071428,
+      "high_ns": 183292296.875
+    },
+    {
+      "pair": 8,
+      "round": 1,
+      "arm": "block-1",
+      "arm_pair": 1,
+      "order": "20->5",
+      "bracket_drift": 1.0209368044635265,
+      "valid": false,
+      "void_reasons": [
+        "brackets differ by 1.0209"
+      ],
+      "slope": 26.453496082142852,
+      "low_ns": 270165847.46428573,
+      "high_ns": 666968288.6964285
+    },
+    {
+      "pair": 9,
+      "round": 1,
+      "arm": "block-2",
+      "arm_pair": 1,
+      "order": "20->5",
+      "bracket_drift": 0.8816160627717917,
+      "valid": false,
+      "void_reasons": [
+        "brackets differ by 0.8816"
+      ],
+      "slope": 8.970309821428572,
+      "low_ns": 238880741.07142857,
+      "high_ns": 373435388.39285713
+    },
+    {
+      "pair": 10,
+      "round": 2,
+      "arm": "block-8",
+      "arm_pair": 2,
+      "order": "20->5",
+      "bracket_drift": 0.143337267060425,
+      "valid": false,
+      "void_reasons": [
+        "trial-042: relay behind schedule",
+        "brackets differ by 0.1433"
+      ],
+      "slope": -8.844100695238094,
+      "low_ns": 315253245.53571427,
+      "high_ns": 182591735.10714287
+    },
+    {
+      "pair": 11,
+      "round": 2,
+      "arm": "block-2",
+      "arm_pair": 2,
+      "order": "20->5",
+      "bracket_drift": 0.0447571905606037,
+      "valid": false,
+      "void_reasons": [
+        "trial-045: relay behind schedule",
+        "brackets differ by 0.0448"
+      ],
+      "slope": 12.098583730952381,
+      "low_ns": 201854508.92857143,
+      "high_ns": 383333264.89285713
+    },
+    {
+      "pair": 12,
+      "round": 2,
+      "arm": "block-4",
+      "arm_pair": 2,
+      "order": "20->5",
+      "bracket_drift": 0.9261197185249403,
+      "valid": false,
+      "void_reasons": [
+        "trial-049: relay behind schedule",
+        "trial-050: relay behind schedule",
+        "brackets differ by 0.9261"
+      ],
+      "slope": -1.4733298107142865,
+      "low_ns": 272647048.35714287,
+      "high_ns": 250547101.19642857
+    },
+    {
+      "pair": 13,
+      "round": 2,
+      "arm": "sequential",
+      "arm_pair": 2,
+      "order": "20->5",
+      "bracket_drift": 0.8294854783502517,
+      "valid": false,
+      "void_reasons": [
+        "trial-053: relay behind schedule",
+        "trial-054: relay behind schedule",
+        "brackets differ by 0.8295"
+      ],
+      "slope": 24.40820208333333,
+      "low_ns": 262730299.85714287,
+      "high_ns": 628853331.1071428
+    },
+    {
+      "pair": 14,
+      "round": 2,
+      "arm": "block-1",
+      "arm_pair": 2,
+      "order": "20->5",
+      "bracket_drift": 0.7066774292981347,
+      "valid": false,
+      "void_reasons": [
+        "trial-057: relay behind schedule",
+        "trial-058: relay behind schedule",
+        "brackets differ by 0.7067"
+      ],
+      "slope": -15.987761061904765,
+      "low_ns": 921310868.3035715,
+      "high_ns": 681494452.375
+    },
+    {
+      "pair": 15,
+      "round": 3,
+      "arm": "block-4",
+      "arm_pair": 3,
+      "order": "5->20",
+      "bracket_drift": 0.041144177849690204,
+      "valid": false,
+      "void_reasons": [
+        "brackets differ by 0.0411"
+      ],
+      "slope": 3.9833435011904754,
+      "low_ns": 185361368.30357143,
+      "high_ns": 245111520.82142857
+    },
+    {
+      "pair": 16,
+      "round": 3,
+      "arm": "block-2",
+      "arm_pair": 3,
+      "order": "5->20",
+      "bracket_drift": 0.12622076165413398,
+      "valid": false,
+      "void_reasons": [
+        "trial-065: relay behind schedule",
+        "trial-066: relay behind schedule",
+        "brackets differ by 0.1262"
+      ],
+      "slope": 2.436662600000004,
+      "low_ns": 503453243.3035714,
+      "high_ns": 540003182.3035715
+    },
+    {
+      "pair": 17,
+      "round": 3,
+      "arm": "sequential",
+      "arm_pair": 3,
+      "order": "5->20",
+      "bracket_drift": 0.7753271555715655,
+      "valid": false,
+      "void_reasons": [
+        "trial-069: relay behind schedule",
+        "trial-070: relay behind schedule",
+        "brackets differ by 0.7753"
+      ],
+      "slope": 21.848869642857146,
+      "low_ns": 341031029.75,
+      "high_ns": 668764074.3928572
+    },
+    {
+      "pair": 18,
+      "round": 3,
+      "arm": "block-1",
+      "arm_pair": 3,
+      "order": "5->20",
+      "bracket_drift": 0.28764033063897754,
+      "valid": false,
+      "void_reasons": [
+        "trial-073: relay behind schedule",
+        "trial-074: relay behind schedule",
+        "brackets differ by 0.2876"
+      ],
+      "slope": 27.895153621428573,
+      "low_ns": 308295091.51785713,
+      "high_ns": 726722395.8392857
+    },
+    {
+      "pair": 19,
+      "round": 3,
+      "arm": "block-8",
+      "arm_pair": 3,
+      "order": "5->20",
+      "bracket_drift": 0.1176628444130246,
+      "valid": false,
+      "void_reasons": [
+        "brackets differ by 0.1177"
+      ],
+      "slope": 6.562126091666666,
+      "low_ns": 147303166.6607143,
+      "high_ns": 245735058.0357143
+    }
+  ],
+  "arms": {
+    "sequential": {
+      "predicted": 24.0,
+      "pairs_scheduled": 4,
+      "pairs_valid": 0,
+      "valid_slopes": [],
+      "slope": null,
+      "ratio": null,
+      "follows_exchange_model": null,
+      "note": "0 of 4 pairs valid; 3 required",
+      "order": {
+        "5->20": null,
+        "20->5": null,
+        "difference": null
+      },
+      "times_ns": {
+        "5.0": null,
+        "20.0": null
+      },
+      "worker_execution_ns": {
+        "5.0": {
+          "valid_pairs": null,
+          "all_pairs": {
+            "min": 92992354.08928572,
+            "median": 111374922.9375,
+            "max": 140872391.26785713,
+            "values": [
+              92992354.08928572,
+              96764283.35714285,
+              125985562.51785715,
+              140872391.26785713
+            ]
+          }
+        },
+        "20.0": {
+          "valid_pairs": null,
+          "all_pairs": {
+            "min": 94546485.14285715,
+            "median": 108467360.54464287,
+            "max": 147515810.92857143,
+            "values": [
+              94546485.14285715,
+              103333045.66071428,
+              113601675.42857143,
+              147515810.92857143
+            ]
+          }
+        }
+      }
+    },
+    "block-1": {
+      "predicted": 24.0,
+      "pairs_scheduled": 4,
+      "pairs_valid": 0,
+      "valid_slopes": [],
+      "slope": null,
+      "ratio": null,
+      "follows_exchange_model": null,
+      "note": "0 of 4 pairs valid; 3 required",
+      "order": {
+        "5->20": null,
+        "20->5": null,
+        "difference": null
+      },
+      "times_ns": {
+        "5.0": null,
+        "20.0": null
+      },
+      "worker_execution_ns": {
+        "5.0": {
+          "valid_pairs": null,
+          "all_pairs": {
+            "min": 91448640.0,
+            "median": 107000491.25892857,
+            "max": 120284098.19642857,
+            "values": [
+              91448640.0,
+              97317075.67857143,
+              116683906.83928572,
+              120284098.19642857
+            ]
+          }
+        },
+        "20.0": {
+          "valid_pairs": null,
+          "all_pairs": {
+            "min": 95003670.01785715,
+            "median": 100978334.0267857,
+            "max": 108647962.89285715,
+            "values": [
+              95003670.01785715,
+              99730622.98214285,
+              102226045.07142857,
+              108647962.89285715
+            ]
+          }
+        }
+      }
+    },
+    "block-2": {
+      "predicted": 12.0,
+      "pairs_scheduled": 4,
+      "pairs_valid": 0,
+      "valid_slopes": [],
+      "slope": null,
+      "ratio": null,
+      "follows_exchange_model": null,
+      "note": "0 of 4 pairs valid; 3 required",
+      "order": {
+        "5->20": null,
+        "20->5": null,
+        "difference": null
+      },
+      "times_ns": {
+        "5.0": null,
+        "20.0": null
+      },
+      "worker_execution_ns": {
+        "5.0": {
+          "valid_pairs": null,
+          "all_pairs": {
+            "min": 92721491.98214285,
+            "median": 113903479.7767857,
+            "max": 139527409.2142857,
+            "values": [
+              92721491.98214285,
+              103044180.35714285,
+              124762779.19642857,
+              139527409.2142857
+            ]
+          }
+        },
+        "20.0": {
+          "valid_pairs": null,
+          "all_pairs": {
+            "min": 86052971.66071428,
+            "median": 89200454.57142857,
+            "max": 219857719.5,
+            "values": [
+              86052971.66071428,
+              86103848.89285715,
+              92297060.25,
+              219857719.5
+            ]
+          }
+        }
+      }
+    },
+    "block-4": {
+      "predicted": 6.0,
+      "pairs_scheduled": 4,
+      "pairs_valid": 0,
+      "valid_slopes": [],
+      "slope": null,
+      "ratio": null,
+      "follows_exchange_model": null,
+      "note": "0 of 4 pairs valid; 3 required",
+      "order": {
+        "5->20": null,
+        "20->5": null,
+        "difference": null
+      },
+      "times_ns": {
+        "5.0": null,
+        "20.0": null
+      },
+      "worker_execution_ns": {
+        "5.0": {
+          "valid_pairs": null,
+          "all_pairs": {
+            "min": 84567109.30357143,
+            "median": 98005785.58035713,
+            "max": 129137258.01785715,
+            "values": [
+              84567109.30357143,
+              86216269.96428572,
+              109795301.19642857,
+              129137258.01785715
+            ]
+          }
+        },
+        "20.0": {
+          "valid_pairs": null,
+          "all_pairs": {
+            "min": 85623733.03571428,
+            "median": 87793285.29464285,
+            "max": 91708338.41071428,
+            "values": [
+              85623733.03571428,
+              86988255.10714285,
+              88598315.48214285,
+              91708338.41071428
+            ]
+          }
+        }
+      }
+    },
+    "block-8": {
+      "predicted": 3.0,
+      "pairs_scheduled": 4,
+      "pairs_valid": 1,
+      "valid_slopes": [
+        8.976118452380954
+      ],
+      "slope": null,
+      "ratio": null,
+      "follows_exchange_model": null,
+      "note": "1 of 4 pairs valid; 3 required",
+      "order": {
+        "5->20": 8.976118452380954,
+        "20->5": null,
+        "difference": null
+      },
+      "times_ns": {
+        "5.0": 135992540.17857143,
+        "20.0": 270634316.96428573
+      },
+      "worker_execution_ns": {
+        "5.0": {
+          "valid_pairs": {
+            "min": 84411805.17857143,
+            "median": 84411805.17857143,
+            "max": 84411805.17857143,
+            "values": [
+              84411805.17857143
+            ]
+          },
+          "all_pairs": {
+            "min": 84411805.17857143,
+            "median": 108324738.1875,
+            "max": 133532221.60714285,
+            "values": [
+              84411805.17857143,
+              90297464.39285715,
+              126352011.98214285,
+              133532221.60714285
+            ]
+          }
+        },
+        "20.0": {
+          "valid_pairs": {
+            "min": 84604869.19642857,
+            "median": 84604869.19642857,
+            "max": 84604869.19642857,
+            "values": [
+              84604869.19642857
+            ]
+          },
+          "all_pairs": {
+            "min": 84604869.19642857,
+            "median": 86057324.71428572,
+            "max": 131995233.66071428,
+            "values": [
+              84604869.19642857,
+              85377704.46428572,
+              86736944.96428572,
+              131995233.66071428
+            ]
+          }
+        }
+      }
+    }
+  },
+  "valid_pairs": 1,
+  "void_pairs": 19,
+  "thresholds": {
+    "gate": 0.01,
+    "slope_band": 0.1,
+    "minimum_valid_pairs": 3
+  },
+  "reading": "evaluated positions only; the three-of-four rule is a reporting minimum and the band a model-fit criterion, neither is statistical significance; no speed comparison is made",
+  "kind": "diagnostic",
+  "counts": false,
+  "complete": true,
+  "stopped": null,
+  "scheduled": 80,
+  "observed": 80,
+  "telemetry_samples": 1246,
+  "outcomes": {
+    "valid_pairs": [
+      0
+    ],
+    "void_pairs": {
+      "1": [
+        "brackets differ by 0.1442"
+      ],
+      "2": [
+        "trial-009: relay behind schedule",
+        "trial-010: relay behind schedule",
+        "brackets differ by 0.0679"
+      ],
+      "3": [
+        "trial-013: relay behind schedule",
+        "brackets differ by 0.4785"
+      ],
+      "4": [
+        "trial-017: relay behind schedule",
+        "brackets differ by 0.8875"
+      ],
+      "5": [
+        "trial-021: relay behind schedule",
+        "brackets differ by 0.0279"
+      ],
+      "6": [
+        "trial-026: relay behind schedule",
+        "brackets differ by 0.0746"
+      ],
+      "7": [
+        "trial-030: relay behind schedule",
+        "brackets differ by 0.1474"
+      ],
+      "8": [
+        "brackets differ by 1.0209"
+      ],
+      "9": [
+        "brackets differ by 0.8816"
+      ],
+      "10": [
+        "trial-042: relay behind schedule",
+        "brackets differ by 0.1433"
+      ],
+      "11": [
+        "trial-045: relay behind schedule",
+        "brackets differ by 0.0448"
+      ],
+      "12": [
+        "trial-049: relay behind schedule",
+        "trial-050: relay behind schedule",
+        "brackets differ by 0.9261"
+      ],
+      "13": [
+        "trial-053: relay behind schedule",
+        "trial-054: relay behind schedule",
+        "brackets differ by 0.8295"
+      ],
+      "14": [
+        "trial-057: relay behind schedule",
+        "trial-058: relay behind schedule",
+        "brackets differ by 0.7067"
+      ],
+      "15": [
+        "brackets differ by 0.0411"
+      ],
+      "16": [
+        "trial-065: relay behind schedule",
+        "trial-066: relay behind schedule",
+        "brackets differ by 0.1262"
+      ],
+      "17": [
+        "trial-069: relay behind schedule",
+        "trial-070: relay behind schedule",
+        "brackets differ by 0.7753"
+      ],
+      "18": [
+        "trial-073: relay behind schedule",
+        "trial-074: relay behind schedule",
+        "brackets differ by 0.2876"
+      ],
+      "19": [
+        "brackets differ by 0.1177"
+      ]
+    },
+    "not_run": [],
+    "worker_timing_incomplete": []
+  },
+  "host_after": {
+    "load_average": [
+      11.65380859375,
+      23.9091796875,
+      28.556640625
+    ],
+    "busy_processes": [
+      "larql"
+    ],
+    "utc": "2026-11-15T12:44:39Z"
+  },
+  "exclusivity_evidence_supplied": false,
+  "ended_utc": "2026-11-15T12:44:35Z"
+}

@@ -78,3 +78,31 @@ fn the_sidecar_of_a_site_after_the_last_layer_has_no_layers() {
     );
     assert_eq!(car["execution"]["cross_check"], serde_json::Value::Null);
 }
+
+/// The longest file name the filesystems the suite runs on accept (`NAME_MAX` on APFS, ext4 and tmpfs).
+#[cfg(unix)]
+const NAME_MAX: usize = 255;
+
+#[cfg(unix)]
+#[test]
+fn a_sidecar_that_cannot_be_written_takes_the_written_array_with_it() {
+    let fx = Fixture::new();
+    let mut s = fx.session();
+    let before = std::fs::read_dir(fx.dir.path()).unwrap().count();
+    // The array's name is as long as a name may be, so the sidecar's, five bytes longer, is refused.
+    let stem = "a".repeat(NAME_MAX - ".npy".len());
+    let out = fx.path(&format!("{stem}.npy"));
+    let err = try_capture(&mut s, &format!("logits FOR \"{PROMPT}\""), &out).unwrap_err();
+    let sidecar_path = format!("{}.json", out.display());
+    assert!(err.contains(&format!("write {sidecar_path}")), "{err}");
+    assert!(
+        !err.contains("could not remove"),
+        "the array was removable: {err}"
+    );
+    assert!(
+        !out.exists(),
+        "the array written before the sidecar must be removed"
+    );
+    let after = std::fs::read_dir(fx.dir.path()).unwrap().count();
+    assert_eq!(after, before, "the failed capture left something behind");
+}

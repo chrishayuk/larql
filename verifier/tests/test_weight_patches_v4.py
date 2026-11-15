@@ -1367,6 +1367,43 @@ class PatchSupplied(Fixture):
                          (with_patch["numerical_satisfaction"], with_patch["ledger_integrity"]))
 
 
+class SharedCodeCorrections(Fixture):
+    """The corrections the v2/v3 change made to this shared judge, held on the v4 route itself
+    (docs/verification/weight-patches-v2-v3.md §13). A non-object `canonical` is tested above, where main fixed it."""
+
+    CASE = "mixed"
+    DELTA_TARGET = 1
+
+    def first_delta_edit(self, root):
+        return self.ledger(root)["targets"][self.DELTA_TARGET]["edits"][0]
+
+    def test_an_unknown_rounding_rule_is_not_evaluated_on_both_halves(self):
+        root = self.copy(self.CASE)
+        self.edit_ledger(root, lambda d: d.update(rounding="bf16-some-other-rule"))
+        out = self.judge(root)
+        self.assertHalves(out, CNE, CNE)
+        self.assertIn("rounding rule", self.findings(out, W.NUMERICAL))
+
+    def test_under_an_unknown_rounding_rule_the_container_is_still_held_to_the_recorded_bits(self):
+        root = self.copy(self.CASE)
+        self.edit_ledger(root, lambda d: d.update(rounding="bf16-some-other-rule"))
+        e = self.first_delta_edit(root)
+        tensor = self.ledger(root)["targets"][self.DELTA_TARGET]["tensor"]
+        write_element(root, tensor, e["row"], e["col"], e["new_bits"] ^ 1)
+        reseal_compiled(root)
+        out = self.judge(root)
+        self.assertEqual(out["status"], VIOL)
+        self.assertEqual(out["ledger_integrity"], VIOL)
+        self.assertIn("differ from the base with the ledger's recorded bits", self.findings(out, W.LEDGER))
+
+    def test_a_target_naming_no_tensor_leaves_the_numerical_half_not_evaluated(self):
+        root = self.copy(self.CASE)
+        self.edit_ledger(root, lambda d: d["targets"][self.DELTA_TARGET].pop("tensor"))
+        out = self.judge(root)
+        self.assertHalves(out, CNE, VIOL)
+        self.assertIn("the target names no tensor", self.findings(out, W.LEDGER))
+
+
 class ExactSumRounding(unittest.TestCase):
     """`bf16-rne-of-exact-sum` where a binary64 sum is not the exact sum: the delta sits on a BF16 tie and the stored
     value is too small for a binary64 to keep. The exact sum is off the tie, so the small term decides the direction;

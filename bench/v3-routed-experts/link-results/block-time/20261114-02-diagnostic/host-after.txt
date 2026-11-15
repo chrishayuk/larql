@@ -1,0 +1,33 @@
+utc: 2026-11-14T23:33:56Z
+load: { 19.23 21.15 19.41 }
+swap: total = 1024.00M  used = 155.38M  free = 868.62M  (encrypted)
+System-wide memory free percentage: 93%
+Pages free:                                  4181750.
+Pages active:                                1154544.
+Pages wired down:                             300063.
+Pages stored in compressor:                   516295.
+Pages occupied by compressor:                 243327.
+Pageins:                                   160371578.
+Pageouts:                                      14790.
+Swapins:                                      644253.
+Swapouts:                                     684824.
+--- top by cpu
+  PID STAT  %CPU    RSS COMM
+59150 R    487.5 7551168 target/release/examples/gwbreadcrumb1
+30441 R     99.3 187616 /Users/christopherhay/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-cov
+54049 R     88.6 2928064 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+15270 R     52.0  40816 /Users/christopherhay/chris-source/larql-live-vlp/target/llvm-cov-target/debug/deps/balance_trace-249e63a4d1c786d9
+  471 Ss    24.7  41936 /usr/libexec/syspolicyd
+ 1619 S     19.2 383168 /Applications/Brave Browser.app/Contents/MacOS/Brave Browser
+  358 Ss    17.9  40624 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds
+--- top by resident memory (kB)
+  PID STAT  %CPU    RSS COMM
+96803 S      0.0 989616 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+17466 S      0.0 921856 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+36924 S+     3.4 910624 claude
+ 3708 Ss     0.0 905648 /usr/sbin/spindump
+92472 S      0.0 766384 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+17412 S+     7.9 724224 claude
+98224 S+     0.7 693024 claude
+--- stopped processes
+  PID STAT  %CPU    RSS COMM

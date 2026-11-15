@@ -23,6 +23,42 @@ use crate::error::LqlError;
 /// What INFER says of a component without an output head; a capture refuses in the same words.
 const NO_HEAD: &str = "the component carries no output head";
 
+/// A site this pass exposes: a plane a layer hands the traversal's subscriber, or a value at its exit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PassSite {
+    Layer(LayerPlane),
+    Exit(ExitValue),
+}
+
+/// The per-layer planes the traversal hands its subscriber.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LayerPlane {
+    Residual,
+    PostAttention,
+    FfnInput,
+}
+
+/// What the traversal's exit holds at a position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ExitValue {
+    Hidden,
+    Logits,
+}
+
+impl PassSite {
+    /// The pass's name for `site`; `None` for a site only the decode steps expose.
+    pub(super) fn of(site: CaptureSite) -> Option<Self> {
+        match site {
+            CaptureSite::Residual => Some(Self::Layer(LayerPlane::Residual)),
+            CaptureSite::PostAttention => Some(Self::Layer(LayerPlane::PostAttention)),
+            CaptureSite::FfnInput => Some(Self::Layer(LayerPlane::FfnInput)),
+            CaptureSite::Final => Some(Self::Exit(ExitValue::Hidden)),
+            CaptureSite::Logits => Some(Self::Exit(ExitValue::Logits)),
+            CaptureSite::FfnDownInput | CaptureSite::FfnDownOutput => None,
+        }
+    }
+}
+
 /// One traversal of `ids`, keeping `site` at `layers` (or at the exit) and `positions`. One block of rows per
 /// layer, in the order given; one block for a site after the last layer.
 pub(super) fn capture(
@@ -30,26 +66,28 @@ pub(super) fn capture(
     overrides: Option<&OperandOverrides>,
     continuation: &SelectedContinuation,
     ids: &[u32],
-    site: CaptureSite,
+    site: PassSite,
     layers: &[usize],
     positions: &[usize],
 ) -> Result<Vec<Rows>, LqlError> {
     let mut kept: BTreeMap<usize, Rows> = BTreeMap::new();
     let mut sink = |event: PlaneEvent| {
-        if let PlaneEvent::Layer { index, trace } = event {
+        if let (PassSite::Layer(plane), PlaneEvent::Layer { index, trace }) = (site, event) {
             if layers.contains(&index) {
-                let rows = match site {
-                    CaptureSite::Residual => plane_rows(&trace.post_layer, index)?,
-                    CaptureSite::PostAttention => plane_rows(&trace.post_attention, index)?,
-                    CaptureSite::FfnInput => &trace.ffn_input[..],
-                    _ => unreachable!("only the per-layer sites INFER's pass exposes come here"),
+                let rows = match plane {
+                    LayerPlane::Residual => plane_rows(&trace.post_layer, index)?,
+                    LayerPlane::PostAttention => plane_rows(&trace.post_attention, index)?,
+                    LayerPlane::FfnInput => &trace.ffn_input[..],
                 };
                 kept.insert(index, positions.iter().map(|&p| rows[p].clone()).collect());
             }
         }
         Ok(())
     };
-    let exit_positions = if site.per_layer() { &[][..] } else { positions };
+    let exit_positions = match site {
+        PassSite::Layer(_) => &[][..],
+        PassSite::Exit(_) => positions,
+    };
     let plan = runtime.plan();
     let source = match overrides {
         Some(overrides) => OperandSource::overlaid(runtime.store(), overrides),
@@ -71,9 +109,13 @@ pub(super) fn capture(
         return Err(LqlError::Execution(NO_HEAD.into()));
     }
     Ok(match site {
-        CaptureSite::Final => vec![observed.exits.into_iter().map(|e| e.hidden).collect()],
-        CaptureSite::Logits => vec![observed.exits.into_iter().map(|e| e.logits).collect()],
-        _ => layers
+        PassSite::Exit(ExitValue::Hidden) => {
+            vec![observed.exits.into_iter().map(|e| e.hidden).collect()]
+        }
+        PassSite::Exit(ExitValue::Logits) => {
+            vec![observed.exits.into_iter().map(|e| e.logits).collect()]
+        }
+        PassSite::Layer(_) => layers
             .iter()
             .map(|layer| kept.remove(layer).unwrap_or_default())
             .collect(),

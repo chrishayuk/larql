@@ -45,6 +45,8 @@ STATEMENT = (
     "independently from the base weights and the recorded operands (numerical satisfaction), and the ledger is bound "
     "to the base and consistent with both containers (ledger integrity and provenance)"
 )
+#: By contract id, as `cli.evaluate_ledger` looks a ledger contract's statement up.
+STATEMENTS = {CONTRACT: STATEMENT}
 LEDGER_SCHEMA_V4 = "weight-patches/v4"
 NUMERICAL = "numerical_satisfaction"
 LEDGER = "ledger_integrity_and_provenance"
@@ -499,6 +501,15 @@ def exact_sum_to_bf16(old_bits: int, delta_bits: int) -> int:
 
 
 class Judge:
+    #: The one ledger schema this judge reads. `weight_patches_v2v3.py` holds the same judgement to another schema
+    #: and to that schema's form; everything stated differently there is one of these attributes or a method it
+    #: overrides. The v2/v3 change corrected three inputs on this route too (weight-patches-v2-v3.md §13).
+    SCHEMA = LEDGER_SCHEMA_V4
+    RECOMPUTED_FROM = ("the base container's weights and the operands the compiled container's ledger records; "
+                       "the ledger's hashes and counts are checked, never used as expected values")
+    RECOMPUTED_FROM_PATCH = ("; for a tensor the ledger records only by result bits, the remove_direction ops of "
+                             "the patch given, each held to the ledger's origins")
+
     def __init__(self, base: str, container: str):
         self.base_root, self.new_root = base, container
         #: `remove_direction` ops of the `.vlp` the caller supplied, by tensor; `None` when no patch was given.
@@ -549,9 +560,10 @@ class Judge:
             return
         schema = ledger.get("schema")
         self.engine.update(schema=schema, writer=ledger.get("writer"), rounding=ledger.get("rounding"))
-        if schema != LEDGER_SCHEMA_V4:
-            self.L.cannot(f"unknown ledger schema {schema!r}: this contract judges {LEDGER_SCHEMA_V4!r} only (§7 step 5)")
-            self.N.cannot("the ledger is not a v4 ledger, so its ops are not reconstructed")
+        if schema != self.SCHEMA:
+            ledger_reason, numerical_reason = self.schema_refusal(schema)
+            self.L.cannot(ledger_reason)
+            self.N.cannot(numerical_reason)
             return
         self.ledger = ledger
         self.L.judged = True
@@ -559,7 +571,7 @@ class Judge:
             # A patch that cannot be read takes nothing away from what the ledger alone establishes: the ledger is
             # judged as if none were given, and the numerical half says why it is not complete.
             try:
-                self.patch_ops = read_patch_removals(self.patch)
+                self.patch_ops = self.read_patch(self.patch)
             except RecursionError:
                 self.patch_problem = "the patch given cannot be used: it is nested more deeply than this reader follows"
             except (CannotEvaluate, ValueError) as e:
@@ -569,6 +581,20 @@ class Judge:
         finally:
             if self.patch_problem is not None:
                 self.N.cannot(self.patch_problem)
+
+    def schema_refusal(self, schema) -> tuple[str, str]:
+        """Why a ledger of another schema is not judged: the ledger half's reason, and the numerical half's."""
+        return (f"unknown ledger schema {schema!r}: this contract judges {LEDGER_SCHEMA_V4!r} only (§7 step 5)",
+                "the ledger is not a v4 ledger, so its ops are not reconstructed")
+
+    def read_patch(self, data: bytes) -> dict:
+        """The ops of the patch given that this judge reads, by tensor. For v4: its `remove_direction` ops only."""
+        return read_patch_removals(data)
+
+    def check_form(self, targets) -> None:
+        """The ledger must be of the form its schema is written for (§2)."""
+        if not any(isinstance(t, dict) and "operations" in t for t in targets):
+            self.L.violate("targets", "a v4 ledger is written only when at least one target is an operation target (§2)")
 
     def judge(self) -> None:
         L, N = self.L, self.N
@@ -602,8 +628,7 @@ class Judge:
             N.cannot("the ledger is bound to another base (§7 step 5: a stale binding is refused), so its ops are not "
                      "recomputed against this one")
         plans = [self.plan_target(i, t) for i, t in enumerate(targets)]
-        if not any(isinstance(t, dict) and "operations" in t for t in targets):
-            L.violate("targets", "a v4 ledger is written only when at least one target is an operation target (§2)")
+        self.check_form(targets)
         self.check_work(plans)
         self.check_patch_elements(plans)
         self.check_patch_removals_placed()
@@ -686,6 +711,8 @@ class Judge:
         label = f"targets[{i}] {name}"
         if not isinstance(name, str):
             L.violate(label, "the target names no tensor")
+            # Nothing to reconstruct it on: the numerical half cannot say the declared edits were made.
+            N.cannot(f"{label}: the target names no tensor, so its edits are not reconstructed")
             return None
         has_ops, has_edits = "operations" in t, "edits" in t
         if has_ops == has_edits:
@@ -1114,6 +1141,8 @@ class Judge:
             return self.expected_from_patch(plan, base2d)
         expected = base2d.copy()
         recomputable = True
+        #: Why an edit could not be recomputed, for the numerical half's reason: result bits, or the rounding rule.
+        unrecomputed = set()
         for e in plan["edits"]:
             r, c = e["row"], e["col"]
             where = f"{label} ({r}, {c})"
@@ -1122,11 +1151,15 @@ class Judge:
             if e.get("encoding") == RESULT_BITS:
                 # The ledger records the result of an op it does not record: nothing to recompute it from.
                 recomputable = False
+                unrecomputed.add(RESULT_BITS)
                 expected[r, c] = e["new_bits"]
                 continue
             if self.ledger.get("rounding") != DELTA_ROUNDING:
                 L.cannot(f"{where}: delta rounding {self.ledger.get('rounding')!r} is not {DELTA_ROUNDING!r}")
                 recomputable = False
+                unrecomputed.add("rounding")
+                # Not recomputed, but the container is still held to the bits the ledger says it wrote (below).
+                expected[r, c] = e["new_bits"]
                 continue
             if (e["delta_bits"] & V.F32_EXP_MASK) == V.F32_EXP_MASK:
                 # Checked before anything reads the bits as a number: an infinity or a NaN has no value to compare.
@@ -1155,10 +1188,17 @@ class Judge:
             mism = int(np.count_nonzero(new2d != expected))
             if mism:
                 L.violate(label, f"{mism} elements differ from the base with the ledger's recorded bits", mism)
-            why = "and the patch's ops on this tensor could not be used" if plan.get("patch_unusable") \
-                else "and the patch given holds no remove_direction op on this tensor" if self.patch_ops is not None \
-                else "so its numerics cannot be recomputed from the ledger alone; give the patch to recompute them"
-            N.cannot(f"{label}: an element target records result bits of an op that is not in the ledger, {why}")
+            if RESULT_BITS in unrecomputed:
+                why = "and the patch's ops on this tensor could not be used" if plan.get("patch_unusable") \
+                    else "and the patch given holds no remove_direction op on this tensor" if self.patch_ops is not None \
+                    else "so its numerics cannot be recomputed from the ledger alone; give the patch to recompute them"
+                N.cannot(f"{label}: an element target records result bits of an op that is not in the ledger, {why}")
+            if "rounding" in unrecomputed:
+                N.cannot(f"{label}: its deltas are under rounding rule {written(self.ledger.get('rounding'))}, which "
+                         f"this contract does not implement, so they are not recomputed")
+            if not unrecomputed:
+                N.cannot(f"{label}: an edit has no finite sum to recompute (the ledger half says which), so the "
+                         "tensor is not reconstructed")
             return None
         return expected
 
@@ -1331,18 +1371,17 @@ def could_not(out: dict, *reasons: str) -> dict:
 
 
 def evaluate(out: dict, base: str, container: str, patch: bytes | None = None,
-             patch_problem: str | None = None) -> dict:
+             patch_problem: str | None = None, judge_class: type[Judge] = Judge) -> dict:
     """Fill `out` with the two verdicts and the combined status. Never raises for a bad input. `patch`, when given, is
     the bytes of the `.vlp` the container was compiled from: it supplies the `remove_direction` ops a v4 ledger records
     only by their result bits (§3b), so those tensors can be recomputed too. Bytes, not a path: the caller reads the
     file once and reports the digest of what is judged here. `patch_problem`: why a patch that was asked for could
-    not be read at all; the ledger is then judged without it and the numerical half says so."""
-    out["recomputed_from"] = ("the base container's weights and the operands the compiled container's ledger records; "
-                              "the ledger's hashes and counts are checked, never used as expected values")
+    not be read at all; the ledger is then judged without it and the numerical half says so. `judge_class`: the
+    judge of the ledger schema asked about (this module's, unless `weight_patches_v2v3.py` passes its own)."""
+    out["recomputed_from"] = judge_class.RECOMPUTED_FROM
     if patch is not None:
-        out["recomputed_from"] += ("; for a tensor the ledger records only by result bits, the remove_direction ops of "
-                                   "the patch given, each held to the ledger's origins")
-    judge = Judge(base, container)
+        out["recomputed_from"] += judge_class.RECOMPUTED_FROM_PATCH
+    judge = judge_class(base, container)
     judge.patch = patch
     if patch_problem is not None:
         judge.patch_problem = f"the patch given cannot be used: {patch_problem}"

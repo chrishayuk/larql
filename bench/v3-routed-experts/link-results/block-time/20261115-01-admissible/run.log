@@ -1,0 +1,66 @@
+09:27:31
+running warm-0: warm sequential rtt=0.0ms profiled
+running warm-1: warm sequential rtt=0.0ms profiled
+running warm-2: warm sequential rtt=0.0ms profiled
+running warm-3: warm sequential rtt=0.0ms profiled
+running trial-000: direct sequential rtt=0.0ms profiled
+running trial-001: bracket sequential rtt=0.0ms profiled
+running trial-002: arm sequential rtt=0.0ms profiled
+running trial-003: arm block-1 rtt=0.0ms profiled
+running trial-004: arm block-2 rtt=0.0ms profiled
+running trial-005: arm block-4 rtt=0.0ms profiled
+running trial-006: arm block-8 rtt=0.0ms profiled
+running trial-007: unprofiled sequential rtt=0.0ms unprofiled
+running trial-008: unprofiled block-1 rtt=0.0ms unprofiled
+running trial-009: unprofiled block-2 rtt=0.0ms unprofiled
+running trial-010: unprofiled block-4 rtt=0.0ms unprofiled
+running trial-011: unprofiled block-8 rtt=0.0ms unprofiled
+running trial-012: bracket sequential rtt=0.0ms profiled
+running trial-013: arm block-1 rtt=5.0ms profiled
+running trial-014: arm block-2 rtt=5.0ms profiled
+running trial-015: arm block-4 rtt=5.0ms profiled
+running trial-016: arm block-8 rtt=5.0ms profiled
+running trial-017: arm sequential rtt=5.0ms profiled
+running trial-018: bracket sequential rtt=0.0ms profiled
+running trial-019: arm block-2 rtt=20.0ms profiled
+running trial-020: arm block-4 rtt=20.0ms profiled
+running trial-021: arm block-8 rtt=20.0ms profiled
+running trial-022: arm sequential rtt=20.0ms profiled
+running trial-023: arm block-1 rtt=20.0ms profiled
+running trial-024: bracket sequential rtt=0.0ms profiled
+running trial-025: direct sequential rtt=0.0ms profiled
+running trial-026: bracket sequential rtt=0.0ms profiled
+running trial-027: arm block-8 rtt=20.0ms profiled
+running trial-028: arm block-4 rtt=20.0ms profiled
+running trial-029: arm block-2 rtt=20.0ms profiled
+running trial-030: arm block-1 rtt=20.0ms profiled
+running trial-031: arm sequential rtt=20.0ms profiled
+running trial-032: bracket sequential rtt=0.0ms profiled
+running trial-033: arm sequential rtt=5.0ms profiled
+running trial-034: arm block-8 rtt=5.0ms profiled
+running trial-035: arm block-4 rtt=5.0ms profiled
+running trial-036: arm block-2 rtt=5.0ms profiled
+running trial-037: arm block-1 rtt=5.0ms profiled
+running trial-038: bracket sequential rtt=0.0ms profiled
+running trial-039: arm block-1 rtt=0.0ms profiled
+running trial-040: arm sequential rtt=0.0ms profiled
+running trial-041: arm block-8 rtt=0.0ms profiled
+running trial-042: arm block-4 rtt=0.0ms profiled
+running trial-043: arm block-2 rtt=0.0ms profiled
+running trial-044: unprofiled block-1 rtt=0.0ms unprofiled
+running trial-045: unprofiled sequential rtt=0.0ms unprofiled
+running trial-046: unprofiled block-8 rtt=0.0ms unprofiled
+running trial-047: unprofiled block-4 rtt=0.0ms unprofiled
+running trial-048: unprofiled block-2 rtt=0.0ms unprofiled
+running trial-049: bracket sequential rtt=0.0ms profiled
+{
+  "kind": "admissible",
+  "complete": true,
+  "stopped": null,
+  "valid": 30,
+  "void": 20
+}
+exit=0
+10:08:07
+
+[exited with code 0]

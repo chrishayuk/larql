@@ -1,0 +1,4044 @@
+[
+  {
+    "label": "trial-000",
+    "pair": 0,
+    "round": 0,
+    "pair_arm": "block-8",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 129358485.875,
+      "wall_ns": 7244075209,
+      "exchanges": 1344,
+      "exchange_ns": 5247940414,
+      "coordinator_ns": 1996134795,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4872923205,
+        "execute_ns": 4804520306,
+        "experts_ns": 4796056921,
+        "queue_ns": 12146362,
+        "unattributed_exchange_ns": 375017209.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      5.96044921875,
+      4.787109375,
+      6.65185546875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724695,
+      "relay_late_mean_ns": 445.84726974793966,
+      "relay_late_max_ns": 13750,
+      "relay_late_per_position_ns": 42828.1712962963,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:16:56Z",
+    "ended_utc": "2026-11-15T11:17:25Z",
+    "pair_valid": true,
+    "valid": true,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-001",
+    "pair": 0,
+    "round": 0,
+    "pair_arm": "block-8",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 135992540.17857143,
+      "wall_ns": 7615582250,
+      "exchanges": 168,
+      "exchange_ns": 5686838253,
+      "coordinator_ns": 1928743997,
+      "configured_delay_ns": 840000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 4751186296,
+        "execute_ns": 4727061090,
+        "experts_ns": 4719096210,
+        "queue_ns": 1864583,
+        "unattributed_exchange_ns": 95651957.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      4.58154296875,
+      4.56640625,
+      6.5068359375
+    ],
+    "relay": {
+      "relay_chunks": 18809,
+      "relay_bytes": 299501289,
+      "relay_late_mean_ns": 2490.381625817428,
+      "relay_late_max_ns": 57083,
+      "relay_late_per_position_ns": 216859.2037037037,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:17:25Z",
+    "ended_utc": "2026-11-15T11:17:56Z",
+    "pair_valid": true,
+    "valid": true,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-002",
+    "pair": 0,
+    "round": 0,
+    "pair_arm": "block-8",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 270634316.96428573,
+      "wall_ns": 15155521750,
+      "exchanges": 168,
+      "exchange_ns": 8230896830,
+      "coordinator_ns": 6924624920,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 4763176005,
+        "execute_ns": 4737872675,
+        "experts_ns": 4729677911,
+        "queue_ns": 1982876,
+        "unattributed_exchange_ns": 107720825.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.48779296875,
+      4.2568359375,
+      6.2900390625
+    ],
+    "relay": {
+      "relay_chunks": 18809,
+      "relay_bytes": 299501260,
+      "relay_late_mean_ns": 3106.234728055718,
+      "relay_late_max_ns": 65000,
+      "relay_late_per_position_ns": 270486.89351851854,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:17:56Z",
+    "ended_utc": "2026-11-15T11:18:42Z",
+    "pair_valid": true,
+    "valid": true,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-003",
+    "pair": 0,
+    "round": 0,
+    "pair_arm": "block-8",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 130270072.17857143,
+      "wall_ns": 7295124042,
+      "exchanges": 1344,
+      "exchange_ns": 5282522089,
+      "coordinator_ns": 2012601953,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4907072764,
+        "execute_ns": 4836598424,
+        "experts_ns": 4828041475,
+        "queue_ns": 12523135,
+        "unattributed_exchange_ns": 375449325.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      4.25341796875,
+      4.373046875,
+      6.2607421875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725361,
+      "relay_late_mean_ns": 501.2118656320786,
+      "relay_late_max_ns": 11875,
+      "relay_late_per_position_ns": 48146.50462962963,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:18:42Z",
+    "ended_utc": "2026-11-15T11:19:11Z",
+    "pair_valid": true,
+    "valid": true,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-004",
+    "pair": 1,
+    "round": 0,
+    "pair_arm": "block-4",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 128707492.55357143,
+      "wall_ns": 7207619583,
+      "exchanges": 1344,
+      "exchange_ns": 5205917582,
+      "coordinator_ns": 2001702001,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4840608357,
+        "execute_ns": 4773525003,
+        "experts_ns": 4765109753,
+        "queue_ns": 12045915,
+        "unattributed_exchange_ns": 365309225.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.44482421875,
+      4.1611328125,
+      6.11767578125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724866,
+      "relay_late_mean_ns": 431.8294375632561,
+      "relay_late_max_ns": 8584,
+      "relay_late_per_position_ns": 41481.61574074074,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:19:11Z",
+    "ended_utc": "2026-11-15T11:19:40Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-005",
+    "pair": 1,
+    "round": 0,
+    "pair_arm": "block-4",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 153820613.8392857,
+      "wall_ns": 8613954375,
+      "exchanges": 336,
+      "exchange_ns": 6601770878,
+      "coordinator_ns": 2012183497,
+      "configured_delay_ns": 1680000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 4766768504,
+        "execute_ns": 4735758121,
+        "experts_ns": 4727618711,
+        "queue_ns": 3850616,
+        "unattributed_exchange_ns": 155002374.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      3.5185546875,
+      4.09521484375,
+      6.013671875
+    ],
+    "relay": {
+      "relay_chunks": 19453,
+      "relay_bytes": 299922197,
+      "relay_late_mean_ns": 1824.3365547730427,
+      "relay_late_max_ns": 95125,
+      "relay_late_per_position_ns": 164300.08796296295,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:19:40Z",
+    "ended_utc": "2026-11-15T11:20:15Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-006",
+    "pair": 1,
+    "round": 0,
+    "pair_arm": "block-4",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 257485436.01785713,
+      "wall_ns": 14419184417,
+      "exchanges": 336,
+      "exchange_ns": 12093965966,
+      "coordinator_ns": 2325218451,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 5175798756,
+        "execute_ns": 5135666951,
+        "experts_ns": 5125372133,
+        "queue_ns": 5664537,
+        "unattributed_exchange_ns": 198167210.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      9.27978515625,
+      5.587890625,
+      6.44384765625
+    ],
+    "relay": {
+      "relay_chunks": 19453,
+      "relay_bytes": 299922790,
+      "relay_late_mean_ns": 10064.69973782964,
+      "relay_late_max_ns": 2838083,
+      "relay_late_per_position_ns": 906428.7222222222,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:20:15Z",
+    "ended_utc": "2026-11-15T11:21:14Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-007",
+    "pair": 1,
+    "round": 0,
+    "pair_arm": "block-4",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 148714665.92857143,
+      "wall_ns": 8328021292,
+      "exchanges": 1344,
+      "exchange_ns": 5942224371,
+      "coordinator_ns": 2385796921,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5514908817,
+        "execute_ns": 5434347407,
+        "experts_ns": 5423555868,
+        "queue_ns": 15098552,
+        "unattributed_exchange_ns": 427315554.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      9.4013671875,
+      6.150390625,
+      6.62158203125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301727416,
+      "relay_late_mean_ns": 830.7859173936093,
+      "relay_late_max_ns": 22542,
+      "relay_late_per_position_ns": 79805.44907407407,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:21:14Z",
+    "ended_utc": "2026-11-15T11:21:50Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-008",
+    "pair": 2,
+    "round": 0,
+    "pair_arm": "block-1",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 160519501.48214287,
+      "wall_ns": 8989092083,
+      "exchanges": 1344,
+      "exchange_ns": 6337906259,
+      "coordinator_ns": 2651185824,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5830137021,
+        "execute_ns": 5701817860,
+        "experts_ns": 5689754869,
+        "queue_ns": 55925728,
+        "unattributed_exchange_ns": 507769238.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      7.57373046875,
+      6.0400390625,
+      6.560546875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725902,
+      "relay_late_mean_ns": 606.5253265217601,
+      "relay_late_max_ns": 118875,
+      "relay_late_per_position_ns": 58262.93518518518,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:21:50Z",
+    "ended_utc": "2026-11-15T11:22:23Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-009",
+    "pair": 2,
+    "round": 0,
+    "pair_arm": "block-1",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 335097216.51785713,
+      "wall_ns": 18765444125,
+      "exchanges": 1344,
+      "exchange_ns": 14581158128,
+      "coordinator_ns": 4184285997,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 6766260143,
+        "execute_ns": 6534298783,
+        "experts_ns": 6514313852,
+        "queue_ns": 76267564,
+        "unattributed_exchange_ns": 1094897985.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      13.59912109375,
+      8.16064453125,
+      7.31787109375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302420015,
+      "relay_late_mean_ns": 23894.595643163528,
+      "relay_late_max_ns": 34369959,
+      "relay_late_per_position_ns": 2295319.282407407,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T11:22:23Z",
+    "ended_utc": "2026-11-15T11:23:37Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-010",
+    "pair": 2,
+    "round": 0,
+    "pair_arm": "block-1",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 639034662.1964285,
+      "wall_ns": 35785941083,
+      "exchanges": 1344,
+      "exchange_ns": 32928266993,
+      "coordinator_ns": 2857674090,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 5429701233,
+        "execute_ns": 5320205521,
+        "experts_ns": 5306625028,
+        "queue_ns": 24834864,
+        "unattributed_exchange_ns": 618565760.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      11.994140625,
+      11.984375,
+      9.2333984375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302420366,
+      "relay_late_mean_ns": 320703.09595643164,
+      "relay_late_max_ns": 111022083,
+      "relay_late_per_position_ns": 30806798.787037037,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T11:23:37Z",
+    "ended_utc": "2026-11-15T11:26:28Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-011",
+    "pair": 2,
+    "round": 0,
+    "pair_arm": "block-1",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 149976661.4642857,
+      "wall_ns": 8398693042,
+      "exchanges": 1344,
+      "exchange_ns": 6021589434,
+      "coordinator_ns": 2377103608,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5573725169,
+        "execute_ns": 5480949348,
+        "experts_ns": 5468850557,
+        "queue_ns": 16226690,
+        "unattributed_exchange_ns": 447864265.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      11.64013671875,
+      11.892578125,
+      9.30908203125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301726492,
+      "relay_late_mean_ns": 814.4063810304111,
+      "relay_late_max_ns": 103208,
+      "relay_late_per_position_ns": 78232.02777777778,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:26:28Z",
+    "ended_utc": "2026-11-15T11:27:02Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-012",
+    "pair": 3,
+    "round": 0,
+    "pair_arm": "sequential",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 376552028.26785713,
+      "wall_ns": 21086913583,
+      "exchanges": 1344,
+      "exchange_ns": 9413743845,
+      "coordinator_ns": 11673169738,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 7835046205,
+        "execute_ns": 6538946473,
+        "experts_ns": 6521139467,
+        "queue_ns": 1159438548,
+        "unattributed_exchange_ns": 1578697640.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      29.07421875,
+      15.99853515625,
+      10.95166015625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301731676,
+      "relay_late_mean_ns": 1556.2046363680176,
+      "relay_late_max_ns": 3395833,
+      "relay_late_per_position_ns": 149489.30555555556,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:27:02Z",
+    "ended_utc": "2026-11-15T11:28:00Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-013",
+    "pair": 3,
+    "round": 0,
+    "pair_arm": "sequential",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 390522680.0535714,
+      "wall_ns": 21869270083,
+      "exchanges": 1344,
+      "exchange_ns": 16665253278,
+      "coordinator_ns": 5204016805,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 8203801777,
+        "execute_ns": 7888853911,
+        "experts_ns": 7862508722,
+        "queue_ns": 140405243,
+        "unattributed_exchange_ns": 1741451501.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      25.4833984375,
+      17.57373046875,
+      11.9638671875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301729955,
+      "relay_late_mean_ns": 52169.70923899947,
+      "relay_late_max_ns": 56938875,
+      "relay_late_per_position_ns": 5011431.930555556,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T11:28:00Z",
+    "ended_utc": "2026-11-15T11:29:12Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-014",
+    "pair": 3,
+    "round": 0,
+    "pair_arm": "sequential",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 652182700.1428572,
+      "wall_ns": 36522231208,
+      "exchanges": 1344,
+      "exchange_ns": 33917801528,
+      "coordinator_ns": 2604429680,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 6472745555,
+        "execute_ns": 6361693824,
+        "experts_ns": 6349077242,
+        "queue_ns": 20807776,
+        "unattributed_exchange_ns": 565055973.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      10.5986328125,
+      15.93798828125,
+      12.365234375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301731016,
+      "relay_late_mean_ns": 19518.806255723168,
+      "relay_late_max_ns": 18388375,
+      "relay_late_per_position_ns": 1874980.1435185184,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:29:12Z",
+    "ended_utc": "2026-11-15T11:31:46Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-015",
+    "pair": 3,
+    "round": 0,
+    "pair_arm": "sequential",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 231154935.26785713,
+      "wall_ns": 12944676375,
+      "exchanges": 1344,
+      "exchange_ns": 7824722433,
+      "coordinator_ns": 5119953942,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 6622915171,
+        "execute_ns": 6005027083,
+        "experts_ns": 5990662246,
+        "queue_ns": 379703533,
+        "unattributed_exchange_ns": 1201807262.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      17.02880859375,
+      16.7744140625,
+      12.80322265625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301726752,
+      "relay_late_mean_ns": 1163.538483782351,
+      "relay_late_max_ns": 8017500,
+      "relay_late_per_position_ns": 111769.72222222222,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:31:46Z",
+    "ended_utc": "2026-11-15T11:32:25Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-016",
+    "pair": 4,
+    "round": 0,
+    "pair_arm": "block-2",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 328392327.375,
+      "wall_ns": 18389970333,
+      "exchanges": 1344,
+      "exchange_ns": 9953467958,
+      "coordinator_ns": 8436502375,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 7548735862,
+        "execute_ns": 6814103581,
+        "experts_ns": 6796739899,
+        "queue_ns": 588952927,
+        "unattributed_exchange_ns": 2404732096.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      89.77490234375,
+      48.92333984375,
+      26.45947265625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301737704,
+      "relay_late_mean_ns": 4835.43356306328,
+      "relay_late_max_ns": 24146416,
+      "relay_late_per_position_ns": 464492.64351851854,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:32:25Z",
+    "ended_utc": "2026-11-15T11:34:33Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-017",
+    "pair": 4,
+    "round": 0,
+    "pair_arm": "block-2",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 311193340.76785713,
+      "wall_ns": 17426827083,
+      "exchanges": 672,
+      "exchange_ns": 11179621495,
+      "coordinator_ns": 6247205588,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 7248870083,
+        "execute_ns": 6986715635,
+        "experts_ns": 6968199313,
+        "queue_ns": 158844582,
+        "unattributed_exchange_ns": 570751412.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      55.9423828125,
+      49.2587890625,
+      28.5908203125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300754116,
+      "relay_late_mean_ns": 64408.29042363488,
+      "relay_late_max_ns": 14542167,
+      "relay_late_per_position_ns": 6187072.305555556,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T11:34:33Z",
+    "ended_utc": "2026-11-15T11:35:50Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-018",
+    "pair": 4,
+    "round": 0,
+    "pair_arm": "block-2",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 371786936.75,
+      "wall_ns": 20820068458,
+      "exchanges": 672,
+      "exchange_ns": 18576529694,
+      "coordinator_ns": 2243538764,
+      "configured_delay_ns": 13440000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 4865356672,
+        "execute_ns": 4821815538,
+        "experts_ns": 4812674227,
+        "queue_ns": 6859452,
+        "unattributed_exchange_ns": 271173022.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      16.34326171875,
+      37.98095703125,
+      26.330078125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300748816,
+      "relay_late_mean_ns": 13361.817870740759,
+      "relay_late_max_ns": 7983083,
+      "relay_late_per_position_ns": 1283538.6990740742,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:35:50Z",
+    "ended_utc": "2026-11-15T11:37:17Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-019",
+    "pair": 4,
+    "round": 0,
+    "pair_arm": "block-2",
+    "arm_pair": 0,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 126530876.48214285,
+      "wall_ns": 7085729083,
+      "exchanges": 1344,
+      "exchange_ns": 5106395141,
+      "coordinator_ns": 1979333942,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4754945501,
+        "execute_ns": 4693176832,
+        "experts_ns": 4685050453,
+        "queue_ns": 11280536,
+        "unattributed_exchange_ns": 351449640.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      12.53271484375,
+      35.34716796875,
+      25.716796875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724470,
+      "relay_late_mean_ns": 405.90139283820906,
+      "relay_late_max_ns": 14792,
+      "relay_late_per_position_ns": 38990.96296296296,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:37:17Z",
+    "ended_utc": "2026-11-15T11:37:46Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-020",
+    "pair": 5,
+    "round": 1,
+    "pair_arm": "sequential",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 128080373.5,
+      "wall_ns": 7172500916,
+      "exchanges": 1344,
+      "exchange_ns": 5189650821,
+      "coordinator_ns": 1982850095,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4824171629,
+        "execute_ns": 4758367618,
+        "experts_ns": 4750212241,
+        "queue_ns": 11724625,
+        "unattributed_exchange_ns": 365479192.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      8.736328125,
+      32.2529296875,
+      24.92822265625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724613,
+      "relay_late_mean_ns": 421.24806014747696,
+      "relay_late_max_ns": 14125,
+      "relay_late_per_position_ns": 40465.166666666664,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:37:46Z",
+    "ended_utc": "2026-11-15T11:38:15Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-021",
+    "pair": 5,
+    "round": 1,
+    "pair_arm": "sequential",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 745797630.2142857,
+      "wall_ns": 41764667292,
+      "exchanges": 1344,
+      "exchange_ns": 37076191179,
+      "coordinator_ns": 4688476113,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 8604207221,
+        "execute_ns": 8260885412,
+        "experts_ns": 8243672404,
+        "queue_ns": 166341991,
+        "unattributed_exchange_ns": 1591983958.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      25.26904296875,
+      28.80908203125,
+      24.640625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301733031,
+      "relay_late_mean_ns": 254306.2208781146,
+      "relay_late_max_ns": 62588041,
+      "relay_late_per_position_ns": 24428702.671296295,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T11:38:15Z",
+    "ended_utc": "2026-11-15T11:40:58Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-022",
+    "pair": 5,
+    "round": 1,
+    "pair_arm": "sequential",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 269191063.23214287,
+      "wall_ns": 15074699541,
+      "exchanges": 1344,
+      "exchange_ns": 12788118740,
+      "coordinator_ns": 2286580801,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5534605576,
+        "execute_ns": 5418799868,
+        "experts_ns": 5407108804,
+        "queue_ns": 27404940,
+        "unattributed_exchange_ns": 533513164.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      12.669921875,
+      24.353515625,
+      23.26806640625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301727947,
+      "relay_late_mean_ns": 4409.640753771266,
+      "relay_late_max_ns": 3283375,
+      "relay_late_per_position_ns": 423590.9074074074,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:40:58Z",
+    "ended_utc": "2026-11-15T11:42:04Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-023",
+    "pair": 5,
+    "round": 1,
+    "pair_arm": "sequential",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 131699907.73214285,
+      "wall_ns": 7375194833,
+      "exchanges": 1344,
+      "exchange_ns": 5351825416,
+      "coordinator_ns": 2023369417,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4977183010,
+        "execute_ns": 4909894947,
+        "experts_ns": 4901306626,
+        "queue_ns": 12173515,
+        "unattributed_exchange_ns": 374642406.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      9.43359375,
+      22.4541015625,
+      22.6162109375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724726,
+      "relay_late_mean_ns": 494.1750445804617,
+      "relay_late_max_ns": 24166,
+      "relay_late_per_position_ns": 47470.5462962963,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:42:04Z",
+    "ended_utc": "2026-11-15T11:42:34Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-024",
+    "pair": 6,
+    "round": 1,
+    "pair_arm": "block-4",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 135174497.01785713,
+      "wall_ns": 7569771833,
+      "exchanges": 1344,
+      "exchange_ns": 5470035132,
+      "coordinator_ns": 2099736701,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5086420757,
+        "execute_ns": 5015857963,
+        "experts_ns": 5006666135,
+        "queue_ns": 11549417,
+        "unattributed_exchange_ns": 383614375.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      7.9970703125,
+      20.86328125,
+      22.03369140625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724692,
+      "relay_late_mean_ns": 564.119138271724,
+      "relay_late_max_ns": 18208,
+      "relay_late_per_position_ns": 54189.38888888889,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:42:34Z",
+    "ended_utc": "2026-11-15T11:43:04Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-025",
+    "pair": 6,
+    "round": 1,
+    "pair_arm": "block-4",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 247649635.4107143,
+      "wall_ns": 13868379583,
+      "exchanges": 336,
+      "exchange_ns": 11788137456,
+      "coordinator_ns": 2080242127,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 4903826286,
+        "execute_ns": 4871342286,
+        "experts_ns": 4862498600,
+        "queue_ns": 4697575,
+        "unattributed_exchange_ns": 164311170.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      6.07421875,
+      18.13525390625,
+      20.94287109375
+    ],
+    "relay": {
+      "relay_chunks": 19453,
+      "relay_bytes": 299923127,
+      "relay_late_mean_ns": 4190.079370791138,
+      "relay_late_max_ns": 552917,
+      "relay_late_per_position_ns": 377359.3240740741,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:43:04Z",
+    "ended_utc": "2026-11-15T11:44:00Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-026",
+    "pair": 6,
+    "round": 1,
+    "pair_arm": "block-4",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 156530755.2142857,
+      "wall_ns": 8765722292,
+      "exchanges": 336,
+      "exchange_ns": 6691449000,
+      "coordinator_ns": 2074273292,
+      "configured_delay_ns": 1680000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 4858953959,
+        "execute_ns": 4828111118,
+        "experts_ns": 4819443730,
+        "queue_ns": 4237552,
+        "unattributed_exchange_ns": 152495041.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      10.6787109375,
+      17.71728515625,
+      20.6455078125
+    ],
+    "relay": {
+      "relay_chunks": 19453,
+      "relay_bytes": 299923061,
+      "relay_late_mean_ns": 74567.0210250347,
+      "relay_late_max_ns": 30716667,
+      "relay_late_per_position_ns": 6715519.722222222,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T11:44:00Z",
+    "ended_utc": "2026-11-15T11:44:44Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-027",
+    "pair": 6,
+    "round": 1,
+    "pair_arm": "block-4",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 145648134.6607143,
+      "wall_ns": 8156295541,
+      "exchanges": 1344,
+      "exchange_ns": 5771245920,
+      "coordinator_ns": 2385049621,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5340112410,
+        "execute_ns": 5258740177,
+        "experts_ns": 5247660125,
+        "queue_ns": 14081069,
+        "unattributed_exchange_ns": 431133510.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      8.181640625,
+      16.4248046875,
+      20.07373046875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301724632,
+      "relay_late_mean_ns": 554.0765338088582,
+      "relay_late_max_ns": 14417,
+      "relay_late_per_position_ns": 53224.694444444445,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:44:44Z",
+    "ended_utc": "2026-11-15T11:45:14Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-028",
+    "pair": 7,
+    "round": 1,
+    "pair_arm": "block-8",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 294229155.5,
+      "wall_ns": 16476832708,
+      "exchanges": 1344,
+      "exchange_ns": 9323835098,
+      "coordinator_ns": 7152997610,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 7299873667,
+        "execute_ns": 6795446110,
+        "experts_ns": 6774370826,
+        "queue_ns": 286334840,
+        "unattributed_exchange_ns": 2023961431.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      20.94140625,
+      18.2294921875,
+      20.5234375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301728990,
+      "relay_late_mean_ns": 1907.7635066750204,
+      "relay_late_max_ns": 9942709,
+      "relay_late_per_position_ns": 183260.11574074073,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:45:14Z",
+    "ended_utc": "2026-11-15T11:45:59Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-029",
+    "pair": 7,
+    "round": 1,
+    "pair_arm": "block-8",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 183292296.875,
+      "wall_ns": 10264368625,
+      "exchanges": 168,
+      "exchange_ns": 8337760961,
+      "coordinator_ns": 1926607664,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 4880601420,
+        "execute_ns": 4857268918,
+        "experts_ns": 4849047013,
+        "queue_ns": 1676209,
+        "unattributed_exchange_ns": 97159541.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      16.5,
+      17.7275390625,
+      20.23681640625
+    ],
+    "relay": {
+      "relay_chunks": 18805,
+      "relay_bytes": 299501604,
+      "relay_late_mean_ns": 12488.60329699548,
+      "relay_late_max_ns": 2253083,
+      "relay_late_per_position_ns": 1087260.1157407407,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:45:59Z",
+    "ended_utc": "2026-11-15T11:46:44Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-030",
+    "pair": 7,
+    "round": 1,
+    "pair_arm": "block-8",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 654690892.1071428,
+      "wall_ns": 36662689958,
+      "exchanges": 168,
+      "exchange_ns": 10889069962,
+      "coordinator_ns": 25773619996,
+      "configured_delay_ns": 840000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 7789724368,
+        "execute_ns": 7477804410,
+        "experts_ns": 7462471745,
+        "queue_ns": 226853923,
+        "unattributed_exchange_ns": 2259345594.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      63.86572265625,
+      33.02734375,
+      25.85205078125
+    ],
+    "relay": {
+      "relay_chunks": 18808,
+      "relay_bytes": 299502586,
+      "relay_late_mean_ns": 943128.1539238621,
+      "relay_late_max_ns": 63876708,
+      "relay_late_per_position_ns": 82122010.7361111,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T11:46:44Z",
+    "ended_utc": "2026-11-15T11:48:18Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-031",
+    "pair": 7,
+    "round": 1,
+    "pair_arm": "block-8",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 253828744.05357143,
+      "wall_ns": 14214409667,
+      "exchanges": 1344,
+      "exchange_ns": 7733867112,
+      "coordinator_ns": 6480542555,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 6724729150,
+        "execute_ns": 5842659844,
+        "experts_ns": 5828097518,
+        "queue_ns": 776172727,
+        "unattributed_exchange_ns": 1009137962.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      66.4111328125,
+      45.08837890625,
+      31.5078125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301735205,
+      "relay_late_mean_ns": 3462.308737770495,
+      "relay_late_max_ns": 12033583,
+      "relay_late_per_position_ns": 332590.01851851854,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:48:18Z",
+    "ended_utc": "2026-11-15T11:49:58Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-032",
+    "pair": 8,
+    "round": 1,
+    "pair_arm": "block-1",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 526313978.41071427,
+      "wall_ns": 29473582791,
+      "exchanges": 1344,
+      "exchange_ns": 16448947371,
+      "coordinator_ns": 13024635420,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 9177559241,
+        "execute_ns": 8099223299,
+        "experts_ns": 8080074646,
+        "queue_ns": 841940215,
+        "unattributed_exchange_ns": 7271388130.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      53.357421875,
+      44.77880859375,
+      32.28271484375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301730120,
+      "relay_late_mean_ns": 1588.4128873680659,
+      "relay_late_max_ns": 4902000,
+      "relay_late_per_position_ns": 152583.23611111112,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:49:58Z",
+    "ended_utc": "2026-11-15T11:51:00Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-033",
+    "pair": 8,
+    "round": 1,
+    "pair_arm": "block-1",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 666968288.6964285,
+      "wall_ns": 37350224167,
+      "exchanges": 1344,
+      "exchange_ns": 33873484229,
+      "coordinator_ns": 3476739938,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 5882996179,
+        "execute_ns": 5724658524,
+        "experts_ns": 5710069826,
+        "queue_ns": 36767186,
+        "unattributed_exchange_ns": 1110488050.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      19.0341796875,
+      33.748046875,
+      29.736328125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302418031,
+      "relay_late_mean_ns": 26193.702780856907,
+      "relay_late_max_ns": 41653875,
+      "relay_late_per_position_ns": 2516171.939814815,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:51:00Z",
+    "ended_utc": "2026-11-15T11:53:23Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-034",
+    "pair": 8,
+    "round": 1,
+    "pair_arm": "block-1",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 270165847.46428573,
+      "wall_ns": 15129287458,
+      "exchanges": 1344,
+      "exchange_ns": 12427812810,
+      "coordinator_ns": 2701474648,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 5208212295,
+        "execute_ns": 5121123840,
+        "experts_ns": 5108840867,
+        "queue_ns": 16124736,
+        "unattributed_exchange_ns": 499600515.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      18.1552734375,
+      31.68359375,
+      29.35986328125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302417235,
+      "relay_late_mean_ns": 34940.19538291002,
+      "relay_late_max_ns": 25471542,
+      "relay_late_per_position_ns": 3356361.638888889,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:53:23Z",
+    "ended_utc": "2026-11-15T11:54:30Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-035",
+    "pair": 8,
+    "round": 1,
+    "pair_arm": "block-1",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 170574453.85714287,
+      "wall_ns": 9552169416,
+      "exchanges": 1344,
+      "exchange_ns": 6866396889,
+      "coordinator_ns": 2685772527,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 6369791360,
+        "execute_ns": 6269384308,
+        "experts_ns": 6258302258,
+        "queue_ns": 15483453,
+        "unattributed_exchange_ns": 496605529.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      25.3095703125,
+      31.20751953125,
+      29.31005859375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301730795,
+      "relay_late_mean_ns": 2967.989830835221,
+      "relay_late_max_ns": 11706500,
+      "relay_late_per_position_ns": 285105.65277777775,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:54:30Z",
+    "ended_utc": "2026-11-15T11:55:27Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-036",
+    "pair": 9,
+    "round": 1,
+    "pair_arm": "block-2",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 338328859.375,
+      "wall_ns": 18946416125,
+      "exchanges": 1344,
+      "exchange_ns": 14945681011,
+      "coordinator_ns": 4000735114,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 14034218912,
+        "execute_ns": 13845257706,
+        "experts_ns": 13831117400,
+        "queue_ns": 56920823,
+        "unattributed_exchange_ns": 911462099.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      22.421875,
+      27.75732421875,
+      28.11474609375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301730643,
+      "relay_late_mean_ns": 975.4646488987421,
+      "relay_late_max_ns": 133583,
+      "relay_late_per_position_ns": 93703.31481481482,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:55:27Z",
+    "ended_utc": "2026-11-15T11:56:56Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-037",
+    "pair": 9,
+    "round": 1,
+    "pair_arm": "block-2",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 373435388.39285713,
+      "wall_ns": 20912381750,
+      "exchanges": 672,
+      "exchange_ns": 18574618917,
+      "coordinator_ns": 2337762833,
+      "configured_delay_ns": 13440000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 4868862737,
+        "execute_ns": 4818966413,
+        "experts_ns": 4808950975,
+        "queue_ns": 8242024,
+        "unattributed_exchange_ns": 265756180.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      10.21923828125,
+      22.59130859375,
+      26.1064453125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300749296,
+      "relay_late_mean_ns": 5761.968817774351,
+      "relay_late_max_ns": 5125500,
+      "relay_late_per_position_ns": 553495.7916666666,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:56:56Z",
+    "ended_utc": "2026-11-15T11:58:24Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-038",
+    "pair": 9,
+    "round": 1,
+    "pair_arm": "block-2",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 238880741.07142857,
+      "wall_ns": 13377321500,
+      "exchanges": 672,
+      "exchange_ns": 9739057504,
+      "coordinator_ns": 3638263996,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 5900759705,
+        "execute_ns": 5770474100,
+        "experts_ns": 5751268485,
+        "queue_ns": 51534542,
+        "unattributed_exchange_ns": 478297799.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      9.0927734375,
+      20.48828125,
+      25.14501953125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300749320,
+      "relay_late_mean_ns": 15515.435924622874,
+      "relay_late_max_ns": 12488375,
+      "relay_late_per_position_ns": 1490415.648148148,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:58:24Z",
+    "ended_utc": "2026-11-15T11:59:12Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-039",
+    "pair": 9,
+    "round": 1,
+    "pair_arm": "block-2",
+    "arm_pair": 1,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 131308805.05357143,
+      "wall_ns": 7353293083,
+      "exchanges": 1344,
+      "exchange_ns": 5321257319,
+      "coordinator_ns": 2032035764,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4940917545,
+        "execute_ns": 4865406704,
+        "experts_ns": 4856856160,
+        "queue_ns": 12564322,
+        "unattributed_exchange_ns": 380339774.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      6.7021484375,
+      18.8154296875,
+      24.37646484375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725278,
+      "relay_late_mean_ns": 472.8911754783363,
+      "relay_late_max_ns": 11042,
+      "relay_late_per_position_ns": 45426.01388888889,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:59:12Z",
+    "ended_utc": "2026-11-15T11:59:42Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-040",
+    "pair": 10,
+    "round": 2,
+    "pair_arm": "block-8",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 128957436.01785715,
+      "wall_ns": 7221616417,
+      "exchanges": 1344,
+      "exchange_ns": 5229185144,
+      "coordinator_ns": 1992431273,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4855029955,
+        "execute_ns": 4786229639,
+        "experts_ns": 4777811099,
+        "queue_ns": 12388754,
+        "unattributed_exchange_ns": 374155189.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      5.84765625,
+      17.47216796875,
+      23.697265625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725175,
+      "relay_late_mean_ns": 403.39404308641383,
+      "relay_late_max_ns": 20000,
+      "relay_late_per_position_ns": 38750.10648148148,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T11:59:42Z",
+    "ended_utc": "2026-11-15T12:00:11Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-041",
+    "pair": 10,
+    "round": 2,
+    "pair_arm": "block-8",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 182591735.10714287,
+      "wall_ns": 10225137166,
+      "exchanges": 168,
+      "exchange_ns": 8276772749,
+      "coordinator_ns": 1948364417,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 4807362918,
+        "execute_ns": 4781151450,
+        "experts_ns": 4772582215,
+        "queue_ns": 2156124,
+        "unattributed_exchange_ns": 109409831.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      5.4130859375,
+      15.84326171875,
+      22.8095703125
+    ],
+    "relay": {
+      "relay_chunks": 18809,
+      "relay_bytes": 299501340,
+      "relay_late_mean_ns": 3591.249933542453,
+      "relay_late_max_ns": 74958,
+      "relay_late_per_position_ns": 312721.3888888889,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:00:11Z",
+    "ended_utc": "2026-11-15T12:00:52Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-042",
+    "pair": 10,
+    "round": 2,
+    "pair_arm": "block-8",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 315253245.53571427,
+      "wall_ns": 17654181750,
+      "exchanges": 168,
+      "exchange_ns": 9253771705,
+      "coordinator_ns": 8400410045,
+      "configured_delay_ns": 840000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 7272692460,
+        "execute_ns": 7075712671,
+        "experts_ns": 7062282015,
+        "queue_ns": 104301376,
+        "unattributed_exchange_ns": 1141079245.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      32.46533203125,
+      20.9345703125,
+      24.251953125
+    ],
+    "relay": {
+      "relay_chunks": 18809,
+      "relay_bytes": 299501879,
+      "relay_late_mean_ns": 527673.2941676857,
+      "relay_late_max_ns": 51434292,
+      "relay_late_per_position_ns": 45949106.43518519,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:00:52Z",
+    "ended_utc": "2026-11-15T12:01:43Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-043",
+    "pair": 10,
+    "round": 2,
+    "pair_arm": "block-8",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 148868867.55357143,
+      "wall_ns": 8336656583,
+      "exchanges": 1344,
+      "exchange_ns": 5976866734,
+      "coordinator_ns": 2359789849,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5499851134,
+        "execute_ns": 5400833955,
+        "experts_ns": 5389661841,
+        "queue_ns": 15177673,
+        "unattributed_exchange_ns": 477015600.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      47.93408203125,
+      28.59814453125,
+      26.9775390625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301730193,
+      "relay_late_mean_ns": 1179.7067328545954,
+      "relay_late_max_ns": 2865250,
+      "relay_late_per_position_ns": 113322.84722222222,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:01:43Z",
+    "ended_utc": "2026-11-15T12:02:36Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-044",
+    "pair": 11,
+    "round": 2,
+    "pair_arm": "block-2",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 141996230.6607143,
+      "wall_ns": 7951788917,
+      "exchanges": 1344,
+      "exchange_ns": 5809379825,
+      "coordinator_ns": 2142409092,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5336780467,
+        "execute_ns": 5248321407,
+        "experts_ns": 5237484306,
+        "queue_ns": 15048705,
+        "unattributed_exchange_ns": 472599358.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      31.8994140625,
+      26.537109375,
+      26.28466796875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301726301,
+      "relay_late_mean_ns": 720.1091618873198,
+      "relay_late_max_ns": 30084,
+      "relay_late_per_position_ns": 69173.81944444444,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:02:36Z",
+    "ended_utc": "2026-11-15T12:03:08Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-045",
+    "pair": 11,
+    "round": 2,
+    "pair_arm": "block-2",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 383333264.89285713,
+      "wall_ns": 21466662834,
+      "exchanges": 672,
+      "exchange_ns": 19004133009,
+      "coordinator_ns": 2462529825,
+      "configured_delay_ns": 13440000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 5230881169,
+        "execute_ns": 5168635374,
+        "experts_ns": 5157398254,
+        "queue_ns": 13579714,
+        "unattributed_exchange_ns": 333251840.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      15.31103515625,
+      22.55126953125,
+      24.7763671875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300750746,
+      "relay_late_mean_ns": 19845.00337365656,
+      "relay_late_max_ns": 9662917,
+      "relay_late_per_position_ns": 1906314.6990740742,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:03:08Z",
+    "ended_utc": "2026-11-15T12:04:36Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-046",
+    "pair": 11,
+    "round": 2,
+    "pair_arm": "block-2",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 201854508.92857143,
+      "wall_ns": 11303852500,
+      "exchanges": 672,
+      "exchange_ns": 8909723404,
+      "coordinator_ns": 2394129096,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 5249449827,
+        "execute_ns": 5192403551,
+        "experts_ns": 5182952235,
+        "queue_ns": 15136713,
+        "unattributed_exchange_ns": 300273577.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      13.14599609375,
+      20.94140625,
+      24.0654296875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300747971,
+      "relay_late_mean_ns": 1898.6755988240398,
+      "relay_late_max_ns": 595917,
+      "relay_late_per_position_ns": 182387.12962962964,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:04:36Z",
+    "ended_utc": "2026-11-15T12:05:20Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-047",
+    "pair": 11,
+    "round": 2,
+    "pair_arm": "block-2",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 148497062.5,
+      "wall_ns": 8315835500,
+      "exchanges": 1344,
+      "exchange_ns": 6032314327,
+      "coordinator_ns": 2283521173,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5545018602,
+        "execute_ns": 5461368382,
+        "experts_ns": 5450386117,
+        "queue_ns": 14899681,
+        "unattributed_exchange_ns": 487295725.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      12.873046875,
+      20.1328125,
+      23.66357421875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301726038,
+      "relay_late_mean_ns": 659.9537809051038,
+      "relay_late_max_ns": 19083,
+      "relay_late_per_position_ns": 63395.28240740741,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:05:20Z",
+    "ended_utc": "2026-11-15T12:05:53Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-048",
+    "pair": 12,
+    "round": 2,
+    "pair_arm": "block-4",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 137134054.30357143,
+      "wall_ns": 7679507041,
+      "exchanges": 1344,
+      "exchange_ns": 5504864890,
+      "coordinator_ns": 2174642151,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5087449300,
+        "execute_ns": 5008715936,
+        "experts_ns": 4998077743,
+        "queue_ns": 13857264,
+        "unattributed_exchange_ns": 417415590.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      10.71142578125,
+      18.97265625,
+      23.12353515625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725389,
+      "relay_late_mean_ns": 593.5294231047279,
+      "relay_late_max_ns": 9833,
+      "relay_late_per_position_ns": 57014.5462962963,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:05:53Z",
+    "ended_utc": "2026-11-15T12:06:24Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-049",
+    "pair": 12,
+    "round": 2,
+    "pair_arm": "block-4",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 250547101.19642857,
+      "wall_ns": 14030637667,
+      "exchanges": 336,
+      "exchange_ns": 11890444960,
+      "coordinator_ns": 2140192707,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 4996171969,
+        "execute_ns": 4961505667,
+        "experts_ns": 4952361328,
+        "queue_ns": 5169503,
+        "unattributed_exchange_ns": 174272991.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      12.70556640625,
+      18.3515625,
+      22.60986328125
+    ],
+    "relay": {
+      "relay_chunks": 19453,
+      "relay_bytes": 299923362,
+      "relay_late_mean_ns": 71267.54397779262,
+      "relay_late_max_ns": 30625917,
+      "relay_late_per_position_ns": 6418368.208333333,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:06:24Z",
+    "ended_utc": "2026-11-15T12:07:27Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-050",
+    "pair": 12,
+    "round": 2,
+    "pair_arm": "block-4",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 272647048.35714287,
+      "wall_ns": 15268234708,
+      "exchanges": 336,
+      "exchange_ns": 10031655345,
+      "coordinator_ns": 5236579363,
+      "configured_delay_ns": 1680000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 7506667124,
+        "execute_ns": 7231686449,
+        "experts_ns": 7216368580,
+        "queue_ns": 72033196,
+        "unattributed_exchange_ns": 844988221.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      18.7255859375,
+      18.7041015625,
+      22.4931640625
+    ],
+    "relay": {
+      "relay_chunks": 19453,
+      "relay_bytes": 299922810,
+      "relay_late_mean_ns": 49618.08939495194,
+      "relay_late_max_ns": 19403250,
+      "relay_late_per_position_ns": 4468614.319444444,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:07:27Z",
+    "ended_utc": "2026-11-15T12:08:11Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-051",
+    "pair": 12,
+    "round": 2,
+    "pair_arm": "block-4",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 373664241.0714286,
+      "wall_ns": 20925197500,
+      "exchanges": 1344,
+      "exchange_ns": 11484842210,
+      "coordinator_ns": 9440355290,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 7888252662,
+        "execute_ns": 7248364507,
+        "experts_ns": 7227617097,
+        "queue_ns": 495472448,
+        "unattributed_exchange_ns": 3596589548.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      44.63232421875,
+      27.14306640625,
+      25.3291015625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301737029,
+      "relay_late_mean_ns": 7550.223577039857,
+      "relay_late_max_ns": 43103000,
+      "relay_late_per_position_ns": 725275.875,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:08:11Z",
+    "ended_utc": "2026-11-15T12:09:47Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-052",
+    "pair": 13,
+    "round": 2,
+    "pair_arm": "sequential",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 133990246.28571428,
+      "wall_ns": 7503453792,
+      "exchanges": 1344,
+      "exchange_ns": 5377413676,
+      "coordinator_ns": 2126040116,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 4976506660,
+        "execute_ns": 4902287919,
+        "experts_ns": 4892543058,
+        "queue_ns": 13770342,
+        "unattributed_exchange_ns": 400907016.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      38.62451171875,
+      27.96435546875,
+      25.71728515625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301730162,
+      "relay_late_mean_ns": 1335.7819653959227,
+      "relay_late_max_ns": 4507750,
+      "relay_late_per_position_ns": 128315.46296296296,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:09:47Z",
+    "ended_utc": "2026-11-15T12:10:37Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-053",
+    "pair": 13,
+    "round": 2,
+    "pair_arm": "sequential",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 628853331.1071428,
+      "wall_ns": 35215786542,
+      "exchanges": 1344,
+      "exchange_ns": 32864756242,
+      "coordinator_ns": 2351030300,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5414308927,
+        "execute_ns": 5294603168,
+        "experts_ns": 5282642979,
+        "queue_ns": 36690707,
+        "unattributed_exchange_ns": 570447315.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      13.3369140625,
+      22.43798828125,
+      23.87841796875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301728191,
+      "relay_late_mean_ns": 15971.156923225215,
+      "relay_late_max_ns": 10958667,
+      "relay_late_per_position_ns": 1534192.2916666667,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:10:37Z",
+    "ended_utc": "2026-11-15T12:12:56Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-054",
+    "pair": 13,
+    "round": 2,
+    "pair_arm": "sequential",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 262730299.85714287,
+      "wall_ns": 14712896792,
+      "exchanges": 1344,
+      "exchange_ns": 12518916384,
+      "coordinator_ns": 2193980408,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5295517433,
+        "execute_ns": 5207571829,
+        "experts_ns": 5196972454,
+        "queue_ns": 16349004,
+        "unattributed_exchange_ns": 503398951.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      26.78662109375,
+      24.75537109375,
+      24.62451171875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301730863,
+      "relay_late_mean_ns": 280935.124921683,
+      "relay_late_max_ns": 70184042,
+      "relay_late_per_position_ns": 26986680.125,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:12:56Z",
+    "ended_utc": "2026-11-15T12:14:15Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-055",
+    "pair": 13,
+    "round": 2,
+    "pair_arm": "sequential",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 323894705.35714287,
+      "wall_ns": 18138103500,
+      "exchanges": 1344,
+      "exchange_ns": 13315503920,
+      "coordinator_ns": 4822599580,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 8285290142,
+        "execute_ns": 7560839858,
+        "experts_ns": 7541751556,
+        "queue_ns": 333188611,
+        "unattributed_exchange_ns": 5030213778.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      28.2802734375,
+      24.96630859375,
+      24.681640625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301727525,
+      "relay_late_mean_ns": 7219.887464456118,
+      "relay_late_max_ns": 63628292,
+      "relay_late_per_position_ns": 693543.7268518518,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:14:15Z",
+    "ended_utc": "2026-11-15T12:14:58Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-056",
+    "pair": 14,
+    "round": 2,
+    "pair_arm": "block-1",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 144596489.57142857,
+      "wall_ns": 8097403416,
+      "exchanges": 1344,
+      "exchange_ns": 5608779199,
+      "coordinator_ns": 2488624217,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5104312140,
+        "execute_ns": 4992768201,
+        "experts_ns": 4983331692,
+        "queue_ns": 35322945,
+        "unattributed_exchange_ns": 504467059.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      18.732421875,
+      22.9716796875,
+      23.966796875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301726518,
+      "relay_late_mean_ns": 659.3567400838594,
+      "relay_late_max_ns": 40667,
+      "relay_late_per_position_ns": 63337.930555555555,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:14:58Z",
+    "ended_utc": "2026-11-15T12:15:31Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-057",
+    "pair": 14,
+    "round": 2,
+    "pair_arm": "block-1",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 681494452.375,
+      "wall_ns": 38163689333,
+      "exchanges": 1344,
+      "exchange_ns": 34150925061,
+      "coordinator_ns": 4012764272,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 5893061332,
+        "execute_ns": 5584914887,
+        "experts_ns": 5570587203,
+        "queue_ns": 136427968,
+        "unattributed_exchange_ns": 1377863729.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      36.54052734375,
+      32.97021484375,
+      28.20947265625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302422776,
+      "relay_late_mean_ns": 563551.4031519592,
+      "relay_late_max_ns": 90312583,
+      "relay_late_per_position_ns": 54134852.14814815,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:15:31Z",
+    "ended_utc": "2026-11-15T12:18:25Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-058",
+    "pair": 14,
+    "round": 2,
+    "pair_arm": "block-1",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 921310868.3035715,
+      "wall_ns": 51593408625,
+      "exchanges": 1344,
+      "exchange_ns": 27488952998,
+      "coordinator_ns": 24104455627,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 8633866371,
+        "execute_ns": 6735909499,
+        "experts_ns": 6713611628,
+        "queue_ns": 1747783767,
+        "unattributed_exchange_ns": 12135086627.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      85.822265625,
+      61.486328125,
+      41.51416015625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302427515,
+      "relay_late_mean_ns": 1399017.8170514242,
+      "relay_late_max_ns": 85623084,
+      "relay_late_per_position_ns": 134389910.58333334,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:18:25Z",
+    "ended_utc": "2026-11-15T12:21:32Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-059",
+    "pair": 14,
+    "round": 2,
+    "pair_arm": "block-1",
+    "arm_pair": 2,
+    "order": "20->5",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 302612869.78571427,
+      "wall_ns": 16946320708,
+      "exchanges": 1344,
+      "exchange_ns": 8733212440,
+      "coordinator_ns": 8213108268,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 7802583905,
+        "execute_ns": 6664782949,
+        "experts_ns": 6647139903,
+        "queue_ns": 977597027,
+        "unattributed_exchange_ns": 930628535.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      59.861328125,
+      57.4365234375,
+      40.9208984375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301729029,
+      "relay_late_mean_ns": 872.4888428357993,
+      "relay_late_max_ns": 135791,
+      "relay_late_per_position_ns": 83811.43981481482,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:21:32Z",
+    "ended_utc": "2026-11-15T12:22:15Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-060",
+    "pair": 15,
+    "round": 3,
+    "pair_arm": "block-4",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 142887206.8392857,
+      "wall_ns": 8001683583,
+      "exchanges": 1344,
+      "exchange_ns": 5718502827,
+      "coordinator_ns": 2283180756,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5290409924,
+        "execute_ns": 5212211294,
+        "experts_ns": 5201185270,
+        "queue_ns": 12586933,
+        "unattributed_exchange_ns": 428092903.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      35.70849609375,
+      51.69287109375,
+      39.4931640625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725912,
+      "relay_late_mean_ns": 601.9235625813292,
+      "relay_late_max_ns": 34375,
+      "relay_late_per_position_ns": 57820.88888888889,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:22:15Z",
+    "ended_utc": "2026-11-15T12:22:49Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-061",
+    "pair": 15,
+    "round": 3,
+    "pair_arm": "block-4",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 185361368.30357143,
+      "wall_ns": 10380236625,
+      "exchanges": 336,
+      "exchange_ns": 8031614995,
+      "coordinator_ns": 2348621630,
+      "configured_delay_ns": 1680000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 6181556327,
+        "execute_ns": 6148536867,
+        "experts_ns": 6138431635,
+        "queue_ns": 3599369,
+        "unattributed_exchange_ns": 170058668.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      28.4833984375,
+      47.7431640625,
+      38.599609375
+    ],
+    "relay": {
+      "relay_chunks": 19453,
+      "relay_bytes": 299922840,
+      "relay_late_mean_ns": 2404.520845113864,
+      "relay_late_max_ns": 205084,
+      "relay_late_per_position_ns": 216551.59259259258,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:22:49Z",
+    "ended_utc": "2026-11-15T12:23:28Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-062",
+    "pair": 15,
+    "round": 3,
+    "pair_arm": "block-4",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-4",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 245111520.82142857,
+      "wall_ns": 13726245166,
+      "exchanges": 336,
+      "exchange_ns": 11702203469,
+      "coordinator_ns": 2024041697,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15529920,
+      "response_bytes": 61989312,
+      "worker": {
+        "handler_ns": 4824602869,
+        "execute_ns": 4794929050,
+        "experts_ns": 4786468521,
+        "queue_ns": 3758585,
+        "unattributed_exchange_ns": 157600600.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      13.9814453125,
+      40.07958984375,
+      36.3544921875
+    ],
+    "relay": {
+      "relay_chunks": 19453,
+      "relay_bytes": 299922815,
+      "relay_late_mean_ns": 12919.717318665502,
+      "relay_late_max_ns": 8592292,
+      "relay_late_per_position_ns": 1163552.1342592593,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:23:28Z",
+    "ended_utc": "2026-11-15T12:24:27Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-063",
+    "pair": 15,
+    "round": 3,
+    "pair_arm": "block-4",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 137126735.125,
+      "wall_ns": 7679097167,
+      "exchanges": 1344,
+      "exchange_ns": 5585286832,
+      "coordinator_ns": 2093810335,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5149290667,
+        "execute_ns": 5075641712,
+        "experts_ns": 5066350346,
+        "queue_ns": 13689496,
+        "unattributed_exchange_ns": 435996165.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      11.64453125,
+      36.98828125,
+      35.36083984375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725755,
+      "relay_late_mean_ns": 546.00592799653,
+      "relay_late_max_ns": 10042,
+      "relay_late_per_position_ns": 52449.430555555555,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:24:27Z",
+    "ended_utc": "2026-11-15T12:24:57Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-064",
+    "pair": 16,
+    "round": 3,
+    "pair_arm": "block-2",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 148734255.19642857,
+      "wall_ns": 8329118291,
+      "exchanges": 1344,
+      "exchange_ns": 5893808935,
+      "coordinator_ns": 2435309356,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5447988039,
+        "execute_ns": 5362881337,
+        "experts_ns": 5350420908,
+        "queue_ns": 12782141,
+        "unattributed_exchange_ns": 445820896.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      9.76806640625,
+      34.09326171875,
+      34.36572265625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301725989,
+      "relay_late_mean_ns": 705.6608993204492,
+      "relay_late_max_ns": 139875,
+      "relay_late_per_position_ns": 67785.91666666667,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:24:57Z",
+    "ended_utc": "2026-11-15T12:25:29Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-065",
+    "pair": 16,
+    "round": 3,
+    "pair_arm": "block-2",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 503453243.3035714,
+      "wall_ns": 28193381625,
+      "exchanges": 672,
+      "exchange_ns": 15664138308,
+      "coordinator_ns": 12529243317,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 8311077417,
+        "execute_ns": 7813534916,
+        "experts_ns": 7791970821,
+        "queue_ns": 206664047,
+        "unattributed_exchange_ns": 3993060891.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      28.2919921875,
+      33.52978515625,
+      34.0615234375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300753491,
+      "relay_late_mean_ns": 273944.1184153453,
+      "relay_late_max_ns": 47547792,
+      "relay_late_per_position_ns": 26315122.74537037,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:25:29Z",
+    "ended_utc": "2026-11-15T12:26:42Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-066",
+    "pair": 16,
+    "round": 3,
+    "pair_arm": "block-2",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-2",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 540003182.3035715,
+      "wall_ns": 30240178209,
+      "exchanges": 672,
+      "exchange_ns": 26350940810,
+      "coordinator_ns": 3889237399,
+      "configured_delay_ns": 13440000000.0,
+      "request_bytes": 15544704,
+      "response_bytes": 62004096,
+      "worker": {
+        "handler_ns": 12396627129,
+        "execute_ns": 12312032292,
+        "experts_ns": 12297429378,
+        "queue_ns": 17198040,
+        "unattributed_exchange_ns": 514313681.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      22.22607421875,
+      31.4462890625,
+      33.28173828125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 300754579,
+      "relay_late_mean_ns": 326369.8789821196,
+      "relay_late_max_ns": 40753834,
+      "relay_late_per_position_ns": 31351151.013888888,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:26:42Z",
+    "ended_utc": "2026-11-15T12:28:44Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-067",
+    "pair": 16,
+    "round": 3,
+    "pair_arm": "block-2",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 168772209.07142857,
+      "wall_ns": 9451243708,
+      "exchanges": 1344,
+      "exchange_ns": 6674172286,
+      "coordinator_ns": 2777071422,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 6176788530,
+        "execute_ns": 6076362317,
+        "experts_ns": 6061894624,
+        "queue_ns": 16404086,
+        "unattributed_exchange_ns": 497383756.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      16.23046875,
+      28.767578125,
+      32.2158203125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301727810,
+      "relay_late_mean_ns": 934.5437852426624,
+      "relay_late_max_ns": 15291,
+      "relay_late_per_position_ns": 89772.44907407407,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:28:44Z",
+    "ended_utc": "2026-11-15T12:29:23Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-068",
+    "pair": 17,
+    "round": 3,
+    "pair_arm": "sequential",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 442107492.5714286,
+      "wall_ns": 24758019584,
+      "exchanges": 1344,
+      "exchange_ns": 16595876292,
+      "coordinator_ns": 8162143292,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 12303560305,
+        "execute_ns": 11326038201,
+        "experts_ns": 11300849760,
+        "queue_ns": 420907011,
+        "unattributed_exchange_ns": 4292315987.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      28.212890625,
+      29.07373046875,
+      32.025390625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301734010,
+      "relay_late_mean_ns": 2689.4074413224735,
+      "relay_late_max_ns": 7232833,
+      "relay_late_per_position_ns": 258344.97685185185,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:29:23Z",
+    "ended_utc": "2026-11-15T12:30:28Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-069",
+    "pair": 17,
+    "round": 3,
+    "pair_arm": "sequential",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 341031029.75,
+      "wall_ns": 19097737666,
+      "exchanges": 1344,
+      "exchange_ns": 15149016560,
+      "coordinator_ns": 3948721106,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 7260957379,
+        "execute_ns": 7055191501,
+        "experts_ns": 7031437242,
+        "queue_ns": 44153850,
+        "unattributed_exchange_ns": 1168059181.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      33.1123046875,
+      30.2021484375,
+      32.1728515625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301731742,
+      "relay_late_mean_ns": 201438.7574822883,
+      "relay_late_max_ns": 99502708,
+      "relay_late_per_position_ns": 19350244.347222224,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:30:28Z",
+    "ended_utc": "2026-11-15T12:31:48Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-070",
+    "pair": 17,
+    "round": 3,
+    "pair_arm": "sequential",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "sequential",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 668764074.3928572,
+      "wall_ns": 37450788166,
+      "exchanges": 1344,
+      "exchange_ns": 34443308342,
+      "coordinator_ns": 3007479824,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 6062712671,
+        "execute_ns": 5786650557,
+        "experts_ns": 5772125528,
+        "queue_ns": 97911841,
+        "unattributed_exchange_ns": 1500595671.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      18.5224609375,
+      28.83203125,
+      31.58544921875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301732759,
+      "relay_late_mean_ns": 429538.77709769143,
+      "relay_late_max_ns": 333294666,
+      "relay_late_per_position_ns": 41261574.472222224,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:31:48Z",
+    "ended_utc": "2026-11-15T12:34:49Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-071",
+    "pair": 17,
+    "round": 3,
+    "pair_arm": "sequential",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 195089447.1607143,
+      "wall_ns": 10925009041,
+      "exchanges": 1344,
+      "exchange_ns": 7644254540,
+      "coordinator_ns": 3280754501,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 6975801698,
+        "execute_ns": 6833777558,
+        "experts_ns": 6814589656,
+        "queue_ns": 21644447,
+        "unattributed_exchange_ns": 668452842.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      16.41796875,
+      26.765625,
+      30.66796875
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301729200,
+      "relay_late_mean_ns": 1061.293893681623,
+      "relay_late_max_ns": 63167,
+      "relay_late_per_position_ns": 101948.08796296296,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:34:49Z",
+    "ended_utc": "2026-11-15T12:35:37Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-072",
+    "pair": 18,
+    "round": 3,
+    "pair_arm": "block-1",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 189716832.5892857,
+      "wall_ns": 10624142625,
+      "exchanges": 1344,
+      "exchange_ns": 7301289716,
+      "coordinator_ns": 3322852909,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 6678083360,
+        "execute_ns": 6548524918,
+        "experts_ns": 6531411349,
+        "queue_ns": 22460191,
+        "unattributed_exchange_ns": 623206356.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      12.57958984375,
+      24.44970703125,
+      29.63720703125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301729193,
+      "relay_late_mean_ns": 1085.0669429852042,
+      "relay_late_max_ns": 21125,
+      "relay_late_per_position_ns": 104231.73148148147,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:35:37Z",
+    "ended_utc": "2026-11-15T12:36:20Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-073",
+    "pair": 18,
+    "round": 3,
+    "pair_arm": "block-1",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 308295091.51785713,
+      "wall_ns": 17264525125,
+      "exchanges": 1344,
+      "exchange_ns": 13503131520,
+      "coordinator_ns": 3761393605,
+      "configured_delay_ns": 6720000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 5755540625,
+        "execute_ns": 5449756238,
+        "experts_ns": 5435978136,
+        "queue_ns": 143199982,
+        "unattributed_exchange_ns": 1027590895.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      15.72802734375,
+      22.62060546875,
+      28.46728515625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302421173,
+      "relay_late_mean_ns": 96769.07075039762,
+      "relay_late_max_ns": 58526417,
+      "relay_late_per_position_ns": 9295654.856481481,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:36:20Z",
+    "ended_utc": "2026-11-15T12:37:42Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-074",
+    "pair": 18,
+    "round": 3,
+    "pair_arm": "block-1",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-1",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 726722395.8392857,
+      "wall_ns": 40696454167,
+      "exchanges": 1344,
+      "exchange_ns": 35100364895,
+      "coordinator_ns": 5596089272,
+      "configured_delay_ns": 26880000000.0,
+      "request_bytes": 15574272,
+      "response_bytes": 62033664,
+      "worker": {
+        "handler_ns": 6667822247,
+        "execute_ns": 6084285922,
+        "experts_ns": 6063566808,
+        "queue_ns": 449362666,
+        "unattributed_exchange_ns": 1552542648.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      36.30322265625,
+      32.31787109375,
+      31.791015625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 302422797,
+      "relay_late_mean_ns": 514493.16964672995,
+      "relay_late_max_ns": 101413042,
+      "relay_late_per_position_ns": 49422309.152777776,
+      "relay_on_schedule": false
+    },
+    "started_utc": "2026-11-15T12:37:42Z",
+    "ended_utc": "2026-11-15T12:40:37Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": [
+      "relay behind schedule"
+    ]
+  },
+  {
+    "label": "trial-075",
+    "pair": 18,
+    "round": 3,
+    "pair_arm": "block-1",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 253453690.48214287,
+      "wall_ns": 14193406667,
+      "exchanges": 1344,
+      "exchange_ns": 8233835319,
+      "coordinator_ns": 5959571348,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 7538102571,
+        "execute_ns": 7125393009,
+        "experts_ns": 7107726019,
+        "queue_ns": 286849077,
+        "unattributed_exchange_ns": 695732748.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      35.11669921875,
+      33.66064453125,
+      32.39208984375
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301731857,
+      "relay_late_mean_ns": 2084.8279917104437,
+      "relay_late_max_ns": 9425708,
+      "relay_late_per_position_ns": 200268.96296296295,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:40:37Z",
+    "ended_utc": "2026-11-15T12:41:44Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-076",
+    "pair": 19,
+    "round": 3,
+    "pair_arm": "block-8",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "before",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 153266393.60714287,
+      "wall_ns": 8582918042,
+      "exchanges": 1344,
+      "exchange_ns": 6243276750,
+      "coordinator_ns": 2339641292,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 5837009234,
+        "execute_ns": 5761565913,
+        "experts_ns": 5751827925,
+        "queue_ns": 13472210,
+        "unattributed_exchange_ns": 406267516.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      22.53857421875,
+      30.67333984375,
+      31.36376953125
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301729248,
+      "relay_late_mean_ns": 993.5947756518386,
+      "relay_late_max_ns": 497584,
+      "relay_late_per_position_ns": 95444.89814814815,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:41:44Z",
+    "ended_utc": "2026-11-15T12:42:31Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-077",
+    "pair": 19,
+    "round": 3,
+    "pair_arm": "block-8",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 5.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 147303166.6607143,
+      "wall_ns": 8248977333,
+      "exchanges": 168,
+      "exchange_ns": 6032504422,
+      "coordinator_ns": 2216472911,
+      "configured_delay_ns": 840000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 5084323670,
+        "execute_ns": 5056658006,
+        "experts_ns": 5047534850,
+        "queue_ns": 1836287,
+        "unattributed_exchange_ns": 108180752.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      14.0458984375,
+      27.64501953125,
+      30.23046875
+    ],
+    "relay": {
+      "relay_chunks": 18809,
+      "relay_bytes": 299501258,
+      "relay_late_mean_ns": 3900.9426338454996,
+      "relay_late_max_ns": 144292,
+      "relay_late_per_position_ns": 339689.02777777775,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:42:31Z",
+    "ended_utc": "2026-11-15T12:43:04Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-078",
+    "pair": 19,
+    "round": 3,
+    "pair_arm": "block-8",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "arm",
+    "bracket": null,
+    "arm": "block-8",
+    "rtt_ms": 20.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 245735058.0357143,
+      "wall_ns": 13761163250,
+      "exchanges": 168,
+      "exchange_ns": 10917321247,
+      "coordinator_ns": 2843842003,
+      "configured_delay_ns": 3360000000.0,
+      "request_bytes": 15522528,
+      "response_bytes": 61981920,
+      "worker": {
+        "handler_ns": 7424249750,
+        "execute_ns": 7391733085,
+        "experts_ns": 7381385100,
+        "queue_ns": 2178951,
+        "unattributed_exchange_ns": 133071497.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      19.2490234375,
+      27.12353515625,
+      29.90234375
+    ],
+    "relay": {
+      "relay_chunks": 18809,
+      "relay_bytes": 299501362,
+      "relay_late_mean_ns": 11260.933382954969,
+      "relay_late_max_ns": 4906375,
+      "relay_late_per_position_ns": 980587.4814814815,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:43:04Z",
+    "ended_utc": "2026-11-15T12:43:49Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  },
+  {
+    "label": "trial-079",
+    "pair": 19,
+    "round": 3,
+    "pair_arm": "block-8",
+    "arm_pair": 3,
+    "order": "5->20",
+    "role": "bracket",
+    "bracket": "after",
+    "arm": "sequential",
+    "rtt_ms": 0.0,
+    "profiled": true,
+    "summary": {
+      "per_position_ns": 172427424.10714287,
+      "wall_ns": 9655935750,
+      "exchanges": 1344,
+      "exchange_ns": 7176466393,
+      "coordinator_ns": 2479469357,
+      "configured_delay_ns": 0.0,
+      "request_bytes": 15558144,
+      "response_bytes": 62006784,
+      "worker": {
+        "handler_ns": 6726559132,
+        "execute_ns": 6641422309,
+        "experts_ns": 6630986066,
+        "queue_ns": 15939874,
+        "unattributed_exchange_ns": 449907261.0
+      }
+    },
+    "frame_defects": [],
+    "worker_timing": "complete",
+    "host_load_average": [
+      12.49462890625,
+      24.279296875,
+      28.71337890625
+    ],
+    "relay": {
+      "relay_chunks": 20749,
+      "relay_bytes": 301727623,
+      "relay_late_mean_ns": 770.0366764663357,
+      "relay_late_max_ns": 20875,
+      "relay_late_per_position_ns": 73969.86574074074,
+      "relay_on_schedule": true
+    },
+    "started_utc": "2026-11-15T12:43:49Z",
+    "ended_utc": "2026-11-15T12:44:34Z",
+    "pair_valid": false,
+    "valid": false,
+    "void_reasons": []
+  }
+]

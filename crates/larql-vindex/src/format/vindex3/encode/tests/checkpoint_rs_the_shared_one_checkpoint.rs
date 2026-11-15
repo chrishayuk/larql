@@ -14,6 +14,7 @@ fn encode_checkpoint_produces_a_v3_container_with_capabilities() {
     miniature_glimmer(checkpoint.path());
     std::fs::write(checkpoint.path().join("tokenizer.json"), "{}").unwrap();
     std::fs::write(checkpoint.path().join("generation_config.json"), "{}").unwrap();
+    std::fs::write(checkpoint.path().join("tokenizer.model"), b"\n\x00").unwrap();
 
     let out = tempfile::tempdir().unwrap();
     let encoded = encode_checkpoint(checkpoint.path(), out.path()).unwrap();
@@ -27,12 +28,14 @@ fn encode_checkpoint_produces_a_v3_container_with_capabilities() {
         encoded.capabilities,
         vec![
             "tokenizer.json".to_string(),
-            "generation_config.json".to_string()
+            "generation_config.json".to_string(),
+            "tokenizer.model".to_string()
         ],
         "present capability files copy, in declaration order"
     );
     assert!(out.path().join("tokenizer.json").exists());
     assert!(out.path().join("generation_config.json").exists());
+    assert!(out.path().join("tokenizer.model").exists());
     assert!(!out.path().join("chat_template.jinja").exists());
 }
 

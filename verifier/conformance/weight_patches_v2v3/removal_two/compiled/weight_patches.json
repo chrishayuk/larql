@@ -1,0 +1,1133 @@
+{
+  "schema": "weight-patches/v3",
+  "rounding": "bf16-rne-of-exact-sum",
+  "writer": "larql-vindex weight_patch v1",
+  "source": {
+    "model": "wsp",
+    "index_sha256": "1f68b2cf5f932baab50fc55280b84f9f456f3e2a822d20c006ea8f618983d750",
+    "canonical": {
+      "payload_sha256": "fc7c2807decd21c939155e6f84f25d351ce8dff86bfc1b6070d3a8158c1d6fad",
+      "segment_sha256": "1ae6b26382292bf208a53b545562bf707e30b38bb5a05f490b22edb6aadb5e06"
+    },
+    "derived": [
+      {
+        "representation": "target.decoder_stack@Q8_0",
+        "encoding": "Q8_0",
+        "payload_sha256": "57ef1b1c57bf1b9bd7463ad1d1e788800a2c469e4d387a860b3a27a59e051b80",
+        "segment_sha256": "ce9d8624980ea9d155add245e869219d78cc4823cfba73a6cb347c4d8b7939c7",
+        "encoder": {
+          "algorithm": "kquant-larql-native",
+          "revision": 2
+        }
+      }
+    ]
+  },
+  "targets": [
+    {
+      "object": "target.decoder_stack",
+      "representation": "target.decoder_stack@BF16",
+      "tensor": "0.mlp.down_proj.weight",
+      "dtype": "BF16",
+      "shape": [
+        64,
+        256
+      ],
+      "edits": [
+        {
+          "row": 0,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15594,
+          "new_bits": 48424,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 0,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48090,
+          "new_bits": 48365,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 1,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48104,
+          "new_bits": 15587,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 1,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48404,
+          "new_bits": 48333,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 2,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15621,
+          "new_bits": 47898,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 2,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15495,
+          "new_bits": 15279,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 3,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48430,
+          "new_bits": 15582,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 3,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48459,
+          "new_bits": 48351,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 5,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48296,
+          "new_bits": 48569,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 5,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15585,
+          "new_bits": 15274,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 6,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48252,
+          "new_bits": 15519,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 6,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48457,
+          "new_bits": 48411,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 7,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15514,
+          "new_bits": 48259,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 7,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48068,
+          "new_bits": 48268,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 8,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48395,
+          "new_bits": 15634,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 8,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48301,
+          "new_bits": 15001,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 10,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15641,
+          "new_bits": 48388,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 10,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48129,
+          "new_bits": 48375,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 11,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48353,
+          "new_bits": 15345,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 11,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15656,
+          "new_bits": 15702,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 12,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15547,
+          "new_bits": 48196,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 12,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15667,
+          "new_bits": 15621,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 13,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48418,
+          "new_bits": 15606,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 13,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15402,
+          "new_bits": 15622,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 15,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15568,
+          "new_bits": 48437,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 15,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15272,
+          "new_bits": 48269,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 16,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15356,
+          "new_bits": 15662,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 16,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48420,
+          "new_bits": 48365,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 17,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15531,
+          "new_bits": 48228,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 17,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48078,
+          "new_bits": 48271,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 18,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48451,
+          "new_bits": 15540,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 18,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15299,
+          "new_bits": 15591,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 20,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15456,
+          "new_bits": 48485,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 20,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15437,
+          "new_bits": 48160,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 21,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15429,
+          "new_bits": 15680,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 21,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48368,
+          "new_bits": 48277,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 22,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48449,
+          "new_bits": 48552,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 22,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48220,
+          "new_bits": 48329,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 23,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48288,
+          "new_bits": 15693,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 23,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48291,
+          "new_bits": 15132,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 25,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15642,
+          "new_bits": 48387,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 25,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48245,
+          "new_bits": 48409,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 26,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15679,
+          "new_bits": 15783,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 26,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48083,
+          "new_bits": 15258,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 27,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15662,
+          "new_bits": 15355,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 27,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15496,
+          "new_bits": 15283,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 28,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48265,
+          "new_bits": 15705,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 28,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48423,
+          "new_bits": 48279,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 30,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48344,
+          "new_bits": 48581,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 30,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15494,
+          "new_bits": 48066,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 31,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15650,
+          "new_bits": 15768,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 31,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15557,
+          "new_bits": 15632,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 32,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48310,
+          "new_bits": 48490,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 32,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48376,
+          "new_bits": 48426,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 33,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15595,
+          "new_bits": 15817,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 33,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15653,
+          "new_bits": 15744,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 35,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48359,
+          "new_bits": 48584,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 35,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15557,
+          "new_bits": 15079,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 36,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48364,
+          "new_bits": 15301,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 36,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48448,
+          "new_bits": 48402,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 37,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15674,
+          "new_bits": 15406,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 37,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48408,
+          "new_bits": 48454,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 38,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15193,
+          "new_bits": 15765,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 38,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48446,
+          "new_bits": 48325,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 40,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15685,
+          "new_bits": 48304,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 40,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48460,
+          "new_bits": 48532,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 41,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15487,
+          "new_bits": 15694,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 41,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48185,
+          "new_bits": 47389,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 42,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15584,
+          "new_bits": 48117,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 42,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48203,
+          "new_bits": 48321,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 43,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48432,
+          "new_bits": 15578,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 43,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15544,
+          "new_bits": 15671,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 45,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15622,
+          "new_bits": 48407,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 45,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48400,
+          "new_bits": 48491,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 46,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15662,
+          "new_bits": 15774,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 46,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48291,
+          "new_bits": 48143,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 47,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48458,
+          "new_bits": 48556,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 47,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48449,
+          "new_bits": 48495,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 48,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15347,
+          "new_bits": 15774,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 48,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15607,
+          "new_bits": 15703,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 50,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48311,
+          "new_bits": 48572,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 50,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48366,
+          "new_bits": 48466,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 51,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48327,
+          "new_bits": 15404,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 51,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15661,
+          "new_bits": 15707,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 52,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 47750,
+          "new_bits": 48403,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 52,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15611,
+          "new_bits": 15520,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 53,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15062,
+          "new_bits": 15762,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 53,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48261,
+          "new_bits": 15302,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 55,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15522,
+          "new_bits": 48460,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 55,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15403,
+          "new_bits": 48194,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 56,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15361,
+          "new_bits": 15663,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 56,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48269,
+          "new_bits": 48071,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 57,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48288,
+          "new_bits": 48479,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 57,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15193,
+          "new_bits": 48128,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 58,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15631,
+          "new_bits": 15830,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 58,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48277,
+          "new_bits": 15238,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 60,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15286,
+          "new_bits": 48515,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 60,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48353,
+          "new_bits": 48460,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 61,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48321,
+          "new_bits": 15416,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 61,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15603,
+          "new_bits": 15655,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 62,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48452,
+          "new_bits": 48553,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 62,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15417,
+          "new_bits": 14621,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 63,
+          "col": 10,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15594,
+          "new_bits": 15817,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 63,
+          "col": 11,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48266,
+          "new_bits": 15282,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 0,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 47111,
+          "new_bits": 47901,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 4,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48242,
+          "new_bits": 48223,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 9,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48149,
+          "new_bits": 48188,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 13,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48216,
+          "new_bits": 48197,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 18,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15356,
+          "new_bits": 15278,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 22,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15650,
+          "new_bits": 15655,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 27,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48449,
+          "new_bits": 48459,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 31,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48415,
+          "new_bits": 48410,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 36,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48118,
+          "new_bits": 48162,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 40,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15260,
+          "new_bits": 15299,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 45,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15623,
+          "new_bits": 15611,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 49,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15513,
+          "new_bits": 15523,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 54,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48437,
+          "new_bits": 48447,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 58,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 48420,
+          "new_bits": 48415,
+          "encoding": "result_bits"
+        },
+        {
+          "row": 63,
+          "col": 200,
+          "delta": 0.0,
+          "delta_bits": 0,
+          "old_bits": 15348,
+          "new_bits": 15270,
+          "encoding": "result_bits"
+        }
+      ]
+    }
+  ],
+  "origins": [
+    "672cc2827191265700de56bb83a0a89e1f0935cb8f7a403c1399a911e016a0ab",
+    "93e7aa70e5ed216d87ea25f2f7e795e81fa5628bd30f3abaf44fd03e54826e97"
+  ],
+  "result": {
+    "canonical": {
+      "payload_sha256": "d5bfa192eef008ac59b9d0bb4579c043bc9f5f64bb5657153f8ce4f70c09ab70",
+      "segment_sha256": "c2cc1aaee3878afc25042a18753df6ff9c49459c3fa8b5e393f1d70484499f5a"
+    },
+    "derived": [
+      {
+        "representation": "target.decoder_stack@Q8_0",
+        "encoding": "Q8_0",
+        "source_representation_digest": "d5bfa192eef008ac59b9d0bb4579c043bc9f5f64bb5657153f8ce4f70c09ab70",
+        "payload_sha256": "9334a9346363fc7708c5b5b8481640bf4fc3023951e5aec02eb33f81d27f2e51",
+        "segment_sha256": "4b5ea433825baf3445907edaf2b3de56a19771c358f15bd7f2815f5d561bb259",
+        "encoder": {
+          "algorithm": "kquant-larql-native",
+          "revision": 2
+        }
+      }
+    ]
+  }
+}

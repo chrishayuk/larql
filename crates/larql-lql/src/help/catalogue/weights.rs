@@ -26,7 +26,7 @@ pub(super) static GROUP: GroupHelp = GroupHelp {
 
 /// How a tensor is named, for all three statements.
 const TENSOR_NAME: Need = Need::Other(
-    "The tensor's name as the container stores it, such as \"0.mlp.down_proj.weight\", or <representation>::<tensor> where that bare name is ambiguous: SHOW TENSORS; lists every name.",
+    "The tensor's name as the container stores it, such as \"0.self_attn.q_proj.weight\", or <representation>::<tensor> where that bare name is ambiguous: SHOW TENSORS; lists every name.",
 );
 
 /// What every staged op has in common about visibility.
@@ -59,7 +59,7 @@ pub(super) static UPDATE_WEIGHTS: StatementHelp = StatementHelp {
     ],
     examples: &[
         "UPDATE WEIGHTS SET DELTA = 0.0625 WHERE TENSOR = \"0.mlp.down_proj.weight\" AND ROW = 5 AND COL IN (12, 13);",
-        "UPDATE WEIGHTS SET DELTA = -0.125 WHERE TENSOR = \"0.mlp.down_proj.weight\" AND ROW = 5 AND COL = 14;",
+        "UPDATE WEIGHTS SET DELTA = -0.125 WHERE TENSOR = \"0.mlp.up_proj.weight\" AND ROW = 5 AND COL = 14;",
     ],
     needs: &[Need::Vindex3, TENSOR_NAME],
     effect: STAGED_EFFECT,
@@ -99,7 +99,7 @@ pub(super) static REMOVE_DIRECTION: StatementHelp = StatementHelp {
     ],
     examples: &[
         "REMOVE DIRECTION \"u.json\" FROM \"1.mlp.down_proj.weight\" COLUMNS (33, 34) SCALE 0.5 NUMERICS \"f64-seq-rne1/v1\";",
-        "REMOVE DIRECTION \"u.json\" FROM \"1.mlp.down_proj.weight\" COLUMNS (40) SCALE -1 NUMERICS \"f64-seq-rne2/v1\";",
+        "REMOVE DIRECTION \"u.json\" FROM \"1.self_attn.o_proj.weight\" COLUMNS (40) SCALE -1 NUMERICS \"f64-seq-rne2/v1\";",
     ],
     needs: &[
         Need::Vindex3,
@@ -149,7 +149,7 @@ pub(super) static ADD_LOW_RANK: StatementHelp = StatementHelp {
         "There is no scale: fold it into a or b.",
     ],
     examples: &[
-        "ADD LOW RANK \"a_b.json\" TO \"1.mlp.down_proj.weight\" COLUMNS (8, 9) NUMERICS \"f64-seq-rne1/v1\";",
+        "ADD LOW RANK \"a_b.json\" TO \"1.mlp.gate_proj.weight\" COLUMNS (8, 9) NUMERICS \"f64-seq-rne1/v1\";",
         "ADD LOW RANK \"a_b_f32.json\" TO \"1.self_attn.o_proj.weight\" COLUMNS (0, 1, 2, 63) NUMERICS \"f32-seq-rne1/v1\";",
     ],
     needs: &[

@@ -1,0 +1,487 @@
+{
+  "schema": "larql.v3.block-time.v1",
+  "protocol": "BLOCK-TIME-1 revision 2",
+  "kind": "admissible",
+  "label": null,
+  "counts": true,
+  "continue_unsettled": false,
+  "revision": "242fc0d1d9414aedd6d2416b565067917776f14d",
+  "source_dirty": [],
+  "model": "/Users/christopherhay/chris-models/gpt-oss-20b.vindex3",
+  "topology": "one",
+  "provenance": {
+    "revision": "242fc0d1d9414aedd6d2416b565067917776f14d",
+    "uncommitted": [],
+    "source_sha256": {
+      "crates/larql-cli/examples/v3_block_time.rs": "56313ae44649f02c52b5144353c3baf202abb48fb6602b8d95e9114b984cc530",
+      "crates/larql-server/examples/v3_link_shaper.rs": "187ad206271b6403865e622e96fe721e06b22ac0d3d012189b6ab86bea8af5bf"
+    },
+    "environment": {}
+  },
+  "trial_environment": {
+    "LARQL_CPU_WORKERS": "8",
+    "LARQL_KV_ENGINE": "",
+    "RAYON_NUM_THREADS": "8",
+    "TOKIO_WORKER_THREADS": "2",
+    "VECLIB_MAXIMUM_THREADS": "1"
+  },
+  "settings": {
+    "LARQL_CPU_WORKERS": "8",
+    "RAYON_NUM_THREADS": "8",
+    "VECLIB_MAXIMUM_THREADS": "1",
+    "TOKIO_WORKER_THREADS": "2",
+    "LARQL_KV_ENGINE": ""
+  },
+  "link_qos": "default",
+  "ids": "/Users/christopherhay/chris-source/larql/.claude/worktrees/v3-block-timing/bench/v3-routed-experts/link-results/control/ids.json",
+  "ids_sha256": "6ddbb2819ce93fc94517b5fa582cd83e448d3cf055f3168d0438ab1b3825aa15",
+  "prompt_tokens": 152,
+  "positions": 216,
+  "measure_from": 160,
+  "schedule": [
+    {
+      "label": "trial-000",
+      "role": "direct",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-001",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-002",
+      "role": "arm",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-003",
+      "role": "arm",
+      "arm": "block-1",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-004",
+      "role": "arm",
+      "arm": "block-2",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-005",
+      "role": "arm",
+      "arm": "block-4",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-006",
+      "role": "arm",
+      "arm": "block-8",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-007",
+      "role": "unprofiled",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": false
+    },
+    {
+      "label": "trial-008",
+      "role": "unprofiled",
+      "arm": "block-1",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": false
+    },
+    {
+      "label": "trial-009",
+      "role": "unprofiled",
+      "arm": "block-2",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": false
+    },
+    {
+      "label": "trial-010",
+      "role": "unprofiled",
+      "arm": "block-4",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": false
+    },
+    {
+      "label": "trial-011",
+      "role": "unprofiled",
+      "arm": "block-8",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": false
+    },
+    {
+      "label": "trial-012",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-013",
+      "role": "arm",
+      "arm": "block-1",
+      "rtt_ms": 5.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-014",
+      "role": "arm",
+      "arm": "block-2",
+      "rtt_ms": 5.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-015",
+      "role": "arm",
+      "arm": "block-4",
+      "rtt_ms": 5.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-016",
+      "role": "arm",
+      "arm": "block-8",
+      "rtt_ms": 5.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-017",
+      "role": "arm",
+      "arm": "sequential",
+      "rtt_ms": 5.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-018",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-019",
+      "role": "arm",
+      "arm": "block-2",
+      "rtt_ms": 20.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-020",
+      "role": "arm",
+      "arm": "block-4",
+      "rtt_ms": 20.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-021",
+      "role": "arm",
+      "arm": "block-8",
+      "rtt_ms": 20.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-022",
+      "role": "arm",
+      "arm": "sequential",
+      "rtt_ms": 20.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-023",
+      "role": "arm",
+      "arm": "block-1",
+      "rtt_ms": 20.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-024",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-025",
+      "role": "direct",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-026",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-027",
+      "role": "arm",
+      "arm": "block-8",
+      "rtt_ms": 20.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-028",
+      "role": "arm",
+      "arm": "block-4",
+      "rtt_ms": 20.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-029",
+      "role": "arm",
+      "arm": "block-2",
+      "rtt_ms": 20.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-030",
+      "role": "arm",
+      "arm": "block-1",
+      "rtt_ms": 20.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-031",
+      "role": "arm",
+      "arm": "sequential",
+      "rtt_ms": 20.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-032",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-033",
+      "role": "arm",
+      "arm": "sequential",
+      "rtt_ms": 5.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-034",
+      "role": "arm",
+      "arm": "block-8",
+      "rtt_ms": 5.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-035",
+      "role": "arm",
+      "arm": "block-4",
+      "rtt_ms": 5.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-036",
+      "role": "arm",
+      "arm": "block-2",
+      "rtt_ms": 5.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-037",
+      "role": "arm",
+      "arm": "block-1",
+      "rtt_ms": 5.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-038",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-039",
+      "role": "arm",
+      "arm": "block-1",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-040",
+      "role": "arm",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-041",
+      "role": "arm",
+      "arm": "block-8",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-042",
+      "role": "arm",
+      "arm": "block-4",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-043",
+      "role": "arm",
+      "arm": "block-2",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-044",
+      "role": "unprofiled",
+      "arm": "block-1",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": false
+    },
+    {
+      "label": "trial-045",
+      "role": "unprofiled",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": false
+    },
+    {
+      "label": "trial-046",
+      "role": "unprofiled",
+      "arm": "block-8",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": false
+    },
+    {
+      "label": "trial-047",
+      "role": "unprofiled",
+      "arm": "block-4",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": false
+    },
+    {
+      "label": "trial-048",
+      "role": "unprofiled",
+      "arm": "block-2",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": false
+    },
+    {
+      "label": "trial-049",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    }
+  ],
+  "thresholds": {
+    "gate": 0.01,
+    "slope_band": 0.1,
+    "minimum_effect": 0.01
+  },
+  "frames_qualification": [
+    {
+      "path": "link-results/link-2-block-frames/20261115-01-qualifying-1/calibration.json",
+      "sha256": "7d117671eff80f6dabecc7e6a86b645d264bb3ebd825c767e96af77149a73463"
+    },
+    {
+      "path": "link-results/link-2-block-frames/20261115-02-qualifying-2/calibration.json",
+      "sha256": "696d9954fce746ef4c4666a44954114bf63afa68be038efbb90731872eea2662"
+    }
+  ],
+  "binary_sha256": {
+    "v3_block_time": "4333fbd888097d95d2ec8da55b5bec958eee5c8cf3438d0c59de0a275fce6e26",
+    "larql-server": "bbbbd57c37771441cca6f2f2dd5e53c1964278dbd684c44061f727bc0a3c35a1",
+    "v3_link_shaper": "7b1097f814216208141e09dd9a8a4f53c598743568140c528510e4d092e5479e"
+  },
+  "harness_sha256": {
+    "block_time.py": "752395a6eae5c13815768b53bc40515bdb27a53d1125a43f88e0687e0cbf3388",
+    "block_time_model.py": "c5215c10319d51bdae5a7374874d889d74a39c7ab03655ff56f6415cd20b01fa",
+    "link_model.py": "f8c52bbbc3da6b0291ab15efec2d4ff0ed15daf54ad4b1eb4c69acf9542816fb",
+    "link_sweep.py": "4818cbcf9bea20b0c70567735a2eb598193b891e1ec26385807fbd36139efe9e",
+    "link_block_frames_model.py": "95930043d0607721c133f7ecf906a9434ef7e3b6aaf933577fae0a4e044fb28d",
+    "profile_exact.py": "c84996b1395fc255d0c3e27e494b203ba74443ab4975bd8f2a939c719a4b264b"
+  },
+  "metadata_sha256": {
+    "index.json": "17523831d6f365cda8e52bafa9f437b2cf14b2d7efa3d0a8abd3e512902d4440",
+    "system_graph.json": "82db1eb1a4490e24ae1086fada201100b81ceddfcf71e51ba63572efe2a6ae78"
+  },
+  "host_before": {
+    "load_average": [
+      2.41064453125,
+      2.9921875,
+      3.09423828125
+    ],
+    "busy_processes": [],
+    "utc": "2026-11-15T09:27:31Z"
+  },
+  "peer_handshake": "BLOCK-TIME-1 admissible run: peer-session quiet handshake, 2026-11-15.\nRequested by larql-c7 (this session) at about 09:20 UTC: pause compiler,\nmodel, benchmark and other CPU-heavy work for about 90 minutes.\n\nLive peer sessions at request time (ListAgents): larql-50, larql-a9.\nlarql-dc, a peer in the earlier qualification window, had exited: it was not\nreachable by name, and its process (pid 7189) no longer existed.\n\nlarql-50 replied:\nquiet\n\nlarql-a9 replied:\nquiet \u2014 larql-a9 has nothing heavy running: the gwbreadcrumb1_spotcheck finished at 09:15:53 UTC and no larql, model, cargo or compression process from this session is active. Until you message me I'll only edit files, verify checksums on small files, and make network uploads to the experiments registry.\n",
+  "clock": "monotonic wall time around the measured region inside each trial process",
+  "started_utc": "2026-11-15T09:27:31Z"
+}

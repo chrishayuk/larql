@@ -23,7 +23,8 @@ fn a_patch_is_captured_from_apply_until_remove_and_equals_the_compiled_container
     assert_ne!(patched, base, "the patch changes what is captured");
     assert_eq!(car["executes"], "patched");
     let patch = &car["patches"][0];
-    assert_eq!(patch["path"], q(&vlp));
+    // The sidecar records the file path itself; `q` is only the LQL-literal escaping used to name it.
+    assert_eq!(patch["path"], vlp.display().to_string());
     assert_eq!(patch["sha256"], sha256_hex(&std::fs::read(&vlp).unwrap()));
     let op = &patch["weight_ops"][0];
     assert_eq!(op["kind"], "weight_delta");
