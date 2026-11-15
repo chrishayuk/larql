@@ -2,15 +2,15 @@
 
 Status: **DRAFT, revision 1. Unqualified, not approved for any model run,
 not frozen.** No model has been run under it. Revision 1 records the review
-decisions on revision 0 and what implementing seams 1 to 3 established.
+decisions on revision 0 and what implementing seams 1 to 5 established.
 
 | Seam | PR | State |
 |---|---|---|
-| 1. Proposer and stop handling moved to `larql_inference::speculation` | #855 | open |
-| 2. `RoutedBlockSession::step` | #856 | open |
-| 3. `greedy_speculate` with event ledger (stacked on #855, #856) | #857 | draft |
-| 4. Trial binary | | not started |
-| 5. Driver | | not started |
+| 1. Proposer and stop handling moved to `larql_inference::speculation` | #855 | merged |
+| 2. `RoutedBlockSession::step` | #856 | merged |
+| 3. `greedy_speculate` with event ledger | #857 | merged |
+| 4. Trial binary (`v3_verify_remote`) | #860 | open |
+| 5. Driver (`verify_remote.py`, `verify_remote_model.py`) | #861 | open |
 
 ## Question
 
@@ -117,7 +117,7 @@ verified-against-committed state on the remote path.
 
 | Arm | What it does |
 |---|---|
-| `sequential` | Greedy generation through `DecodeSession::step`: the exact reference and the baseline |
+| `sequential` | Greedy generation by single steps: the exact reference and the baseline. A loop of its own, independent of `greedy_speculate`, stepping `RoutedBlockSession::step` (which is `DecodeSession::step` over the session's continuation, the single-row route), so every arm prefills the same way |
 | `verify-2`, `verify-4`, `verify-8` | `greedy_speculate` with blocks of at most 2, 4 or 8 positions (the fed token plus up to 1, 3 or 7 proposed) |
 
 ### Workloads
@@ -145,8 +145,15 @@ aggregated into one figure.**
 
 ### Measure
 
-`committed new tokens per second = new ids generated ÷ wall time of
-generation`
+`committed new tokens per second = timed ids ÷ wall time of generation`
+
+The first generated id is prefill's, produced untimed; the trial records
+the ids produced inside the clock as `timed_ids` (one fewer). Every arm
+produces the same ids, so the ratio between arms is the inverse ratio of
+their wall times. The trial's own bookkeeping (two counter reads and a
+clock read per unit of work) is inside the clock; it is a few hundred
+nanoseconds per unit, so it weighs slightly more on `sequential`, which
+runs the most units.
 
 This is timed from the first generated position to the last. It includes
 proposing, every verify block, every single step, every commit or rollback,
@@ -184,8 +191,9 @@ Per trial, recorded:
    - every verify block of `k` positions sends exactly one multi-row frame
      of `k` rows per routed layer (24), and no single-row frame;
    - every single step sends exactly 24 single-row frames;
-   - no other exchange occurs, and the one configured worker is the one
-     contacted.
+   - no other exchange occurs: the units' exchange ranges tile the whole
+     record with no gap, and no routed layer is contacted twice in a unit;
+   - one worker: the trial binary refuses more than one `--shards` url.
 
    A trial that fails this is void by name. It shows a silent local or
    single-row fallback.
@@ -198,8 +206,13 @@ quiet-machine and handshake rules apply unchanged.
 
 ### Schedule
 
-- Warm-up: BLOCK-TIME's rule (`sequential` at 0 ms until two trials agree
-  within 1%, at most four).
+- Warm-up: BLOCK-TIME's rule on the bracket trial (until two agree within
+  1%, at most four).
+- **References.** After warm-up, one `sequential` trial per workload at
+  0 ms. Every later trial of that workload, at any delay and arm, must
+  reproduce its ids (gate 1). References are not timed results.
+- **The bracket**: `sequential`, 0 ms, `prose_free` (the shortest prompt),
+  16 ids. Its time per timed id is the bracket measure.
 - **Units.** One unit is one workload at one delay: the four arms in a
   seeded order, opened and closed by a short `sequential` 0 ms bracket.
   That is 4 workloads × 3 delays = **12 units per repeat, two repeats**, in
@@ -300,10 +313,10 @@ re-checked per trial:
   `v3_block_time.rs`. They move to one shared examples support module, in
   the same pattern as `crates/larql-server/examples/support/`, and
   `v3_block_time` imports them unchanged.
-- **Arms:** `sequential` steps a `DecodeSession` with `greedy_id`. The
-  `verify-W` arms call `prefill` and `greedy_speculate` on a
-  `RoutedBlockSession` with `propose`. Both prefill the same prompt by
-  blocks of 8, untimed.
+- **Arms:** `sequential` steps the `RoutedBlockSession` with `greedy_id`,
+  in a loop independent of `greedy_speculate`. The `verify-W` arms call
+  `greedy_speculate` with `propose`. Every arm calls `prefill` on the same
+  prompt by blocks of 8, untimed.
 - **Records:** the generated ids; for every block, its width, proposal,
   accepted count and rejection offset; single steps; the event ledger;
   every exchange (route, rows, bytes, round trip) tagged with the block or
@@ -337,7 +350,7 @@ re-checked per trial:
 ## Blockers before any model run
 
 1. Seams 1 to 5 built, with tests, reviewed and merged through the normal
-   ruleset (1 to 3 are in #855, #856 and #857).
+   ruleset (1 to 3 merged as #855, #856, #857; 4 and 5 are #860 and #861).
 2. ~~Workload prompts recovered and decoded~~ (done: each workload file
    holds the decoded text and the tokenizer's hash. Re-encoding the text
    reproduces the ids exactly, and the ids remain authoritative.)
@@ -387,5 +400,10 @@ as for BLOCK-TIME-2.
 
 **Before the admissible run:** the functional diagnostic, including one
 corrupted-proposer control trial per width on one copy-heavy workload at
-0 ms. Its ids must equal the reference, and its acceptance must fall. The
+0 ms (`json_edit`, corruption at the middle of each proposal). Its ids must
+equal the reference, its acceptance must fall below every clean trial of
+the same width, and every changed block must reject at or before its
+change. The proposal is cut before any stop id first, as the loop cuts it,
+and the replacement is never a stop id, so the change always lands on a
+verified token; the trial records the changed offset per block. The
 control's timing is not a result.
