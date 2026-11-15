@@ -142,6 +142,7 @@ mod generate_baseline;
 mod generate_metal;
 mod generate_real;
 mod golden;
+mod hc_public_fixture;
 mod head_observation;
 mod head_observation_gates;
 mod instance_identity;

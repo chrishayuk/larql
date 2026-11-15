@@ -170,8 +170,8 @@ impl Session {
         let positions = sequence::positions(request.positions, &sequence)?;
         let overrides: Option<OperandOverrides> = execution_overrides(runtime, overlay)?;
         let continuation = v3_continuation(runtime)?;
-        let (blocks, path, cross_check) = match site {
-            CaptureSite::FfnDownInput | CaptureSite::FfnDownOutput => {
+        let (blocks, path, cross_check) = match batch::PassSite::of(site) {
+            None => {
                 let captured = decode::capture(
                     runtime,
                     overrides.as_ref(),
@@ -187,13 +187,13 @@ impl Session {
                 });
                 (captured.blocks, PATH_DECODE_STEPS, check)
             }
-            _ => {
+            Some(pass_site) => {
                 let blocks = batch::capture(
                     runtime,
                     overrides.as_ref(),
                     &continuation,
                     &sequence.ids,
-                    site,
+                    pass_site,
                     &layers,
                     &positions,
                 )?;

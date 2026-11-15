@@ -154,7 +154,7 @@ pub(super) fn capture(
         overrides,
         continuation,
         ids,
-        CaptureSite::FfnInput,
+        batch::PassSite::Layer(batch::LayerPlane::FfnInput),
         layers,
         positions,
     )?;
