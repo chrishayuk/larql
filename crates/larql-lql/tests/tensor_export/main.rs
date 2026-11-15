@@ -8,6 +8,7 @@
 mod export_weight;
 mod npy;
 mod parsing;
+mod partial_output;
 mod refusals;
 mod show_tensors;
 mod support;
