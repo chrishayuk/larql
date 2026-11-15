@@ -145,8 +145,9 @@ def first_difference(reference, ids):
 def ledger_defects(trial):
     """Gate 2: the event ledger against the output and against the units that ran."""
     ids, units = trial["ids"], generation_units(trial)
-    if trial["timed_ids"] != max(len(ids) - 1, 0):
-        return [f"{trial['timed_ids']} timed ids recorded for {len(ids)} ids"]
+    count_defects = id_count_defects(trial)
+    if count_defects:
+        return count_defects
     steps = [u for u in units if u["kind"] == STEP]
     verifies = [u for u in units if u["kind"] == VERIFY]
     ledger = trial["ledger"]
@@ -187,6 +188,28 @@ def ledger_defects(trial):
             if (unit["width"], unit["start"], unit["committed"]) != (
                     block["width"], block["start"], block["accepted"] + 1):
                 defects.append(f"verify unit {index} does not match block {index}")
+    return defects
+
+
+def id_count_defects(trial):
+    """Requested, emitted, prefill-produced and timed ids must agree with the ids and how they ended."""
+    ids, counts = trial["ids"], trial["id_counts"]
+    prefill = 1 if ids else 0
+    defects = []
+    if counts["emitted"] != len(ids) or counts["prefill_produced"] != prefill:
+        defects.append("the emitted or prefill-produced count is not the ids'")
+    if counts["timed"] != len(ids) - prefill or trial["timed_ids"] != counts["timed"]:
+        defects.append(f"{counts['timed']} timed ids recorded for {len(ids)} ids")
+    if counts["requested"] != trial["generate"] or len(ids) > counts["requested"]:
+        defects.append("more ids than requested, or the request is not the record's")
+    stopped = bool(ids) and ids[-1] in trial["stop"]
+    if any(i in trial["stop"] for i in ids[:-1]):
+        defects.append("an id after a stop id was emitted")
+    ended = "nothing requested" if not ids else "stop id" if stopped else "generation limit"
+    if counts["ended_by"] != ended:
+        defects.append(f"recorded as ended by {counts['ended_by']}, the ids say {ended}")
+    if not stopped and ids and len(ids) != counts["requested"]:
+        defects.append("generation ended short of the limit without a stop id")
     return defects
 
 
@@ -302,8 +325,12 @@ def summarize(trial):
     workers = [r.get("worker") for r in records]
     execute_ns = (sum(w["execute_ns"] for w in workers)
                   if trial.get("profiled") and len(records) == len(exchanges) and all(workers) else None)
+    counts = trial["id_counts"]
     return {
         "ids": len(ids),
+        "requested_ids": counts["requested"],
+        "prefill_produced_ids": counts["prefill_produced"],
+        "ended_by": counts["ended_by"],
         # The first id is prefill's and produced untimed; the clock covers the rest.
         "timed_ids": produced,
         "wall_ns": wall_ns,
@@ -426,6 +453,9 @@ def analyse(observations, verdicts):
                         "no_timed_ids": a["timed_ids"] == 0 and s["timed_ids"] == 0,
                         "predicted_ratio": (s["wall_ns"] / (s["wall_ns"] - saved_ns)
                                             if s["wall_ns"] > saved_ns else None),
+                        "requested_ids": a["requested_ids"], "emitted_ids": a["ids"],
+                        "prefill_produced_ids": a["prefill_produced_ids"], "timed_ids": a["timed_ids"],
+                        "ended_by": a["ended_by"],
                         "proposed": a["proposed"], "accepted": a["accepted"],
                         "rejected": a["proposed"] - a["accepted"],
                         "committed_in_blocks": a["committed_in_blocks"], "blocks": a["blocks"],
@@ -446,13 +476,26 @@ def analyse(observations, verdicts):
                 cells.append({"workload": workload, "kind": kind, "rtt_ms": rtt_ms, "arm": arm,
                               "statement": said, "repeats": repeats})
     return {
-        "protocol": PROTOCOL, "cells": cells,
+        "protocol": PROTOCOL, "cells": cells, "bracket_stability": bracket_stability(verdicts),
         "valid_units": sum(v["valid"] for v in verdicts), "void_units": sum(not v["valid"] for v in verdicts),
         "thresholds": {"gate": GATE, "effect": EFFECT},
         "reading": "committed new tokens per second over the ids produced inside the clock (the first id is "
                    "prefill's); copy-heavy and low-copy workloads are never aggregated; the 1% rule is a "
                    "pre-registered reporting rule, not statistical significance; the exchange ratio and the "
                    "delay-only predicted ratio are descriptive",
+    }
+
+
+def bracket_stability(verdicts):
+    """How far each unit's two brackets moved, against the gate. Reported, never adjusted after the fact."""
+    drifts = sorted(v["bracket_drift"] for v in verdicts if v["bracket_drift"] is not None)
+    return {
+        "gate": GATE, "units_with_both_brackets": len(drifts),
+        "over_gate": sum(d > GATE for d in drifts),
+        "median": statistics.median(drifts) if drifts else None,
+        "max": drifts[-1] if drifts else None,
+        "drifts": drifts,
+        "bracket": {"workload": BRACKET_WORKLOAD, "generate": BRACKET_GENERATE, "rtt_ms": BRACKET_RTT_MS},
     }
 
 

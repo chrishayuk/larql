@@ -88,6 +88,10 @@ def fake_trial(arm, ids=None, accept=2, shards=1, profiled=True, per_id_ns=BASE_
         "generate": len(ids) if generate is None else generate, "stop": list(vr.STOP_IDS),
         "prefill_width": vr.PREFILL_WIDTH, "workload": {"name": "fake", "sha256": FAKE_SHA},
         "shards": ["http://relay"] * shards, "ids": ids, "timed_ids": max(len(ids) - 1, 0),
+        "id_counts": {"requested": len(ids) if generate is None else generate, "emitted": len(ids),
+                      "prefill_produced": 1 if ids else 0, "timed": max(len(ids) - 1, 0),
+                      "ended_by": ("nothing requested" if not ids else "stop id" if ids[-1] in vr.STOP_IDS
+                                   else "generation limit")},
         "corrupted_offsets": corrupted, "wall_ns": per_id_ns * max(len(ids) - 1, 1),
         "final_position": position, "generation_from": generation, "units": units, "ledger": ledger,
         "frames": {"whole_run": {vr.SINGLE_ROW: singles, vr.MULTI_ROW: len(exchanges) - singles}},
@@ -232,13 +236,13 @@ class Gates(unittest.TestCase):
         self.assertIn("the first event is not the prefill id", vr.ledger_defects(trial))
 
     def test_unemitted_trailing_events_are_counted_but_not_output(self):
-        trial = fake_trial("verify-4", ids=reference_ids(10))
-        ledger = trial["ledger"]
-        last = ledger["events"][-1]
-        # Mark the final correction unemitted and drop its id from the output.
-        last["emitted"] = False
-        trial["ids"] = trial["ids"][:-1]
+        produced = reference_ids(9) + [vr.STOP_IDS[0], 1234]
+        trial = fake_trial("verify-4", ids=produced, generate=vr.GENERATE)
+        # The last id came after the stop: unemitted, and not in the output.
+        trial["ledger"]["events"][-1]["emitted"] = False
+        trial["ids"] = produced[:-1]
         trial["timed_ids"] -= 1
+        trial["id_counts"].update(emitted=10, timed=9, ended_by="stop id")
         self.assertEqual(vr.ledger_defects(trial), [])
         # An unemitted id in the middle breaks the output.
         trial = fake_trial("verify-4", ids=reference_ids(10))
@@ -473,6 +477,33 @@ class Statements(unittest.TestCase):
         trial = fake_trial("verify-4")
         trial["timed_ids"] = len(trial["ids"])
         self.assertTrue(any("timed ids" in d for d in vr.ledger_defects(trial)))
+
+    def test_id_counts_and_how_generation_ended_must_agree(self):
+        ids = reference_ids(10) + [vr.STOP_IDS[0]]
+        trial = fake_trial(vr.SEQUENTIAL, ids=ids, generate=vr.GENERATE)
+        self.assertEqual(trial["id_counts"]["ended_by"], "stop id")
+        self.assertEqual(vr.id_count_defects(trial), [])
+        self.assertEqual(vr.summarize(trial)["timed_ids"], 10)
+        trial["id_counts"]["ended_by"] = "generation limit"
+        self.assertTrue(any("ended by" in d for d in vr.id_count_defects(trial)))
+        short = fake_trial(vr.SEQUENTIAL, ids=reference_ids(10), generate=vr.GENERATE)
+        self.assertIn("generation ended short of the limit without a stop id", vr.id_count_defects(short))
+        past = fake_trial(vr.SEQUENTIAL, ids=[1, vr.STOP_IDS[1], 2], generate=vr.GENERATE)
+        self.assertIn("an id after a stop id was emitted", vr.id_count_defects(past))
+        trial = fake_trial("verify-4")
+        trial["id_counts"]["prefill_produced"] = 0
+        self.assertTrue(vr.ledger_defects(trial))
+        self.assertEqual(vr.id_count_defects(fake_trial(vr.SEQUENTIAL, ids=[], generate=0)), [])
+
+    def test_bracket_stability_is_reported_against_the_gate(self):
+        def bracket_ns(entry):
+            return BASE_NS * 1.02 if entry["unit"] in (1, 2) and entry["bracket"] == "after" else BASE_NS
+        observations = clean_run(bracket_ns=bracket_ns)
+        report = vr.analyse(observations, vr.judge_units(observations))
+        stability = report["bracket_stability"]
+        self.assertEqual((stability["units_with_both_brackets"], stability["over_gate"]), (24, 2))
+        self.assertEqual(stability["gate"], vr.GATE)
+        self.assertEqual(stability["median"], 0.0)
 
 
 class Execute(unittest.TestCase):
