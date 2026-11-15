@@ -11,42 +11,78 @@ Two interfaces:
         session = larql.session("gemma3-4b.vindex")
         session.query("DESCRIBE 'France'")
         session.vindex.gate_vectors(layer=26)
+
+    - Typed VINDEX3 operations on a session, NumPy in and out:
+        s = larql.session("model.vindex3")
+        s.capture("logits", "The capital of France is").array
+        s.tensor("target.embedding@BF16::weight", rows=[0]).provenance
+
+    - The same operations from a restricted `larql serve-session` process, over its Unix socket (pure
+      Python; works without the native extension):
+        s = larql.connect("/path/to/larql.sock")
+        s.capture("logits", "The capital of France is").array
+        s.budget()
 """
 
-from larql._native import (
-    # Vindex types
-    Vindex,
-    FeatureMeta,
-    WalkHit,
-    DescribeEdge,
-    Relation,
-    Session,
-    WalkModel,
+from contextlib import contextmanager
 
-    # Graph types
-    Edge,
-    Node,
-    Graph,
+from larql.session_client import RemoteSession, ServiceError, connect
 
-    # Vindex functions
-    load_vindex,
-    create_session,
+# The native extension. Without it, `larql.connect` (pure Python) still works; every native name raises the
+# import error on use.
+try:
+    from larql._native import (
+        # Vindex types
+        Vindex,
+        FeatureMeta,
+        WalkHit,
+        DescribeEdge,
+        Relation,
+        Session,
+        Readout,
+        WalkModel,
 
-    # Graph functions
-    load as load_graph,
-    save as save_graph,
-    load_csv,
-    save_csv,
-    shortest_path,
-    merge_graphs,
-    merge_graphs_with_strategy,
-    diff,
-    pagerank,
-    bfs_traversal,
-    dfs_traversal,
-    weight_walk,
-    attention_walk,
-)
+        # Graph types
+        Edge,
+        Node,
+        Graph,
+
+        # Vindex functions
+        load_vindex,
+        create_session,
+
+        # Graph functions
+        load as load_graph,
+        save as save_graph,
+        load_csv,
+        save_csv,
+        shortest_path,
+        merge_graphs,
+        merge_graphs_with_strategy,
+        diff,
+        pagerank,
+        bfs_traversal,
+        dfs_traversal,
+        weight_walk,
+        attention_walk,
+    )
+except ImportError as _error:
+    _NATIVE_ERROR = _error
+
+    def __getattr__(name):
+        raise ImportError(
+            f"larql.{name} needs the native extension larql._native, which did not import: {_NATIVE_ERROR}"
+        )
+else:
+    _NATIVE_ERROR = None
+
+
+def _require_native(name):
+    if _NATIVE_ERROR is not None:
+        raise ImportError(
+            f"larql.{name} needs the native extension larql._native, which did not import: {_NATIVE_ERROR}"
+        )
+
 
 
 def load(path: str, **kwargs) -> "Vindex":
@@ -63,6 +99,7 @@ def load(path: str, **kwargs) -> "Vindex":
         edges = vindex.describe("France")
         embed = vindex.embed("France")
     """
+    _require_native("load")
     return load_vindex(path)
 
 
@@ -80,7 +117,28 @@ def session(path: str) -> "Session":
     Returns:
         Session with .query() and .vindex properties
     """
+    _require_native("session")
     return create_session(path)
+
+
+@contextmanager
+def recording(session: "Session", path: str):
+    """Record the edits staged inside the block into the patch file `path`.
+
+    Opens the recording with `session.begin_patch(path)` and, when the block
+    ends normally, writes it with `session.save_patch()`, whose result dict is
+    stored on the yielded object's `saved` key. If the block raises, nothing is
+    saved and the recording stays open, so the edits staged so far are kept.
+
+    Example:
+        with larql.recording(s, "edit.vlp") as rec:
+            s.add_low_rank(tensor, a, b, columns, numerics="f64-seq-rne1/v1")
+        rec["saved"]["path"]
+    """
+    session.begin_patch(path)
+    rec = {"path": path, "saved": None}
+    yield rec
+    rec["saved"] = session.save_patch()
 
 
 # MLX integration (lazy import — only loaded when used)
@@ -119,6 +177,11 @@ __all__ = [
     "DescribeEdge",
     "Relation",
     "Session",
+    "Readout",
+    "recording",
+    "connect",
+    "RemoteSession",
+    "ServiceError",
 
     # Graph types
     "Edge",

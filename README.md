@@ -26,7 +26,7 @@ Download a prebuilt binary — no Rust toolchain needed:
 curl -L https://github.com/chrishayuk/larql/releases/latest/download/larql-aarch64-apple-darwin.tar.gz | tar xz
 sudo mv larql-aarch64-apple-darwin/larql* /usr/local/bin/
 
-# Linux (x86_64)
+# Linux (x86_64). Needs the OpenBLAS runtime: sudo apt-get install -y libopenblas0
 curl -L https://github.com/chrishayuk/larql/releases/latest/download/larql-x86_64-unknown-linux-gnu.tar.gz | tar xz
 sudo mv larql-x86_64-unknown-linux-gnu/larql* /usr/local/bin/
 ```
@@ -108,6 +108,50 @@ $ larql vindex3 observe Qwen3-0.6B --backend production \
 LQL statement with its syntax, and `larql lql --help` says how several
 statements share one session and what the exit status means.
 
+**4. Change it.** Write an edit to the stored weights as a `.vlp` patch, apply it
+to a running session, and take it away again. The model on disk never changes:
+
+```console
+$ larql lql 'USE "gemma-3-4b-it";
+    BEGIN PATCH "edit.vlp";
+    UPDATE WEIGHTS SET DELTA = 4.0 WHERE TENSOR = "20.mlp.down_proj.weight" AND ROW = 7 AND COL IN (0, 1, 2, 3);
+    SAVE PATCH;'
+
+$ larql lql 'USE "gemma-3-4b-it";
+    INFER "The capital of France is" TOP 3;
+    APPLY PATCH "edit.vlp";
+    INFER "The capital of France is" TOP 3;
+    REMOVE PATCH "edit.vlp";
+    INFER "The capital of France is" TOP 3;'
+   1.  Paris               (81.11%)  [id 9079]
+   2.  a                   (2.31%)  [id 496]
+   3. :                    (2.04%)  [id 236787]
+Applied: edit.vlp (... 4 stored-weight edit(s), bound to this container ...)
+   1.  Paris               (80.96%)  [id 9079]
+   2.  a                   (2.29%)  [id 496]
+   3.  the                 (1.92%)  [id 506]
+Removed patch #1
+   1.  Paris               (81.11%)  [id 9079]
+   2.  a                   (2.31%)  [id 496]
+   3. :                    (2.04%)  [id 236787]
+```
+
+Removing the patch restores the original predictions exactly. The four-weight edit
+is only an illustration of the mechanism. It isn't meant to improve anything.
+
+Then make it permanent: compile the patch into a new container and export that
+as GGUF for llama.cpp or Ollama.
+
+```bash
+larql lql 'USE "gemma-3-4b-it"; APPLY PATCH "edit.vlp"; COMPILE CURRENT INTO VINDEX "gemma-edited.vindex3";'
+larql convert vindex-to-gguf gemma-edited.vindex3 gemma-edited.gguf --text-only
+```
+
+`CAPTURE` and `EXPORT WEIGHT` write activations, logits and weights to NumPy
+files, and the [Python binding](crates/larql-python/README.md) has the same
+operations. `larql lql 'HELP CAPTURE;'` and the [LQL guide](docs/lql-guide.md)
+have the details.
+
 ## What you can do
 
 | I want to… | Start here |
@@ -117,6 +161,7 @@ statements share one session and what the exit status means.
 | Query a model with LQL | [LQL guide](docs/lql-guide.md) |
 | See what happens inside during a run | [Observation and intervention](docs/vindex3/observation-and-intervention.md) |
 | Shrink a model (4-bit etc.) and measure the cost | [Representation](docs/vindex3/representation.md) |
+| Edit a model's weights, live, and export the result to GGUF | [Quick start, step 4](#quick-start) · [LQL guide](docs/lql-guide.md) |
 | Edit what a model knows | [LQL guide — knowledge edits](docs/lql-guide.md) (experimental) |
 | Use it from Python | [Python bindings](crates/larql-python/README.md) |
 | Understand the format | [What is VINDEX3?](docs/vindex3/what-is-vindex3.md) · [vindex3.org](https://vindex3.org) |

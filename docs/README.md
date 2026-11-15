@@ -99,6 +99,7 @@ distributed).
 |---|---|
 | [cli.md](cli.md) | Broader `larql` CLI guide; VINDEX3 command inventory is in generated facts |
 | [lql-guide.md](lql-guide.md) | LQL quick-start guide |
+| [lql-session-service.md](lql-session-service.md) | `larql serve-session` and `larql.connect`: the restricted, out-of-process session service, its policy, protocol and limits |
 | [Python crate](../crates/larql-python/README.md) | Current bindings/build guide; [earlier API draft](larql-python.md) retained as archive |
 
 ## Engine and runtime

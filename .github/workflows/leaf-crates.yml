@@ -10,8 +10,7 @@
 # platform matrix, a coverage floor or model-backed tests should move to a
 # workflow of its own; this file is the floor, not the ceiling.
 #
-# Not covered here, and still without CI:
-#   - larql-python: a PyO3 extension, built and tested through maturin.
+# Not covered here (larql-python has its own workflow, larql-python.yml), and still without CI:
 #   - crates/larql-experts: a separate Cargo workspace of WASM experts.
 
 name: leaf-crates

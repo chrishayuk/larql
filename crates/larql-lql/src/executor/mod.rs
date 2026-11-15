@@ -37,6 +37,32 @@ pub mod install_fault;
 
 pub(crate) use backend::{Backend, InstalledEdge, PatchRecording};
 
+/// The typed operations behind the VINDEX3 introspection and weight-edit statements, and what they return.
+///
+/// Each is a [`Session`] method the statement's executor calls and then formats, so another interface (the
+/// Python binding) gets the same values the statement prints or writes without building LQL text or reading
+/// console output: [`Session::tensors`] (`SHOW TENSORS`), [`Session::read_weight`] (`EXPORT WEIGHT`),
+/// [`Session::capture`] (`CAPTURE`), [`Session::tokenize`] and [`Session::decode`] (the encoders `INFER` and
+/// `CAPTURE` use), [`Session::predict`] and [`Session::generate`] (`INFER`), [`Session::stage_low_rank`]
+/// (`ADD LOW RANK`), [`Session::stage_weight_delta`] (`UPDATE WEIGHTS`), and [`Session::begin_patch`],
+/// [`Session::save_patch`], [`Session::apply_patch`], [`Session::remove_patch`] and [`Session::patches`]
+/// (`BEGIN`/`SAVE`/`APPLY`/`REMOVE PATCH`, `SHOW PATCHES`). They run under the session's binding but not
+/// through [`Session::execute`], so the capability profile, which judges statements, does not apply to them.
+pub mod operations {
+    pub use super::patch_statements::{
+        AppliedPatch, PatchSummary, PatchesReport, RemovedPatch, SavedPatch,
+    };
+    pub use super::vindex3::{
+        npy_file_bytes, operand_bits_from_values, operand_origin, CaptureGeometry, CaptureSpec,
+        Captured, DiscardedWeightEdits, EditedElement, Generated, NpyDescr, OperandValues,
+        Prediction, Predictions, StagedLowRank, StagedWeightDelta, WeightRead,
+    };
+    pub use crate::ast::{CaptureContinuation, CaptureLayers, CapturePositions, CaptureSite};
+    pub use larql_vindex::format::vindex3::stored_tensor::{BareName, TensorListing};
+    pub use larql_vindex::format::vindex3::weight_patch::structured::OperandBits;
+    pub use larql_vindex::format::vindex3::weight_patch::LowRankColumnsOp;
+}
+
 /// Session state for the REPL / batch executor.
 pub struct Session {
     pub(crate) backend: Backend,
@@ -345,11 +371,13 @@ impl Session {
                 positions,
                 output,
             } => self.exec_capture(&crate::executor::vindex3::CaptureRequest {
-                site: *site,
-                layers: layers.as_ref(),
-                prompt,
-                continuation: continuation.as_ref(),
-                positions,
+                spec: crate::executor::vindex3::CaptureSpec {
+                    site: *site,
+                    layers: layers.as_ref(),
+                    prompt,
+                    continuation: continuation.as_ref(),
+                    positions,
+                },
                 output,
             }),
             Statement::ShowProvenance { object } => self.exec_show_provenance(object.as_deref()),

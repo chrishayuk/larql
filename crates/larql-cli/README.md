@@ -31,6 +31,16 @@ query, diagnostics and `dev` hold their respective families. The
 research spellings are rewritten to `larql dev`; new tooling should use the
 explicit family.
 
+`larql serve-session --config policy.json --socket larql.sock` serves one
+VINDEX3 container to one client over a Unix socket: typed operations only (no
+LQL text), with the container, workdir, allowed operations, budget of
+edited-model executions and limits fixed by its policy, and an append-only
+audit log. Python connects with `larql.connect(socket)`. It enforces those
+rules itself; it is **not** an OS sandbox, and keeping the model files away
+from the client is the operating system's job. See
+[the session service](../../docs/lql-session-service.md) for the protocol, the
+policy, and what it does and does not enforce.
+
 V2 extraction, LQL and patch workflows remain available. Use the
 [LQL guide](../../docs/lql-guide.md), [generation policy](../../docs/vindex-generation-policy.md)
 and individual command help. The broader [CLI guide](../../docs/cli.md)

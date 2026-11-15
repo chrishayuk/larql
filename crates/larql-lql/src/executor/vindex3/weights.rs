@@ -47,14 +47,50 @@ fn refused(e: impl std::fmt::Display) -> LqlError {
     LqlError::Execution(format!("UPDATE WEIGHTS refused: {e}"))
 }
 
+/// One element a staged weight delta changes: its column, and its BF16 bits before and after.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditedElement {
+    pub col: usize,
+    pub old_bits: u16,
+    pub new_bits: u16,
+}
+
+/// What `DISCARD WEIGHT EDITS` dropped.
+#[derive(Debug, Clone)]
+pub struct DiscardedWeightEdits {
+    /// Stored-weight ops staged directly in the session, now dropped.
+    pub discarded: usize,
+    /// Weight ops removed from the open recording.
+    pub unrecorded: usize,
+    /// Stored-weight ops applied patches still carry: `REMOVE PATCH` removes them.
+    pub from_patches: usize,
+    /// The live-weights report the statement prints after discarding.
+    live: Vec<String>,
+}
+
+/// What staging one `UPDATE WEIGHTS` delta did.
+#[derive(Debug, Clone)]
+pub struct StagedWeightDelta {
+    /// The op's digest.
+    pub digest: String,
+    /// Every element it changes, in column order as given.
+    pub elements: Vec<EditedElement>,
+    /// Weight elements pending in this session after staging.
+    pub pending_elements: usize,
+    /// The live-weights report the statement prints after staging.
+    live: Vec<String>,
+}
+
 impl Session {
-    pub(crate) fn exec_update_weights(
+    /// The typed operation behind `UPDATE WEIGHTS`: stage `delta` on `cols` of `row` of `tensor`. Everything
+    /// checkable is checked before anything is staged. A `BEGIN PATCH` recording records it.
+    pub fn stage_weight_delta(
         &mut self,
         tensor: &str,
         row: usize,
         cols: &[usize],
         delta: f32,
-    ) -> Result<Vec<String>, LqlError> {
+    ) -> Result<StagedWeightDelta, LqlError> {
         let path = match &self.backend {
             Backend::Vindex3 { path, .. } => path.clone(),
             Backend::Vindex { .. } => {
@@ -85,13 +121,38 @@ impl Session {
             unreachable!("matched above")
         };
         overlay.stage_weight_op(op.clone()).map_err(refused)?;
-        let total = overlay.weight_edit_count();
+        let pending_elements = overlay.weight_edit_count();
         if let Some(recording) = &mut self.patch_recording {
             recording
                 .operations
                 .push(larql_vindex::PatchOp::WeightDelta(op));
         }
+        let elements = planned
+            .iter()
+            .map(|e| EditedElement {
+                col: e.col,
+                old_bits: e.old_bits,
+                new_bits: e.new_bits,
+            })
+            .collect();
+        let live = self.refresh_live_weights();
+        Ok(StagedWeightDelta {
+            digest,
+            elements,
+            pending_elements,
+            live,
+        })
+    }
 
+    pub(crate) fn exec_update_weights(
+        &mut self,
+        tensor: &str,
+        row: usize,
+        cols: &[usize],
+        delta: f32,
+    ) -> Result<Vec<String>, LqlError> {
+        let staged = self.stage_weight_delta(tensor, row, cols, delta)?;
+        let planned = &staged.elements;
         let mut out = vec![format!(
             "Staged: {} element(s) of {tensor}, row {row}, delta {delta} (BF16, nearest-even of the exact sum)",
             planned.len()
@@ -107,9 +168,10 @@ impl Session {
         if planned.len() > SHOWN_ELEMENTS {
             out.push(format!("  … and {} more", planned.len() - SHOWN_ELEMENTS));
         }
-        out.push(format!("  op digest {}", &digest[..16]));
+        out.push(format!("  op digest {}", &staged.digest[..16]));
         out.push(format!(
-            "  {total} weight element(s) pending in this session"
+            "  {} weight element(s) pending in this session",
+            staged.pending_elements
         ));
         match &self.patch_recording {
             Some(r) if !r.path.is_empty() => out.push(format!(
@@ -120,10 +182,12 @@ impl Session {
             Some(_) => out.push("  recorded into the anonymous patch".into()),
             None => {}
         }
-        out.extend(self.refresh_live_weights());
+        out.extend(staged.live);
         Ok(out)
     }
+}
 
+impl Session {
     /// `COMPILE CURRENT INTO VINDEX` when weight edits are pending: write a new
     /// container with every pending edit applied, or nothing.
     pub(crate) fn exec_compile_weights(&mut self, output: &str) -> Result<Vec<String>, LqlError> {
@@ -163,10 +227,10 @@ impl Session {
         ])
     }
 
-    /// `DISCARD WEIGHT EDITS`: drop every stored-weight op staged directly in this session, and the copies an
-    /// open recording holds, so a mis-staged edit can be withdrawn without re-binding the container. Ops an
-    /// applied patch carries stay with that patch.
-    pub(crate) fn exec_discard_weight_edits(&mut self) -> Result<Vec<String>, LqlError> {
+    /// The typed operation behind `DISCARD WEIGHT EDITS`: drop every stored-weight op staged directly in this
+    /// session, and the copies an open recording holds, so a mis-staged edit can be withdrawn without re-binding
+    /// the container. Ops an applied patch carries stay with that patch.
+    pub fn discard_weight_edits(&mut self) -> Result<DiscardedWeightEdits, LqlError> {
         let overlay = match &mut self.backend {
             Backend::Vindex3 { overlay, .. } => overlay,
             Backend::Vindex { .. } => return Err(LqlError::Execution(
@@ -184,27 +248,43 @@ impl Session {
             recording.operations.retain(|op| op.weight_op().is_none());
             unrecorded = before - recording.operations.len();
         }
-        let mut out = vec![if discarded == 0 {
-            "Nothing to discard: no stored-weight op is staged in this session".to_string()
-        } else {
-            format!("Discarded: {discarded} stored-weight op(s) staged in this session")
-        }];
-        if unrecorded > 0 {
-            out.push(format!(
-                "  {unrecorded} op(s) removed from the open patch recording"
-            ));
-        }
-        if from_patches > 0 {
-            out.push(format!(
-                "  {from_patches} stored-weight op(s) from applied patches remain pending; REMOVE PATCH removes them"
-            ));
-        }
         // What executes now is what is left: rebuilt here, and said.
         let live = self.refresh_live_weights();
-        if discarded > 0 && live.is_empty() {
+        Ok(DiscardedWeightEdits {
+            discarded,
+            unrecorded,
+            from_patches,
+            live,
+        })
+    }
+
+    /// `DISCARD WEIGHT EDITS`, printed.
+    pub(crate) fn exec_discard_weight_edits(&mut self) -> Result<Vec<String>, LqlError> {
+        let d = self.discard_weight_edits()?;
+        let mut out = vec![if d.discarded == 0 {
+            "Nothing to discard: no stored-weight op is staged in this session".to_string()
+        } else {
+            format!(
+                "Discarded: {} stored-weight op(s) staged in this session",
+                d.discarded
+            )
+        }];
+        if d.unrecorded > 0 {
+            out.push(format!(
+                "  {} op(s) removed from the open patch recording",
+                d.unrecorded
+            ));
+        }
+        if d.from_patches > 0 {
+            out.push(format!(
+                "  {} stored-weight op(s) from applied patches remain pending; REMOVE PATCH removes them",
+                d.from_patches
+            ));
+        }
+        if d.discarded > 0 && d.live.is_empty() {
             out.push(super::nothing_in_effect_line());
         }
-        out.extend(live);
+        out.extend(d.live);
         Ok(out)
     }
 

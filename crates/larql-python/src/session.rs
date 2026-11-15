@@ -1,9 +1,10 @@
 //! Python bindings for LQL sessions.
 //!
 //! Wraps larql_lql::Session to provide LQL query execution from Python.
-//! Two interfaces, one session:
+//! Several interfaces, one session:
 //! - session.query("DESCRIBE 'France'") — LQL string queries
-//! - session.vindex — direct PyVindex access for numpy arrays
+//! - session.vindex — direct PyVindex access for numpy arrays (V2)
+//! - typed VINDEX3 operations (tensor, capture, infer, patches) — see `session_ops`
 //!
 //! Threading: statements execute inside `Python::detach` (an INFER or a
 //! USE load can run for seconds). The LQL session is behind a `Mutex`, so
@@ -24,7 +25,7 @@ type ArrayView = Option<(std::path::PathBuf, Py<PyVindex>)>;
 
 #[pyclass(name = "Session", frozen)]
 pub struct PySession {
-    session: Mutex<Session>,
+    pub(crate) session: Mutex<Session>,
     vindex_obj: Mutex<ArrayView>,
     path: Mutex<String>,
 }
@@ -121,7 +122,8 @@ impl PySession {
         };
         if generation == ContainerGeneration::V3 {
             return Err(pyo3::exceptions::PyNotImplementedError::new_err(
-                "VINDEX3 has no direct VectorIndex array view; use Session.query()",
+                "VINDEX3 has no direct VectorIndex array view; use Session.query(), or the \
+                 typed methods such as Session.tensor() and Session.capture()",
             ));
         }
         // `vindex_obj` is only ever locked while attached and never across

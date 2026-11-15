@@ -9,8 +9,76 @@ use std::path::PathBuf;
 use crate::error::LqlError;
 use crate::executor::{Backend, PatchRecording, Session};
 
+/// What `SAVE PATCH` wrote.
+#[derive(Debug, Clone)]
+pub struct SavedPatch {
+    pub path: PathBuf,
+    pub operations: usize,
+    pub inserts: usize,
+    pub updates: usize,
+    pub deletes: usize,
+    /// Stored-weight edits: a delta's elements, one per structured op.
+    pub weight_edits: usize,
+}
+
+/// What `APPLY PATCH` applied.
+#[derive(Debug, Clone)]
+pub struct AppliedPatch {
+    pub path: String,
+    /// The SHA-256 of the file's bytes, as read and parsed.
+    pub sha256: String,
+    pub operations: usize,
+    pub inserts: usize,
+    pub updates: usize,
+    pub deletes: usize,
+    /// Elements of the `weight_delta` ops it carries.
+    pub weight_edits: usize,
+    /// Structured weight ops it carries.
+    pub structured_ops: usize,
+    /// The live-weights report the statement prints after applying.
+    live: Vec<String>,
+}
+
+/// What `REMOVE PATCH` removed.
+#[derive(Debug, Clone)]
+pub struct RemovedPatch {
+    /// Its 1-based place in the applied list, as `SHOW PATCHES` numbered it.
+    pub number: usize,
+    /// Whether it carried stored-weight ops, so removing it changed what executes.
+    pub carried_weight_ops: bool,
+    live: Vec<String>,
+}
+
+/// One applied patch, as `SHOW PATCHES` lists it.
+#[derive(Debug, Clone)]
+pub struct PatchSummary {
+    /// The name `REMOVE PATCH` takes: the patch's description, or the path it was applied from.
+    pub name: Option<String>,
+    /// The file it was applied from, and the SHA-256 of its bytes (a VINDEX3 binding keeps both).
+    pub path: Option<String>,
+    pub sha256: Option<String>,
+    pub operations: usize,
+    pub inserts: usize,
+    pub updates: usize,
+    pub deletes: usize,
+}
+
+/// What `SHOW PATCHES` reports.
+#[derive(Debug, Clone, Default)]
+pub struct PatchesReport {
+    pub applied: Vec<PatchSummary>,
+    /// Entries the session overlay holds outside any applied patch.
+    pub session_overrides: usize,
+    /// Stored-weight ops in effect (applied or staged), and the elements of their deltas.
+    pub weight_ops: usize,
+    pub weight_elements: usize,
+    /// The open recording: its path (empty for the anonymous one) and its pending operations.
+    pub recording: Option<(String, usize)>,
+}
+
 impl Session {
-    pub(super) fn exec_begin_patch(&mut self, path: &str) -> Result<Vec<String>, LqlError> {
+    /// The typed operation behind `BEGIN PATCH`: open a recording that `SAVE PATCH` writes to `path`.
+    pub fn begin_patch(&mut self, path: &str) -> Result<(), LqlError> {
         // An empty path is how an anonymous recording is marked. Opening a
         // named session with one would make a recording SAVE PATCH refuses and
         // BEGIN PATCH cannot adopt.
@@ -38,10 +106,17 @@ impl Session {
             },
         });
         self.auto_patch = false;
+        Ok(())
+    }
+
+    pub(super) fn exec_begin_patch(&mut self, path: &str) -> Result<Vec<String>, LqlError> {
+        self.begin_patch(path)?;
         Ok(vec![format!("Patch session started: {path}")])
     }
 
-    pub(super) fn exec_save_patch(&mut self) -> Result<Vec<String>, LqlError> {
+    /// The typed operation behind `SAVE PATCH`: write the open recording, which leaves the session only once
+    /// the file is written.
+    pub fn save_patch(&mut self) -> Result<SavedPatch, LqlError> {
         // The recording is the only copy of the session's edits in a form that
         // can be saved. It leaves the session only once the file is written:
         // every refusal and every failed write below keeps it.
@@ -107,22 +182,38 @@ impl Session {
         }
 
         self.auto_patch = false;
+        Ok(SavedPatch {
+            path,
+            operations: patch.operations.len(),
+            inserts: ins,
+            updates: upd,
+            deletes: del,
+            weight_edits,
+        })
+    }
 
-        let weights = if weight_edits > 0 {
-            format!(", {weight_edits} weight edit(s) bound to the source container")
+    pub(super) fn exec_save_patch(&mut self) -> Result<Vec<String>, LqlError> {
+        let saved = self.save_patch()?;
+        let weights = if saved.weight_edits > 0 {
+            format!(
+                ", {} weight edit(s) bound to the source container",
+                saved.weight_edits
+            )
         } else {
             String::new()
         };
         Ok(vec![format!(
             "Saved: {} ({} inserts, {} updates, {} deletes{weights})",
-            path.display(),
-            ins,
-            upd,
-            del,
+            saved.path.display(),
+            saved.inserts,
+            saved.updates,
+            saved.deletes,
         )])
     }
 
-    pub(super) fn exec_apply_patch(&mut self, path: &str) -> Result<Vec<String>, LqlError> {
+    /// The typed operation behind `APPLY PATCH`: check the `.vlp` at `path` whole, then apply it through the
+    /// session overlay. A refused patch leaves the session as it was.
+    pub fn apply_patch(&mut self, path: &str) -> Result<AppliedPatch, LqlError> {
         let patch_path = PathBuf::from(path);
         if !patch_path.exists() {
             return Err(LqlError::Execution(format!("patch not found: {path}")));
@@ -233,12 +324,37 @@ impl Session {
                 overlay.try_apply_patch(patch).map_err(refused)?;
                 patch_files.push(crate::executor::vindex3::AppliedPatchFile {
                     path: path.to_string(),
-                    sha256: file_sha256,
+                    sha256: file_sha256.clone(),
                 });
             }
             _ => return Err(LqlError::NoBackend),
         }
+        // Applying any patch may change what the stored-weight ops in effect execute as.
+        let live = self.refresh_live_weights();
+        Ok(AppliedPatch {
+            path: path.to_string(),
+            sha256: file_sha256,
+            operations: total,
+            inserts: ins,
+            updates: upd,
+            deletes: del,
+            weight_edits,
+            structured_ops: structured,
+            live,
+        })
+    }
 
+    pub(super) fn exec_apply_patch(&mut self, path: &str) -> Result<Vec<String>, LqlError> {
+        let applied = self.apply_patch(path)?;
+        let AppliedPatch {
+            operations: total,
+            inserts: ins,
+            updates: upd,
+            deletes: del,
+            weight_edits,
+            structured_ops: structured,
+            ..
+        } = applied;
         let mut weights = String::new();
         if weight_edits > 0 {
             weights.push_str(&format!(
@@ -253,47 +369,88 @@ impl Session {
         let mut out = vec![format!(
             "Applied: {path} ({total} operations: {ins} inserts, {upd} updates, {del} deletes{weights})"
         )];
-        // Applying any patch may change what the stored-weight ops in effect execute as.
-        out.extend(self.refresh_live_weights());
+        out.extend(applied.live);
         Ok(out)
+    }
+
+    /// The typed operation behind `SHOW PATCHES`: the applied patches, the session overlay's own entries, the
+    /// stored-weight ops in effect and the open recording.
+    pub fn patches(&self) -> Result<PatchesReport, LqlError> {
+        let (patches, session_overrides, files) = match &self.backend {
+            Backend::Vindex { patched, .. } => (&patched.patches, patched.num_overrides(), &[][..]),
+            Backend::Vindex3 {
+                overlay,
+                patch_files,
+                ..
+            } => (&overlay.patches, overlay.num_overrides(), &patch_files[..]),
+            _ => {
+                self.require_patched()?;
+                unreachable!("require_patched errors on every other backend");
+            }
+        };
+        let applied = patches
+            .iter()
+            .enumerate()
+            .map(|(i, patch)| {
+                let (inserts, updates, deletes) = patch.counts();
+                PatchSummary {
+                    name: patch.description.clone(),
+                    path: files.get(i).map(|f| f.path.clone()),
+                    sha256: files.get(i).map(|f| f.sha256.clone()),
+                    operations: patch.len(),
+                    inserts,
+                    updates,
+                    deletes,
+                }
+            })
+            .collect();
+        let (weight_ops, weight_elements) = match &self.backend {
+            Backend::Vindex3 { overlay, .. } => {
+                (overlay.weight_ops().len(), overlay.weight_edit_count())
+            }
+            _ => (0, 0),
+        };
+        Ok(PatchesReport {
+            applied,
+            session_overrides,
+            weight_ops,
+            weight_elements,
+            recording: self
+                .patch_recording
+                .as_ref()
+                .map(|r| (r.path.clone(), r.operations.len())),
+        })
     }
 
     pub(super) fn exec_show_patches(&self) -> Result<Vec<String>, LqlError> {
         // The applied-patch list plus the session-overlay entry count,
         // whichever overlay the binding holds: V2's slot overrides or
         // V3's KNN entries.
-        let (patches, session_overrides) = match &self.backend {
-            Backend::Vindex { patched, .. } => (&patched.patches, patched.num_overrides()),
-            Backend::Vindex3 { overlay, .. } => (&overlay.patches, overlay.num_overrides()),
-            _ => {
-                self.require_patched()?;
-                unreachable!("require_patched errors on every other backend");
-            }
-        };
+        let report = self.patches()?;
+        let session_overrides = report.session_overrides;
         let mut out = Vec::new();
 
-        if patches.is_empty() && session_overrides == 0 {
+        if report.applied.is_empty() && session_overrides == 0 {
             out.push("  (no patches applied)".into());
         } else {
-            for (i, patch) in patches.iter().enumerate() {
-                let (ins, upd, del) = patch.counts();
-                let name = patch.description.as_deref().unwrap_or("(unnamed)");
+            for (i, patch) in report.applied.iter().enumerate() {
+                let name = patch.name.as_deref().unwrap_or("(unnamed)");
                 out.push(format!(
                     "  {}. {:<40} {} ops ({} ins, {} upd, {} del)",
                     i + 1,
                     name,
-                    patch.len(),
-                    ins,
-                    upd,
-                    del,
+                    patch.operations,
+                    patch.inserts,
+                    patch.updates,
+                    patch.deletes,
                 ));
             }
-            if session_overrides > 0 && patches.is_empty() {
+            if session_overrides > 0 && report.applied.is_empty() {
                 out.push(format!(
                     "  (anonymous session: {session_overrides} overrides)"
                 ));
             }
-            let file_total: usize = patches.iter().map(|p| p.len()).sum();
+            let file_total: usize = report.applied.iter().map(|p| p.operations).sum();
             let overlay_total = session_overrides;
             if file_total > 0 || overlay_total > 0 {
                 out.push(format!(
@@ -304,34 +461,37 @@ impl Session {
         }
 
         if let Backend::Vindex3 { overlay, .. } = &self.backend {
-            let ops = overlay.weight_ops();
-            if !ops.is_empty() {
+            if report.weight_ops > 0 {
                 out.push(format!(
                     "  Stored-weight edits: {} element(s) in {} op(s), pending COMPILE",
-                    overlay.weight_edit_count(),
-                    ops.len()
+                    report.weight_elements, report.weight_ops
                 ));
                 out.extend(crate::executor::vindex3::live_weight_lines(overlay));
             }
         }
 
-        if let Some(ref recording) = self.patch_recording {
-            let label = if recording.path.is_empty() {
-                "(anonymous)"
-            } else {
-                &recording.path
-            };
-            out.push(format!(
-                "  Recording: {} ({} ops pending)",
-                label,
-                recording.operations.len()
-            ));
+        if let Some((path, pending)) = &report.recording {
+            let label = if path.is_empty() { "(anonymous)" } else { path };
+            out.push(format!("  Recording: {} ({} ops pending)", label, pending));
         }
 
         Ok(out)
     }
 
-    pub(super) fn exec_remove_patch(&mut self, path: &str) -> Result<Vec<String>, LqlError> {
+    /// Whether what the session executes is not the bound container as stored: a stored-weight op applied or
+    /// staged, or a knowledge edit (an override, a KNN entry, a deletion). On a VINDEX3 binding only.
+    pub fn has_pending_edits(&self) -> Result<bool, LqlError> {
+        match &self.backend {
+            Backend::Vindex3 { overlay, .. } => Ok(overlay.has_pending_edits()),
+            Backend::None => Err(LqlError::NoBackend),
+            _ => Err(LqlError::Execution(
+                "pending edits are asked of a VINDEX3 binding, and this session is not bound to one".into(),
+            )),
+        }
+    }
+
+    /// The typed operation behind `REMOVE PATCH`: remove the applied patch `path` names.
+    pub fn remove_patch(&mut self, path: &str) -> Result<RemovedPatch, LqlError> {
         let by_name = |p: &larql_vindex::VindexPatch| p.description.as_deref() == Some(path);
         // Whether the removed patch carried stored-weight ops: its removal is then a change to what executes.
         let mut carried_weight_ops = false;
@@ -366,12 +526,21 @@ impl Session {
         let Some(i) = pos else {
             return Err(LqlError::Execution(format!("patch not found: {path}")));
         };
-        let mut out = vec![format!("Removed patch #{}", i + 1)];
         let live = self.refresh_live_weights();
-        if carried_weight_ops && live.is_empty() {
+        Ok(RemovedPatch {
+            number: i + 1,
+            carried_weight_ops,
+            live,
+        })
+    }
+
+    pub(super) fn exec_remove_patch(&mut self, path: &str) -> Result<Vec<String>, LqlError> {
+        let removed = self.remove_patch(path)?;
+        let mut out = vec![format!("Removed patch #{}", removed.number)];
+        if removed.carried_weight_ops && removed.live.is_empty() {
             out.push(crate::executor::vindex3::nothing_in_effect_line());
         }
-        out.extend(live);
+        out.extend(removed.live);
         Ok(out)
     }
 }

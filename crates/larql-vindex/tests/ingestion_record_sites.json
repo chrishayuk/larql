@@ -1,5 +1,25 @@
 [
   [
+    "larql-cli/src/commands/primary/session_service/server.rs",
+    "reject_waiting",
+    "record"
+  ],
+  [
+    "larql-cli/src/commands/primary/session_service/server.rs",
+    "serve_with",
+    "record"
+  ],
+  [
+    "larql-cli/src/commands/primary/session_service/server.rs",
+    "serve_with",
+    "record"
+  ],
+  [
+    "larql-cli/src/commands/primary/session_service/service.rs",
+    "Service::stop",
+    "record"
+  ],
+  [
     "larql-cli/src/commands/primary/shannon_trace/block_norms.rs",
     "run_block_norms",
     "record"

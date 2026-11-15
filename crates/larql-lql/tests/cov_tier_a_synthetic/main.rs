@@ -326,3 +326,4 @@ fn make_featured_source_dir() -> tempfile::TempDir {
 mod feature_labels_sidecar_query_infer_rs_la;
 mod merge_with_a_featured_source_loop_body_c;
 mod no_weights_vindex_browse_only_insert_bra;
+mod v3_only_typed_operations;

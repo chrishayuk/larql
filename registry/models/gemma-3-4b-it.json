@@ -4,7 +4,7 @@
     "bf16": {
       "artifact": {
         "repo": "larql/gemma-3-4b-it",
-        "revision": "673224aeb81e5719173627a97d08d27745359b08"
+        "revision": "91c35bfa9cd2c6d1dcad65b46f60a58eabb9cc1f"
       },
       "abi": 1,
       "source": {

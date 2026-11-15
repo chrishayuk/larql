@@ -1,13 +1,17 @@
 use pyo3::prelude::*;
 
 mod f32_bytes;
+mod json_py;
 mod session;
+mod session_ops;
 mod sync;
+mod testing;
 mod trace_py;
 mod vindex;
 mod walk;
 
 use session::PySession;
+use session_ops::PyReadout;
 use trace_py::{
     PyAnswerWaypoint, PyBoundaryStore, PyBoundaryWriter, PyLayerSummary, PyResidualTrace,
     PyTraceStore,
@@ -63,6 +67,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDescribeEdge>()?;
     m.add_class::<PyRelation>()?;
     m.add_class::<PySession>()?;
+    m.add_class::<PyReadout>()?;
     m.add_class::<PyWalkModel>()?;
     m.add_class::<PyResidualTrace>()?;
     m.add_class::<PyAnswerWaypoint>()?;
@@ -89,6 +94,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Vindex functions (new)
     m.add_function(wrap_pyfunction!(load_vindex, m)?)?;
     m.add_function(wrap_pyfunction!(create_session, m)?)?;
+    m.add_function(wrap_pyfunction!(testing::py_write_test_container, m)?)?;
 
     Ok(())
 }
