@@ -494,6 +494,8 @@ class Statements(unittest.TestCase):
         trial["id_counts"]["prefill_produced"] = 0
         self.assertTrue(vr.ledger_defects(trial))
         self.assertEqual(vr.id_count_defects(fake_trial(vr.SEQUENTIAL, ids=[], generate=0)), [])
+        nothing = fake_trial(vr.SEQUENTIAL, ids=[], generate=5)
+        self.assertIn("generation ended short of the limit without a stop id", vr.id_count_defects(nothing))
 
     def test_bracket_stability_is_reported_against_the_gate(self):
         def bracket_ns(entry):

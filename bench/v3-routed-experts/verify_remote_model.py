@@ -208,7 +208,7 @@ def id_count_defects(trial):
     ended = "nothing requested" if not ids else "stop id" if stopped else "generation limit"
     if counts["ended_by"] != ended:
         defects.append(f"recorded as ended by {counts['ended_by']}, the ids say {ended}")
-    if not stopped and ids and len(ids) != counts["requested"]:
+    if not stopped and len(ids) != counts["requested"]:
         defects.append("generation ended short of the limit without a stop id")
     return defects
 
