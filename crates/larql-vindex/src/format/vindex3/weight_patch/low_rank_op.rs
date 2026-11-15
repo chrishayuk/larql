@@ -69,7 +69,7 @@ impl LowRankColumnsOp {
         let source = bind_source(container, tensor)?;
         let mut op = Self {
             source,
-            tensor: tensor.to_string(),
+            tensor: super::TensorName::parse(tensor).tensor.to_string(),
             numerics: numerics.to_string(),
             rank,
             a: hex(a),
@@ -166,7 +166,10 @@ impl LowRankColumnsOp {
     /// tensor small enough to be listed.
     pub fn resolve(&self, container: &Path) -> Result<ResultPatch, WeightPatchError> {
         let resolved = self.resolve_tensor(container)?;
-        let ([_, cols], base) = super::apply::read_bf16_tensor(container, &self.tensor)?;
+        let ([_, cols], base) = super::apply::read_bf16_tensor(
+            container,
+            &super::qualified(&self.source.representation, &self.tensor),
+        )?;
         let edits: Vec<ResultEdit> = base
             .iter()
             .zip(&resolved.result)

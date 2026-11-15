@@ -57,6 +57,21 @@ impl WeightOpRef<'_> {
         }
     }
 
+    /// The source binding this op is sealed to.
+    pub fn source(&self) -> &super::SourceBinding {
+        match self {
+            WeightOpRef::Delta(op) => &op.source,
+            WeightOpRef::Structured(op) => &op.source,
+            WeightOpRef::LowRankColumns(op) => &op.source,
+        }
+    }
+
+    /// The op's tensor qualified by the representation its binding names: the name that finds it again
+    /// whether or not the bare name is ambiguous in the container.
+    pub fn located_tensor(&self) -> String {
+        super::qualified(&self.source().representation, self.tensor())
+    }
+
     pub fn digest(&self) -> &str {
         match self {
             WeightOpRef::Delta(op) => &op.digest,
@@ -149,18 +164,19 @@ pub fn declare_patches(
         }
     }
     check_ops(ops)?;
-    let mut tensors: Vec<&str> = Vec::new();
+    let mut tensors: Vec<String> = Vec::new();
     for op in ops {
-        if !tensors.contains(&op.tensor()) {
-            tensors.push(op.tensor());
+        let at = op.located_tensor();
+        if !tensors.contains(&at) {
+            tensors.push(at);
         }
     }
     let mut patches = Vec::with_capacity(tensors.len());
-    for tensor in tensors {
+    for tensor in &tensors {
         let on: Vec<WeightOpRef<'_>> = ops
             .iter()
             .copied()
-            .filter(|o| o.tensor() == tensor)
+            .filter(|o| &o.located_tensor() == tensor)
             .collect();
         patches.push(declare_tensor(container, tensor, &on)?);
     }

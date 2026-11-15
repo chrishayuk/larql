@@ -24,7 +24,7 @@ pub enum WeightPatchError {
     NonFiniteDelta { row: usize, col: usize },
     #[error("tensor `{0}` is not held by any canonical representation of the source")]
     UnknownTensor(String),
-    #[error("tensor `{tensor}` is held by more than one canonical representation: {holders:?}")]
+    #[error("tensor `{tensor}` is held by more than one canonical representation: {holders:?}; name the one you mean as `<representation>::{tensor}`, e.g. `{}::{tensor}`", holders.first().map(String::as_str).unwrap_or("<representation>"))]
     AmbiguousTensor {
         tensor: String,
         holders: Vec<String>,

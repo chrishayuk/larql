@@ -27,7 +27,7 @@ use crate::error::LqlError;
 /// The statements `PUBLIC_EXPLORER` serves — part of the refusal
 /// contract, printed whenever the profile declines one.
 pub const PUBLIC_EXPLORER_SERVES: &str =
-    "SHOW COMPONENTS/REPRESENTATIONS/PROVENANCE/AUTHORITY/RELATIONS/LAYERS/FEATURES/ENTITIES/MODELS, \
+    "SHOW COMPONENTS/REPRESENTATIONS/TENSORS/PROVENANCE/AUTHORITY/RELATIONS/LAYERS/FEATURES/ENTITIES/MODELS, \
      DESCRIBE, WALK, SELECT, EXPLAIN, STATS, INFER [TOP n] [GENERATE <= 32], HELP";
 
 /// What a session is allowed to execute.
@@ -87,6 +87,7 @@ fn public_explorer_check(stmt: &Statement) -> Result<(), LqlError> {
         | ShowModels
         | ShowComponents
         | ShowRepresentations { .. }
+        | ShowTensors { .. }
         | ShowProvenance { .. }
         | ShowAuthority
         | Stats { .. } => Ok(()),
@@ -122,6 +123,7 @@ fn public_explorer_check(stmt: &Statement) -> Result<(), LqlError> {
         | Compile { .. }
         | Diff { .. }
         | Use { .. }
+        | ExportWeight { .. }
         | VerifyRepresentation { .. }
         | VerifyOperator { .. }
         | VerifyPatch { .. }

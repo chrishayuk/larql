@@ -146,7 +146,7 @@ pub(super) fn check_same_source(
     container: &Path,
     tensor: &str,
 ) -> Result<(), WeightPatchError> {
-    let now = bind_source(container, tensor)?;
+    let now = bind_source(container, &super::qualified(&source.representation, tensor))?;
     if &now != source {
         return Err(WeightPatchError::WrongSource {
             expected: format!(
@@ -174,6 +174,7 @@ pub fn bind_source(container: &Path, tensor: &str) -> Result<SourceBinding, Weig
     let raw = std::fs::read_to_string(container.join(INDEX_JSON))?;
     let index: Vindex3Index = serde_json::from_str(&raw)
         .map_err(|e| crate::error::VindexError::Parse(format!("parse {INDEX_JSON}: {e}")))?;
+    let wanted = super::TensorName::parse(tensor);
     let mut holders = Vec::new();
     for (id, entry) in index
         .representations
@@ -181,7 +182,7 @@ pub fn bind_source(container: &Path, tensor: &str) -> Result<SourceBinding, Weig
         .filter(|(_, e)| e.compiled_from.is_none())
     {
         let (header, _) = read_segment_header(&container.join(&entry.segment))?;
-        if header.tensors.iter().any(|t| t.name == tensor) {
+        if header.tensors.iter().any(|t| wanted.names(id, &t.name)) {
             holders.push((id.clone(), entry.payload_sha256.clone()));
         }
     }
@@ -219,5 +220,6 @@ pub fn record_op(
             delta_bits: e.delta.to_bits(),
         })
         .collect();
-    Ok(WeightDeltaOp::new(source, tensor.to_string(), edits))
+    let bare = super::TensorName::parse(tensor).tensor.to_string();
+    Ok(WeightDeltaOp::new(source, bare, edits))
 }

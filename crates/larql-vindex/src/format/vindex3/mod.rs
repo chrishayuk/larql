@@ -68,6 +68,7 @@ pub mod remote;
 pub mod represent;
 pub mod representation_attestations;
 pub mod shape;
+pub mod stored_tensor;
 /// Conformance fixture A, public so integration tests and future gate arms can
 /// build a real container without duplicating its frozen dimensions.
 pub mod test_support;

@@ -1,6 +1,7 @@
 //! LQL Parser — recursive descent from token stream to AST.
 
 mod expected;
+mod export;
 mod help;
 mod helpers;
 mod introspection;
@@ -90,6 +91,7 @@ impl Parser {
             Token::Ident(ref s) if s.eq_ignore_ascii_case("DISCARD") => {
                 self.parse_discard_weight_edits()
             }
+            Token::Ident(ref s) if s.eq_ignore_ascii_case("EXPORT") => self.parse_export_weight(),
             Token::Ident(ref s) if s.eq_ignore_ascii_case("HELP") => self.parse_help(),
             _ => Err(self.unknown_statement()),
         }
