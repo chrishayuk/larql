@@ -1,0 +1,13 @@
+running warm-0: warm sequential rtt=0.0ms profiled
+running warm-1: warm sequential rtt=0.0ms profiled
+running warm-2: warm sequential rtt=0.0ms profiled
+running warm-3: warm sequential rtt=0.0ms profiled
+STOPPED: warm-up never settled within 0.01: [494370399.5535714, 347812886.16071427, 321527011.89285713, 296302501.48214287]
+{
+  "kind": "diagnostic",
+  "complete": false,
+  "stopped": "warm-up never settled within 0.01: [494370399.5535714, 347812886.16071427, 321527011.89285713, 296302501.48214287]",
+  "valid": null,
+  "void": null
+}
+exit 1

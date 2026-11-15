@@ -1,0 +1,33 @@
+utc: 2026-11-14T22:17:00Z
+load: { 14.46 21.42 28.24 }
+swap: total = 1024.00M  used = 155.38M  free = 868.62M  (encrypted)
+System-wide memory free percentage: 89%
+Pages free:                                  4557262.
+Pages active:                                1371590.
+Pages wired down:                             309507.
+Pages stored in compressor:                  1019729.
+Pages occupied by compressor:                 575962.
+Pageins:                                   148641033.
+Pageouts:                                      14464.
+Swapins:                                      644249.
+Swapouts:                                     684824.
+--- top by cpu
+  PID STAT  %CPU    RSS COMM
+27214 R    423.2 4907776 target/release/examples/gwbreadcrumb1
+72479 R    393.6 12329216 /Users/christopherhay/chris-source/larql-edit-verifier-patch/target/release/larql
+  717 R    109.3 333328 /System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd
+98224 S+    50.3 638496 claude
+  471 Ss    46.8  32016 /usr/libexec/syspolicyd
+ 1158 Rs    13.8  17808 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/MacOS/XprotectService
+  369 Ss    10.5  60640 /usr/libexec/xprotectd
+--- top by resident memory (kB)
+  PID STAT  %CPU    RSS COMM
+27214 R    423.2 4907776 target/release/examples/gwbreadcrumb1
+98224 S+    50.3 638496 claude
+36924 S+     0.8 582144 claude
+17412 S+     0.3 498048 claude
+86911 S      0.0 475056 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+86151 S      0.0 393248 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+ 7189 S+     0.4 384608 claude
+--- stopped processes
+  PID STAT  %CPU    RSS COMM

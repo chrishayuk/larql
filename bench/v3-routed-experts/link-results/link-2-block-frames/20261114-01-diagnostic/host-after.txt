@@ -1,0 +1,35 @@
+utc: 2026-11-14T21:31:35Z
+load: { 5.84 8.96 17.79 }
+swap: total = 1024.00M  used = 155.38M  free = 868.62M  (encrypted)
+System-wide memory free percentage: 91%
+Pages free:                                  3136482.
+Pages active:                                1554784.
+Pages wired down:                             251612.
+Pages stored in compressor:                   712894.
+Pages occupied by compressor:                 429598.
+Pageins:                                   143121216.
+Pageouts:                                      14434.
+Swapins:                                      644249.
+Swapouts:                                     684824.
+--- top by cpu
+  PID STAT  %CPU    RSS COMM
+98224 S+     4.3 700464 claude
+  544 Ss     0.4  46160 /System/Library/DriverExtensions/com.apple.DriverKit-AppleBCMWLAN.dext/com.apple.DriverKit-AppleBCMWLAN
+17412 S+     0.4 722448 claude
+47688 S      0.2 233760 /Applications/Hyper.app/Contents/Frameworks/Hyper Helper (Renderer).app/Contents/MacOS/Hyper Helper (Renderer)
+  369 Ss     0.1 201664 /usr/libexec/xprotectd
+36924 S+     0.1 861680 claude
+  422 Ss     0.1   2640 /usr/libexec/clocksyncd
+--- top by resident memory (kB)
+  PID STAT  %CPU    RSS COMM
+96803 S      0.0 941216 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+17466 S      0.0 874992 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+36924 S+     0.1 861680 claude
+27214 T      0.0 4928512 target/release/examples/gwbreadcrumb1
+17412 S+     0.4 722448 claude
+92472 S      0.0 702016 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+98224 S+     4.3 700464 claude
+--- stopped processes
+  PID STAT  %CPU    RSS COMM
+27213 T      0.0    816 /bin/zsh
+27214 T      0.0 4928512 target/release/examples/gwbreadcrumb1

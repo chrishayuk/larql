@@ -1,0 +1,33 @@
+utc: 2026-11-14T22:16:17Z
+load: { 16.63 22.74 29.01 }
+swap: total = 1024.00M  used = 155.38M  free = 868.62M  (encrypted)
+System-wide memory free percentage: 90%
+Pages free:                                  4722372.
+Pages active:                                 669201.
+Pages wired down:                             251278.
+Pages stored in compressor:                  1031940.
+Pages occupied by compressor:                 578895.
+Pageins:                                   148613805.
+Pageouts:                                      14464.
+Swapins:                                      644249.
+Swapouts:                                     684824.
+--- top by cpu
+  PID STAT  %CPU    RSS COMM
+27214 R    437.2 4905840 target/release/examples/gwbreadcrumb1
+87392 R    286.4 11142096 /Users/christopherhay/chris-source/larql-edit-verifier-patch/target/release/larql
+  717 R    111.6 332784 /System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd
+  471 Rs    72.7  29936 /usr/libexec/syspolicyd
+ 1158 Ss    20.3  15200 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/MacOS/XprotectService
+ 7189 S+     8.7 382624 claude
+84366 S      3.1  36512 /System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged
+--- top by resident memory (kB)
+  PID STAT  %CPU    RSS COMM
+27214 R    437.2 4905840 target/release/examples/gwbreadcrumb1
+98224 S+     0.2 585312 claude
+36924 S+     2.2 577264 claude
+17412 S+     1.8 492688 claude
+86911 S      0.0 473936 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+86151 S      0.0 392768 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+ 7189 S+     8.7 382624 claude
+--- stopped processes
+  PID STAT  %CPU    RSS COMM

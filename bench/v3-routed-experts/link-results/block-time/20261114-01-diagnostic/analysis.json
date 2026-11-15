@@ -1,0 +1,20 @@
+{
+  "note": "the run stopped; nothing is analysed",
+  "kind": "diagnostic",
+  "counts": false,
+  "complete": false,
+  "stopped": "warm-up never settled within 0.01: [494370399.5535714, 347812886.16071427, 321527011.89285713, 296302501.48214287]",
+  "host_after": {
+    "load_average": [
+      16.6337890625,
+      22.74365234375,
+      29.0087890625
+    ],
+    "busy_processes": [
+      "cargo",
+      "larql"
+    ],
+    "utc": "2026-11-14T22:16:17Z"
+  },
+  "exclusivity_evidence_supplied": false
+}

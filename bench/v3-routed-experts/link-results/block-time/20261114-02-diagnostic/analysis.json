@@ -1,0 +1,363 @@
+{
+  "cells": [
+    {
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "sequential",
+      "rtt_ms": 5.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "sequential",
+      "rtt_ms": 20.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-1",
+      "rtt_ms": 0.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-1",
+      "rtt_ms": 5.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-1",
+      "rtt_ms": 20.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-2",
+      "rtt_ms": 0.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-2",
+      "rtt_ms": 5.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-2",
+      "rtt_ms": 20.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-4",
+      "rtt_ms": 0.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-4",
+      "rtt_ms": 5.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-4",
+      "rtt_ms": 20.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-8",
+      "rtt_ms": 0.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-8",
+      "rtt_ms": 5.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-8",
+      "rtt_ms": 20.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    }
+  ],
+  "slopes": {
+    "sequential": {
+      "predicted": 24.0,
+      "fitted": null,
+      "ratio": null,
+      "intercept_ns": null,
+      "residuals_ns": null,
+      "fit_within_band": null,
+      "differential": null,
+      "differential_ratio": null,
+      "differential_per_repeat": null,
+      "differential_within_band": null,
+      "follows_exchange_model": null,
+      "note": "a delay has no valid trial"
+    },
+    "block-1": {
+      "predicted": 24.0,
+      "fitted": null,
+      "ratio": null,
+      "intercept_ns": null,
+      "residuals_ns": null,
+      "fit_within_band": null,
+      "differential": null,
+      "differential_ratio": null,
+      "differential_per_repeat": null,
+      "differential_within_band": null,
+      "follows_exchange_model": null,
+      "note": "a delay has no valid trial"
+    },
+    "block-2": {
+      "predicted": 12.0,
+      "fitted": null,
+      "ratio": null,
+      "intercept_ns": null,
+      "residuals_ns": null,
+      "fit_within_band": null,
+      "differential": null,
+      "differential_ratio": null,
+      "differential_per_repeat": null,
+      "differential_within_band": null,
+      "follows_exchange_model": null,
+      "note": "a delay has no valid trial"
+    },
+    "block-4": {
+      "predicted": 6.0,
+      "fitted": null,
+      "ratio": null,
+      "intercept_ns": null,
+      "residuals_ns": null,
+      "fit_within_band": null,
+      "differential": null,
+      "differential_ratio": null,
+      "differential_per_repeat": null,
+      "differential_within_band": null,
+      "follows_exchange_model": null,
+      "note": "a delay has no valid trial"
+    },
+    "block-8": {
+      "predicted": 3.0,
+      "fitted": null,
+      "ratio": null,
+      "intercept_ns": null,
+      "residuals_ns": null,
+      "fit_within_band": null,
+      "differential": null,
+      "differential_ratio": null,
+      "differential_per_repeat": null,
+      "differential_within_band": null,
+      "follows_exchange_model": null,
+      "note": "a delay has no valid trial"
+    }
+  },
+  "faster": [
+    {
+      "arm": "block-2",
+      "rtt_ms": 0.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-2",
+      "rtt_ms": 5.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-2",
+      "rtt_ms": 20.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-4",
+      "rtt_ms": 0.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-4",
+      "rtt_ms": 5.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-4",
+      "rtt_ms": 20.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-8",
+      "rtt_ms": 0.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-8",
+      "rtt_ms": 5.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-8",
+      "rtt_ms": 20.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    }
+  ],
+  "profiling_overhead": [
+    {
+      "arm": "sequential",
+      "repeat": 0,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    },
+    {
+      "arm": "sequential",
+      "repeat": 1,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    },
+    {
+      "arm": "block-1",
+      "repeat": 0,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    },
+    {
+      "arm": "block-1",
+      "repeat": 1,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    },
+    {
+      "arm": "block-2",
+      "repeat": 0,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    },
+    {
+      "arm": "block-2",
+      "repeat": 1,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    },
+    {
+      "arm": "block-4",
+      "repeat": 0,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    },
+    {
+      "arm": "block-4",
+      "repeat": 1,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    },
+    {
+      "arm": "block-8",
+      "repeat": 0,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    },
+    {
+      "arm": "block-8",
+      "repeat": 1,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    }
+  ],
+  "valid": 10,
+  "void": 40,
+  "thresholds": {
+    "slope_band": 0.1,
+    "minimum_effect": 0.01,
+    "gate": 0.01
+  },
+  "reading": "evaluated positions only; the thresholds are a model-fit band and a minimum effect across two repeats, not statistical significance",
+  "kind": "diagnostic",
+  "counts": false,
+  "complete": true,
+  "stopped": null,
+  "host_after": {
+    "load_average": [
+      19.2333984375,
+      21.15478515625,
+      19.4130859375
+    ],
+    "busy_processes": [
+      "cargo"
+    ],
+    "utc": "2026-11-14T23:33:56Z"
+  },
+  "exclusivity_evidence_supplied": false
+}

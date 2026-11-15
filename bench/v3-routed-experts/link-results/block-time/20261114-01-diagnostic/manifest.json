@@ -1,0 +1,463 @@
+{
+  "schema": "larql.v3.block-time.v1",
+  "protocol": "BLOCK-TIME-1 revision 2",
+  "kind": "diagnostic",
+  "label": "end-to-end driver check on a loaded machine, binaries from a local merge of the timing branch and the worker-timing branch; declared before start; does not count",
+  "counts": false,
+  "revision": "c76c57e1a07b9231c9e6be2fefa313b86b03bbd1",
+  "source_dirty": [],
+  "model": "/Users/christopherhay/chris-models/gpt-oss-20b.vindex3",
+  "topology": "one",
+  "settings": {
+    "LARQL_CPU_WORKERS": "8",
+    "RAYON_NUM_THREADS": "8",
+    "VECLIB_MAXIMUM_THREADS": "1",
+    "TOKIO_WORKER_THREADS": "2",
+    "LARQL_KV_ENGINE": ""
+  },
+  "link_qos": "default",
+  "ids": "/Users/christopherhay/chris-source/larql/.claude/worktrees/v3-block-time-diag/bench/v3-routed-experts/link-results/control/ids.json",
+  "ids_sha256": "6ddbb2819ce93fc94517b5fa582cd83e448d3cf055f3168d0438ab1b3825aa15",
+  "prompt_tokens": 152,
+  "positions": 216,
+  "measure_from": 160,
+  "schedule": [
+    {
+      "label": "trial-000",
+      "role": "direct",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-001",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-002",
+      "role": "arm",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-003",
+      "role": "arm",
+      "arm": "block-1",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-004",
+      "role": "arm",
+      "arm": "block-2",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-005",
+      "role": "arm",
+      "arm": "block-4",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-006",
+      "role": "arm",
+      "arm": "block-8",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-007",
+      "role": "unprofiled",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": false
+    },
+    {
+      "label": "trial-008",
+      "role": "unprofiled",
+      "arm": "block-1",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": false
+    },
+    {
+      "label": "trial-009",
+      "role": "unprofiled",
+      "arm": "block-2",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": false
+    },
+    {
+      "label": "trial-010",
+      "role": "unprofiled",
+      "arm": "block-4",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": false
+    },
+    {
+      "label": "trial-011",
+      "role": "unprofiled",
+      "arm": "block-8",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": false
+    },
+    {
+      "label": "trial-012",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-013",
+      "role": "arm",
+      "arm": "block-1",
+      "rtt_ms": 5.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-014",
+      "role": "arm",
+      "arm": "block-2",
+      "rtt_ms": 5.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-015",
+      "role": "arm",
+      "arm": "block-4",
+      "rtt_ms": 5.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-016",
+      "role": "arm",
+      "arm": "block-8",
+      "rtt_ms": 5.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-017",
+      "role": "arm",
+      "arm": "sequential",
+      "rtt_ms": 5.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-018",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-019",
+      "role": "arm",
+      "arm": "block-2",
+      "rtt_ms": 20.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-020",
+      "role": "arm",
+      "arm": "block-4",
+      "rtt_ms": 20.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-021",
+      "role": "arm",
+      "arm": "block-8",
+      "rtt_ms": 20.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-022",
+      "role": "arm",
+      "arm": "sequential",
+      "rtt_ms": 20.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-023",
+      "role": "arm",
+      "arm": "block-1",
+      "rtt_ms": 20.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-024",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 0,
+      "profiled": true
+    },
+    {
+      "label": "trial-025",
+      "role": "direct",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-026",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-027",
+      "role": "arm",
+      "arm": "block-8",
+      "rtt_ms": 20.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-028",
+      "role": "arm",
+      "arm": "block-4",
+      "rtt_ms": 20.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-029",
+      "role": "arm",
+      "arm": "block-2",
+      "rtt_ms": 20.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-030",
+      "role": "arm",
+      "arm": "block-1",
+      "rtt_ms": 20.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-031",
+      "role": "arm",
+      "arm": "sequential",
+      "rtt_ms": 20.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-032",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-033",
+      "role": "arm",
+      "arm": "sequential",
+      "rtt_ms": 5.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-034",
+      "role": "arm",
+      "arm": "block-8",
+      "rtt_ms": 5.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-035",
+      "role": "arm",
+      "arm": "block-4",
+      "rtt_ms": 5.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-036",
+      "role": "arm",
+      "arm": "block-2",
+      "rtt_ms": 5.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-037",
+      "role": "arm",
+      "arm": "block-1",
+      "rtt_ms": 5.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-038",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-039",
+      "role": "arm",
+      "arm": "block-1",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-040",
+      "role": "arm",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-041",
+      "role": "arm",
+      "arm": "block-8",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-042",
+      "role": "arm",
+      "arm": "block-4",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-043",
+      "role": "arm",
+      "arm": "block-2",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    },
+    {
+      "label": "trial-044",
+      "role": "unprofiled",
+      "arm": "block-1",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": false
+    },
+    {
+      "label": "trial-045",
+      "role": "unprofiled",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": false
+    },
+    {
+      "label": "trial-046",
+      "role": "unprofiled",
+      "arm": "block-8",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": false
+    },
+    {
+      "label": "trial-047",
+      "role": "unprofiled",
+      "arm": "block-4",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": false
+    },
+    {
+      "label": "trial-048",
+      "role": "unprofiled",
+      "arm": "block-2",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": false
+    },
+    {
+      "label": "trial-049",
+      "role": "bracket",
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeat": 1,
+      "profiled": true
+    }
+  ],
+  "thresholds": {
+    "gate": 0.01,
+    "slope_band": 0.1,
+    "minimum_effect": 0.01
+  },
+  "frames_qualification": [],
+  "binary_sha256": {
+    "v3_block_time": "7231643565a50189d19fc86189121bb4aa0bf872db94f3efd9ca08b1dbb6c98b",
+    "larql-server": "18262f47c52cdf09ec5bde63dd4831b11f333109e8d83406f5258a3f9cf76940",
+    "v3_link_shaper": "7b1097f814216208141e09dd9a8a4f53c598743568140c528510e4d092e5479e"
+  },
+  "harness_sha256": {
+    "block_time.py": "5bd38c5f1d53ad6ee4e0d6974d39e7cf58f5c577638ff39ed07652b51dc241fc",
+    "block_time_model.py": "c5215c10319d51bdae5a7374874d889d74a39c7ab03655ff56f6415cd20b01fa",
+    "link_model.py": "f8c52bbbc3da6b0291ab15efec2d4ff0ed15daf54ad4b1eb4c69acf9542816fb",
+    "link_sweep.py": "4818cbcf9bea20b0c70567735a2eb598193b891e1ec26385807fbd36139efe9e",
+    "link_block_frames_model.py": "95930043d0607721c133f7ecf906a9434ef7e3b6aaf933577fae0a4e044fb28d",
+    "profile_exact.py": "c84996b1395fc255d0c3e27e494b203ba74443ab4975bd8f2a939c719a4b264b"
+  },
+  "metadata_sha256": {
+    "index.json": "17523831d6f365cda8e52bafa9f437b2cf14b2d7efa3d0a8abd3e512902d4440",
+    "system_graph.json": "82db1eb1a4490e24ae1086fada201100b81ceddfcf71e51ba63572efe2a6ae78"
+  },
+  "host_before": {
+    "load_average": [
+      22.65625,
+      36.576171875,
+      36.45556640625
+    ],
+    "busy_processes": [
+      "larql"
+    ],
+    "utc": "2026-11-14T22:08:39Z"
+  },
+  "peer_handshake": null,
+  "clock": "monotonic wall time around the measured region inside each trial process",
+  "started_utc": "2026-11-14T22:08:39Z"
+}
