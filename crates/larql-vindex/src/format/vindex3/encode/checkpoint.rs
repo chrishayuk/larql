@@ -35,12 +35,17 @@ use crate::format::vindex3::plan::plan_system;
 /// the V2 extractor snapshots (`snapshot_hf_metadata`). Copied verbatim
 /// when present; absence of any — including the tokenizer — is not an
 /// error, it just narrows what the bound container can do.
-pub const CHECKPOINT_CAPABILITY_FILES: [&str; 5] = [
+///
+/// `tokenizer.model` is the SentencePiece model: `tokenizer.json` carries
+/// every piece but not the trainer's piece scores, and a GGUF export's
+/// SentencePiece vocabulary states them.
+pub const CHECKPOINT_CAPABILITY_FILES: [&str; 6] = [
     TOKENIZER_JSON,
     "tokenizer_config.json",
     "special_tokens_map.json",
     "generation_config.json",
     "chat_template.jinja",
+    "tokenizer.model",
 ];
 
 /// What one checkpoint encode produced.
