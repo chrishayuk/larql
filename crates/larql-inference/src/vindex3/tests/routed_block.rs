@@ -457,3 +457,128 @@ fn the_session_refuses_what_it_cannot_do_before_any_state_moves() {
     session.commit(2).unwrap();
     assert_eq!(session.position(), 2);
 }
+
+/// Positions stepped one at a time through the block session, around and
+/// between blocks.
+const STEPS: usize = WINDOW + 3;
+
+#[test]
+fn a_step_equals_sequential_decode_on_the_single_row_route_around_blocks() {
+    let container = container_with(miniature_routed);
+    let backend = ProductionBackend::new();
+    let runtime =
+        Vindex3Runtime::open(container.path(), COMPONENT, ProductionBackend::new()).unwrap();
+    // Step, verify four and keep two, then step on across the window.
+    let (width, kept) = (WIDTHS[2], 2usize);
+    for topology in topologies() {
+        let (ops, probe) = coordinator(container.path(), &runtime, &topology);
+        let committed = STEPS + kept + STEPS;
+        let clean: Vec<u32> = (0..committed).map(token).collect();
+        let mut clean_kv = RowKvState::default();
+        let expected = sequential(runtime.plan(), &ops, &backend, &mut clean_kv, &clean);
+
+        let mut session =
+            RoutedBlockSession::new(runtime.plan(), &ops, &backend, &row(runtime.plan())).unwrap();
+        let mut got = Vec::new();
+        probe.single_calls.store(0, Ordering::SeqCst);
+        probe.rows_calls.store(0, Ordering::SeqCst);
+        for index in 0..STEPS {
+            got.push(bits(&session.step(token(index)).unwrap()));
+            assert_eq!(session.position(), index + 1, "a step commits its position");
+        }
+        // Steps use the single-row route only.
+        assert_eq!(probe.rows_calls.load(Ordering::SeqCst), 0);
+        let singles = probe.single_calls.load(Ordering::SeqCst);
+        assert!(singles > 0);
+        if topology.len() == 1 {
+            assert_eq!(
+                singles,
+                STEPS * LAYERS,
+                "one single-row frame per layer per step"
+            );
+        }
+
+        let block: Vec<u32> = (0..width)
+            .map(|i| {
+                if i < kept {
+                    token(STEPS + i)
+                } else {
+                    rejected(STEPS + i)
+                }
+            })
+            .collect();
+        let rows = rows_bits(&session.verify(&block).unwrap());
+        got.extend(rows[..kept].iter().cloned());
+        session.commit(kept).unwrap();
+
+        probe.rows_calls.store(0, Ordering::SeqCst);
+        for index in STEPS + kept..committed {
+            got.push(bits(&session.step(token(index)).unwrap()));
+        }
+        assert_eq!(probe.rows_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(session.position(), committed);
+        assert_eq!(
+            got, expected,
+            "{topology:?}: steps around a partly committed block"
+        );
+    }
+}
+
+#[test]
+fn a_step_is_refused_while_a_block_awaits_commit_and_leaves_it_pending() {
+    let container = container_with(miniature_routed);
+    let backend = ProductionBackend::new();
+    let runtime =
+        Vindex3Runtime::open(container.path(), COMPONENT, ProductionBackend::new()).unwrap();
+    let topology = topologies()[0].clone();
+    let (ops, probe) = coordinator(container.path(), &runtime, &topology);
+    let mut session =
+        RoutedBlockSession::new(runtime.plan(), &ops, &backend, &row(runtime.plan())).unwrap();
+    session.verify(&[token(0), token(1)]).unwrap();
+    let singles = probe.single_calls.load(Ordering::SeqCst);
+    let error = session.step(token(0)).unwrap_err().to_string();
+    assert!(error.contains("awaiting commit"), "{error}");
+    assert_eq!(
+        probe.single_calls.load(Ordering::SeqCst),
+        singles,
+        "a refused step ran"
+    );
+    assert_eq!(session.position(), 0);
+    // The block is still pending, and the session still usable.
+    session.commit(2).unwrap();
+    session.step(token(2)).unwrap();
+    assert_eq!(session.position(), 3);
+}
+
+#[test]
+fn a_failed_step_commits_nothing_and_invalidates_the_session() {
+    let container = container_with(miniature_routed);
+    let backend = ProductionBackend::new();
+    let runtime =
+        Vindex3Runtime::open(container.path(), COMPONENT, ProductionBackend::new()).unwrap();
+    for topology in topologies() {
+        for layer in 0..LAYERS {
+            let (ops, probe) = coordinator(container.path(), &runtime, &topology);
+            let mut session =
+                RoutedBlockSession::new(runtime.plan(), &ops, &backend, &row(runtime.plan()))
+                    .unwrap();
+            session.step(token(0)).unwrap();
+            *probe.single_fault_layer.lock().unwrap() = Some(layer);
+            assert!(
+                session.step(token(1)).is_err(),
+                "layer {layer}: a failed step returned logits"
+            );
+            assert_eq!(
+                session.position(),
+                1,
+                "layer {layer}: a failed step was committed"
+            );
+            *probe.single_fault_layer.lock().unwrap() = None;
+            let error = session.step(token(1)).unwrap_err().to_string();
+            assert!(error.contains("invalid"), "{error}");
+            assert!(session.verify(&[token(1)]).is_err());
+            assert!(session.commit(0).is_err());
+            assert_eq!(session.position(), 1);
+        }
+    }
+}

@@ -13,8 +13,14 @@
 //! ```text
 //! verify(tokens)   run the block; return every position's logits; nothing committed
 //! commit(count)    keep the first `count` positions of that block, discard the rest
+//! step(token)      run one position on the single-row route and commit it
 //! position()       the committed position
 //! ```
+//!
+//! `step` exists so a caller with nothing to verify does not pay for a
+//! one-row block: it runs the decode session's ordinary `step`, which sends
+//! each contacted worker one single-row frame per routed layer, over the
+//! same continuation, and commits the position it adds.
 //!
 //! Acceptance is the caller's. The session reports logits and keeps or
 //! discards what it is told to; it holds no drafting or acceptance policy.
@@ -143,6 +149,56 @@ impl<'a, B: PlanBackend> RoutedBlockSession<'a, B> {
             Err(error) => {
                 // Earlier layers have already appended this block's rows.
                 // Nothing of it is committed, and nothing more will run here.
+                self.failed = true;
+                Err(error.into())
+            }
+        }
+    }
+
+    /// Run one position from the committed position on the single-row
+    /// route, commit it, and return its logits. Refused while a verified
+    /// block awaits commit.
+    ///
+    /// The position succeeds or the session is invalidated, as for a block.
+    /// A plan with no output head also invalidates it: the position has
+    /// already been added to the continuation, and it would be committed
+    /// with nothing to return.
+    pub fn step(&mut self, token: u32) -> Result<Vec<f32>, InferenceError> {
+        if self.failed {
+            return Err(InferenceError::Parse(
+                "routed block session is invalid after a failed block; start a fresh session \
+                 and replay committed input"
+                    .into(),
+            ));
+        }
+        if self.pending.is_some() {
+            return Err(InferenceError::Parse(
+                "a verified block is awaiting commit; commit it (or commit 0 to discard it) \
+                 before stepping"
+                    .into(),
+            ));
+        }
+        let result = (|| {
+            let mut session =
+                DecodeSession::over_prepared(self.plan, self.ops, self.backend, &mut *self.state)?;
+            session.step(token)
+        })();
+        match result {
+            Ok(output) => match output.logits {
+                Some(logits) => {
+                    self.committed += 1;
+                    Ok(logits)
+                }
+                None => {
+                    self.failed = true;
+                    Err(InferenceError::Parse(
+                        "a routed block session step produced no logits: the plan has no output \
+                         head"
+                            .into(),
+                    ))
+                }
+            },
+            Err(error) => {
                 self.failed = true;
                 Err(error.into())
             }
