@@ -70,7 +70,7 @@ impl Session {
             // ── Phase 2: capture the residual via the plan's taps,
             // over the same effective program INFER runs ──
             let prompt = knn_canonical_prompt(entity, relation);
-            let overrides = crate::executor::vindex3::compose_overrides(runtime, overlay)?;
+            let overrides = crate::executor::vindex3::execution_overrides(runtime, overlay)?;
             key = crate::executor::vindex3::capture_layer_residual(
                 runtime,
                 tokenizer,

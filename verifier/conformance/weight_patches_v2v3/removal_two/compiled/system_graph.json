@@ -1,0 +1,164 @@
+{
+  "schema": 6,
+  "components": [
+    {
+      "id": "target",
+      "role": "primary_text",
+      "source_artifact": "wsp",
+      "num_layers": 2,
+      "hidden_size": 64,
+      "attention": [
+        {
+          "operator": "softmax",
+          "span": "full",
+          "position": {
+            "kind": "rope",
+            "theta": 10000.0
+          },
+          "geometry": {
+            "head_dim": 8,
+            "num_kv_heads": 2
+          }
+        },
+        {
+          "operator": "softmax",
+          "span": "full",
+          "position": {
+            "kind": "rope",
+            "theta": 10000.0
+          },
+          "geometry": {
+            "head_dim": 8,
+            "num_kv_heads": 2
+          }
+        }
+      ],
+      "execution": {
+        "attention": {
+          "num_q_heads": 8,
+          "num_kv_heads": 2,
+          "head_dim": 8,
+          "score_scale": 0.3535533905932738,
+          "qk_norm_scope": "per_head",
+          "qk_norm_weight_offset": 0.0,
+          "parameter_free_qk_norm": {
+            "q": false,
+            "k": false,
+            "v": false
+          }
+        },
+        "ffn": {
+          "intermediate_size": 256,
+          "activation": "silu",
+          "ffn_type": "gated",
+          "gate_policy": {
+            "kind": "gated"
+          }
+        },
+        "norm": {
+          "pre": {
+            "kind": "rms_norm",
+            "eps": 9.999999747378752e-6,
+            "weight_offset": 0.0
+          },
+          "final_norm": {
+            "kind": "rms_norm",
+            "eps": 9.999999747378752e-6,
+            "weight_offset": 0.0
+          },
+          "placement": "pre_only"
+        },
+        "head": {
+          "vocab_size": 128,
+          "head_reuses_embedding": false
+        },
+        "residual_topology": {
+          "kind": "single_stream"
+        }
+      }
+    }
+  ],
+  "objects": [
+    {
+      "id": "target.decoder_stack",
+      "component": "target",
+      "kind": "decoder_stack",
+      "source_bindings": [
+        {
+          "artifact": "wsp",
+          "tensor_prefix": "model.layers",
+          "tensors": 18,
+          "bytes": 238080
+        }
+      ],
+      "representations": [
+        {
+          "encoding": "BF16",
+          "fidelity": "canonical"
+        },
+        {
+          "encoding": "Q8_0",
+          "fidelity": "approximate"
+        }
+      ]
+    },
+    {
+      "id": "target.embedding",
+      "component": "target",
+      "kind": "embedding",
+      "source_bindings": [
+        {
+          "artifact": "wsp",
+          "tensor_prefix": "model.embed_tokens",
+          "tensors": 1,
+          "bytes": 16384
+        }
+      ],
+      "representations": [
+        {
+          "encoding": "BF16",
+          "fidelity": "canonical"
+        }
+      ]
+    },
+    {
+      "id": "target.final_norm",
+      "component": "target",
+      "kind": "final_norm",
+      "source_bindings": [
+        {
+          "artifact": "wsp",
+          "tensor_prefix": "model.norm",
+          "tensors": 1,
+          "bytes": 128
+        }
+      ],
+      "representations": [
+        {
+          "encoding": "BF16",
+          "fidelity": "canonical"
+        }
+      ]
+    },
+    {
+      "id": "target.output_head",
+      "component": "target",
+      "kind": "output_head",
+      "source_bindings": [
+        {
+          "artifact": "wsp",
+          "tensor_prefix": "lm_head",
+          "tensors": 1,
+          "bytes": 16384
+        }
+      ],
+      "representations": [
+        {
+          "encoding": "BF16",
+          "fidelity": "canonical"
+        }
+      ]
+    }
+  ],
+  "edges": []
+}
