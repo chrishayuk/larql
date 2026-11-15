@@ -205,7 +205,14 @@ quiet-machine and handshake rules apply unchanged.
   That is 4 workloads × 3 delays = **12 units per repeat, two repeats**, in
   a seeded order balanced so every workload and delay appears once per
   block of units.
-- **Generation length**: 64 new ids, or until a stop id.
+- **Generation length: 64 new ids** (decided at review), or fewer if a stop
+  id comes first. **Stop ids**: the container's `generation_config.json`
+  end-of-sequence ids, 200002 `<|return|>`, 199999 `<|endoftext|>` and
+  200012 `<|call|>`. The stop id is kept, and nothing after it is emitted.
+  A longer-generation experiment (for example #729's 256) is a separate
+  future decision. Low-copy prompts may produce few or no verify blocks in
+  64 ids. Acceptance counts are reported as they are, and an absence of
+  proposals is never read as a limit of the remote architecture.
 - **Validity**: a unit is void if its brackets differ by more than 1%, or
   if any of its trials fails gate 3, the relay gate or the stall rule.
   Void units are kept and never rerun. Only a gate 1 failure stops the run.
@@ -256,17 +263,86 @@ timings that is about 11 to 47 s per trial at 20 ms, and less at 0 and
 5 ms. Generation is 64 new ids: at 20 ms `sequential` takes about 40 s;
 speculative arms take less in proportion to acceptance. Four workloads,
 three delays, four arms and two repeats make 96 trials, plus brackets:
-roughly **2 to 2.5 hours**, holdable between units. **Open:** #729
-generated 256 ids. Longer generation gives more acceptance data per
-prefill, but costs about four times as long.
+roughly **2 to 2.5 hours**, holdable between units.
+
+## Event-ledger invariants
+
+What `SpeculativeRun::reconcile` (#857) checks on every trial. A trial that
+fails it is void by name.
+
+1. **One source per id.** Every produced id has exactly one event, whose
+   source is one of: prefill prediction, accepted proposal, target
+   correction, single step.
+2. **Emitted events are the output.** The emitted events, in order, are
+   exactly the generated ids: none missing, none duplicated, none
+   reordered.
+3. **Unemitted ids only at the end.** No emitted event follows an
+   unemitted one. (That unemitted ids occur only after a stop id is a
+   property of the loop, tested in #857; `reconcile` does not check it
+   separately.)
+4. **The prefill prediction comes first, once.**
+5. **Counts match what ran.** Accepted-proposal events equal the sum of
+   the blocks' accepted counts. Target-correction events equal the number
+   of blocks. Single-step events equal the number of single steps.
+
+Two further properties hold by construction and are tested in #857, not
+re-checked per trial:
+- no proposal is longer than `min(W − 1, still wanted − 1)`;
+- a block's rejection offset is the first position at which its proposal
+  and the target's greedy ids differ.
+
+## Plan for seams 4 and 5 (after #855 to #857 merge)
+
+**Seam 4, the trial binary** (`crates/larql-cli/examples/v3_verify_remote.rs`):
+
+- **Reused, not copied:** the `Timed` transport (route, rows, bytes and
+  round trip per exchange) and the `Recorder` (worker timing) now in
+  `v3_block_time.rs`. They move to one shared examples support module, in
+  the same pattern as `crates/larql-server/examples/support/`, and
+  `v3_block_time` imports them unchanged.
+- **Arms:** `sequential` steps a `DecodeSession` with `greedy_id`. The
+  `verify-W` arms call `prefill` and `greedy_speculate` on a
+  `RoutedBlockSession` with `propose`. Both prefill the same prompt by
+  blocks of 8, untimed.
+- **Records:** the generated ids; for every block, its width, proposal,
+  accepted count and rejection offset; single steps; the event ledger;
+  every exchange (route, rows, bytes, round trip) tagged with the block or
+  step it belongs to; worker timing; the generation wall time.
+- **Judges nothing.** It writes what happened; the gates are the driver's.
+
+**Seam 5, the driver** (`verify_remote.py` and `verify_remote_model.py`):
+
+- **From BLOCK-TIME-2, reused as is:** relays, the worker, provenance,
+  admission (qualification receipts, handshake, quiet machine at start and
+  end), telemetry, the stall watch, the `PAUSE`/`PAUSED` hold between
+  units, and failure capture with every record written.
+- **New, in the model and pinned by tests:** the unit schedule (seeded,
+  balanced across workloads and delays); gates 1 to 3; unit validity; the
+  faster/slower/no-difference statements; the per-width traffic shares.
+- **Not reused:** BLOCK-TIME-2's within-pair cost rule and its slope
+  analysis.
+
+## Failure classification
+
+| What happens | Classification | Effect |
+|---|---|---|
+| Any arm's ids differ from `sequential`'s (gate 1) | **Correctness failure** | The run stops; reported with the first differing position |
+| The ledger does not reconcile (gate 2) | Void trial, by name | Its unit is void |
+| A frame-accounting mismatch: unexpected route, rows or worker (gate 3) | Void trial, by name | Its unit is void |
+| Relay behind schedule; a driver stall; brackets differing by more than 1% | Void unit, by name | Kept and reported; never rerun |
+| A crash, timeout, dead worker or interrupt | **Stop** | Every record written; nothing analysed |
+| Warm-up never settles | **Stop** (admissible); continue only if declared (diagnostic) | As BLOCK-TIME |
+| A width proposes nothing on a workload | Not a failure | Reported with its tokens per second and zero acceptance |
 
 ## Blockers before any model run
 
 1. Seams 1 to 5 built, with tests, reviewed and merged through the normal
    ruleset (1 to 3 are in #855, #856 and #857).
-2. ~~Workload prompts recovered~~ (done); their text decoded for the record.
+2. ~~Workload prompts recovered and decoded~~ (done: each workload file
+   holds the decoded text and the tokenizer's hash. Re-encoding the text
+   reproduces the ids exactly, and the ids remain authoritative.)
 3. ~~The within-unit cost-stability rule~~ (decided: none; diagnostics
-   only). Generation length decided.
+   only). ~~Generation length~~ (decided: 64).
 4. One declared functional diagnostic (busy host allowed, never counted)
    showing gates 1 to 3 working end to end.
 5. Independent review of this protocol and the implementation, then a

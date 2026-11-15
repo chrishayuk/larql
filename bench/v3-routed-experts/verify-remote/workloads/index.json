@@ -2,21 +2,34 @@
  "json_edit": {
   "kind": "copy-heavy",
   "tokens": 256,
-  "sha256": "53d1656f498b8499391d18abd46ec4694364d0180afd77e4f64d43947c32d0e0"
+  "sha256": "1263aacc295556b799dd435788e1a1112f5b95946a3ef668d13b6d0d2814df3b"
  },
  "code_docstring": {
   "kind": "copy-heavy",
   "tokens": 215,
-  "sha256": "4844c4ae7c7f256e7864ccf7f126bc4ead9a1f1d60cc6dc204d0dff878265a21"
+  "sha256": "76f0f1f0802312c72b74ea4499dc9a57244893482f3cefcfb5017195ca72152a"
  },
  "prose_free": {
   "kind": "low-copy",
   "tokens": 84,
-  "sha256": "25555291697748ffa252da558e92fe3ab19fbf7a4d0159711005e678c6c467ae"
+  "sha256": "f51cdca5fb9d7c2e05843b022a4cfa2d461a3372055b79d89c3cdb13025a0ef4"
  },
  "explain": {
   "kind": "low-copy",
   "tokens": 87,
-  "sha256": "2883ba37bd4cccf3ef71a9f5ab11fd58b02405481429b104035c9e342cac5929"
+  "sha256": "cccde328994374eda22a938b0c1f9dc1c79b5e1ebbaef990563109692fe2dd41"
+ },
+ "stop_ids": {
+  "ids": [
+   200002,
+   199999,
+   200012
+  ],
+  "from": "gpt-oss-20b.vindex3/generation_config.json eos_token_id",
+  "tokens": [
+   "<|return|>",
+   "<|endoftext|>",
+   "<|call|>"
+  ]
  }
 }

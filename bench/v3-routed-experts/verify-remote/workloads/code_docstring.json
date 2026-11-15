@@ -224,5 +224,8 @@
   "archive_sha256": "20e69901312c8df03f7d183b8d1d05f7c31dbff9986291b15d7bd2343b02b515",
   "used_by": "#729 GPT-OSS VERIFY-N revival timing (2026-11-07), --generate 256 --stop-at-eos",
   "template": "GPT-OSS chat template (harmony) token ids, as recorded; text not archived"
- }
+ },
+ "text": "<|start|>system<|message|>You are ChatGPT, a large language model trained by OpenAI.\nKnowledge cutoff: 2024-06\nCurrent date: 2026-09-27\n\nReasoning: medium\n\n# Valid channels: analysis, commentary, final. Channel must be included for every message.<|end|><|start|>user<|message|>Add a one-line docstring to each function. Output the full updated code only.\n\n```python\ndef load_config(path):\n    with open(path) as f:\n        data = json.load(f)\n    if \"name\" not in data:\n        raise ValueError(\"missing name\")\n    if \"version\" not in data:\n        raise ValueError(\"missing version\")\n    data[\"version\"] = int(data[\"version\"])\n    data[\"tags\"] = [t.strip().lower() for t in data.get(\"tags\", [])]\n    return data\n\n\ndef save_config(path, data):\n    with open(path, \"w\") as f:\n        json.dump(data, f, indent=2)\n    return path\n```<|end|><|start|>assistant<|channel|>final<|message|>",
+ "text_note": "decoded for reading with the model's tokenizer.json; the ids are authoritative; re-encoding this text reproduces them exactly",
+ "tokenizer_sha256": "0614fe83cadab421296e664e1f48f4261fa8fef6e03e63bb75c20f38e37d07d3"
 }

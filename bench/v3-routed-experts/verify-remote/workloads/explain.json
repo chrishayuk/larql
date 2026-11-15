@@ -96,5 +96,8 @@
   "archive_sha256": "f942652e4258a494bd5ede2ad0c100c70cb99ef8d48d2c6f8cdf084165d72722",
   "used_by": "#729 GPT-OSS VERIFY-N revival timing (2026-11-07), --generate 256 --stop-at-eos",
   "template": "GPT-OSS chat template (harmony) token ids, as recorded; text not archived"
- }
+ },
+ "text": "<|start|>system<|message|>You are ChatGPT, a large language model trained by OpenAI.\nKnowledge cutoff: 2024-06\nCurrent date: 2026-09-27\n\nReasoning: medium\n\n# Valid channels: analysis, commentary, final. Channel must be included for every message.<|end|><|start|>user<|message|>Explain how a hash map works to a new programmer, in about 250 words.<|end|><|start|>assistant<|channel|>final<|message|>",
+ "text_note": "decoded for reading with the model's tokenizer.json; the ids are authoritative; re-encoding this text reproduces them exactly",
+ "tokenizer_sha256": "0614fe83cadab421296e664e1f48f4261fa8fef6e03e63bb75c20f38e37d07d3"
 }

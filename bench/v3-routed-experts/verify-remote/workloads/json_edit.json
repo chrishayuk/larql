@@ -265,5 +265,8 @@
   "archive_sha256": "8fbf208d108a87bcc4c1eb21fabc38944e5fccc0a9b6840428f3ec86f55e78c2",
   "used_by": "#729 GPT-OSS VERIFY-N revival timing (2026-11-07), --generate 256 --stop-at-eos",
   "template": "GPT-OSS chat template (harmony) token ids, as recorded; text not archived"
- }
+ },
+ "text": "<|start|>system<|message|>You are ChatGPT, a large language model trained by OpenAI.\nKnowledge cutoff: 2024-06\nCurrent date: 2026-09-27\n\nReasoning: medium\n\n# Valid channels: analysis, commentary, final. Channel must be included for every message.<|end|><|start|>user<|message|>Set active to true for every user whose role is \"user\" and output the full JSON only.\n\n[\n  {\"id\": 1, \"name\": \"alice\", \"email\": \"alice@example.com\", \"role\": \"admin\", \"active\": true},\n  {\"id\": 2, \"name\": \"bob\", \"email\": \"bob@example.com\", \"role\": \"user\", \"active\": false},\n  {\"id\": 3, \"name\": \"carol\", \"email\": \"carol@example.com\", \"role\": \"user\", \"active\": true},\n  {\"id\": 4, \"name\": \"dave\", \"email\": \"dave@example.com\", \"role\": \"viewer\", \"active\": true},\n  {\"id\": 5, \"name\": \"erin\", \"email\": \"erin@example.com\", \"role\": \"user\", \"active\": false}\n]<|end|><|start|>assistant<|channel|>final<|message|>",
+ "text_note": "decoded for reading with the model's tokenizer.json; the ids are authoritative; re-encoding this text reproduces them exactly",
+ "tokenizer_sha256": "0614fe83cadab421296e664e1f48f4261fa8fef6e03e63bb75c20f38e37d07d3"
 }
