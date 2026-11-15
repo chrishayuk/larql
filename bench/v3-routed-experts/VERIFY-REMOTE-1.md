@@ -171,10 +171,15 @@ Per trial, recorded:
 
 ### Correctness gates
 
-1. **Exact greedy identity.** Every arm's generated ids equal the
-   `sequential` arm's for the same workload, at every delay, through any
-   stop id. Any mismatch stops the run. A mismatch is a correctness
-   finding, reported with the first differing position.
+1. **Exact greedy identity.** Every trial's generated ids, at every arm
+   and delay (brackets and controls included, as far as they run), equal
+   the workload's `sequential` reference taken at 0 ms before the units,
+   through any stop id. Any mismatch stops the run. A mismatch is a
+   correctness finding, reported with the first differing position; the
+   mismatching trial's raw record is kept beside the stop message. A record
+   that is not the trial the schedule asked for (arm, width, corruption,
+   length, stop ids, workload hash, or a block wider than `W`) also stops
+   the run, as a harness fault.
 2. **Acceptance accounting by event ledger.** Every generated id is
    recorded once, with its source and whether it was emitted (an id after a
    stop is not). The sources are: the prefill prediction, an accepted
@@ -215,9 +220,10 @@ quiet-machine and handshake rules apply unchanged.
   16 ids. Its time per timed id is the bracket measure.
 - **Units.** One unit is one workload at one delay: the four arms in a
   seeded order, opened and closed by a short `sequential` 0 ms bracket.
-  That is 4 workloads × 3 delays = **12 units per repeat, two repeats**, in
-  a seeded order balanced so every workload and delay appears once per
-  block of units.
+  That is 4 workloads × 3 delays = **12 units per repeat, two repeats**.
+  Within each repeat every workload × delay cell appears exactly once, in
+  an order shuffled from seed 20261116, which also shuffles the arms
+  within each unit.
 - **Generation length: 64 new ids** (decided at review), or fewer if a stop
   id comes first. **Stop ids**: the container's `generation_config.json`
   end-of-sequence ids, 200002 `<|return|>`, 199999 `<|endoftext|>` and
@@ -227,7 +233,12 @@ quiet-machine and handshake rules apply unchanged.
   64 ids. Acceptance counts are reported as they are, and an absence of
   proposals is never read as a limit of the remote architecture.
 - **Validity**: a unit is void if its brackets differ by more than 1%, or
-  if any of its trials fails gate 3, the relay gate or the stall rule.
+  if any of its trials fails gate 2, gate 3, the relay gate or the stall
+  rule. **Relay gate**: the relay's total lateness over a trial, prefill
+  included, is at most 1% of that trial's timed generation.
+- **Pausing** (`PAUSE`/`PAUSED`, BLOCK-TIME-2's) happens only before a
+  unit's opening bracket, before warm-up, and before each diagnostic
+  control.
   Void units are kept and never rerun. Only a gate 1 failure stops the run.
 - **No within-unit cost-stability gate** (decided at review). BLOCK-TIME-2's
   rule 4 compared the same operation at two delays. These arms do
@@ -244,14 +255,21 @@ For each workload, delay and width, with both repeats' units valid:
 - **"Faster than sequential"**: committed new tokens per second higher than
   `sequential`'s by more than 1% in both repeats. **"Slower"**: lower by
   more than 1% in both. Otherwise **no difference shown**.
-- The ratio is reported per repeat, along with the mean accepted length per
-  block, the share of positions verified in blocks, and the rejection
-  offsets.
+- The ratio is reported per repeat, along with proposed, accepted,
+  rejected and committed-in-blocks counts, blocks and single steps,
+  verified positions, the mean accepted length per block, the share of
+  committed ids that came from blocks, and the rejection offsets.
+- If the prefill id is itself a stop id, no id is timed, and the cell
+  reads **"no timed generation"**.
 - A width that proposes nothing on a workload is reported as such, with
   its tokens per second. It is not dropped.
 - A missing cell (no valid unit in a repeat) is reported as missing.
 - **Descriptive only:** the speed the BLOCK-TIME exchange model predicts
-  from the observed acceptance, against the measured speed.
+  from the observed acceptance, against the measured speed. Revision 1
+  implements its delay term only: the arm saves one configured round trip
+  per exchange it does not make, so the predicted ratio is
+  `sequential wall ÷ (sequential wall − saved exchanges × delay)`. The
+  ratio of exchange counts is reported too.
 - **Never claimed:** sampled-output exactness, model-drafter behaviour,
   physical-network performance, or an aggregate across copy-heavy and
   low-copy workloads.
