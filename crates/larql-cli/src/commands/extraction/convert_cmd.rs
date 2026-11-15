@@ -6,6 +6,7 @@ use clap::{Args, Subcommand};
 mod gguf_tokenizer;
 #[cfg(test)]
 mod tests;
+mod vindex_to_gguf;
 
 #[derive(Args)]
 pub struct ConvertArgs {
@@ -73,6 +74,28 @@ enum ConvertCommand {
         /// Store in f16.
         #[arg(long)]
         f16: bool,
+    },
+
+    /// Export a VINDEX3 container's primary text model as a llama.cpp
+    /// GGUF (BF16/F32, as the container stores it), verified on re-read.
+    /// The container's declared family selects the target; Gemma 3 is
+    /// supported. Refuses to overwrite an existing output.
+    VindexToGguf {
+        /// The VINDEX3 container directory.
+        input: PathBuf,
+
+        /// The .gguf file to write (must not exist).
+        output: PathBuf,
+
+        /// Export only the primary text component, leaving out any
+        /// vision or other component the container also holds.
+        #[arg(long)]
+        text_only: bool,
+
+        /// A SentencePiece `tokenizer.model` to read token scores from,
+        /// when the container does not carry one.
+        #[arg(long)]
+        tokenizer_model: Option<PathBuf>,
     },
 
     /// Show GGUF file metadata and tensor info.
@@ -218,6 +241,17 @@ pub fn run(args: ConvertArgs) -> Result<(), Box<dyn std::error::Error>> {
             level,
             f16,
         } => run_safetensors_to_vindex(&input, &output, &level, f16),
+        ConvertCommand::VindexToGguf {
+            input,
+            output,
+            text_only,
+            tokenizer_model,
+        } => vindex_to_gguf::run(vindex_to_gguf::VindexToGgufArgs {
+            input: &input,
+            output: &output,
+            text_only,
+            tokenizer_model,
+        }),
         ConvertCommand::GgufInfo { input } => run_gguf_info(&input),
         ConvertCommand::Quantize(cmd) => run_quantize(cmd),
         ConvertCommand::AddFeatureMajorDown { input, quiet } => {
