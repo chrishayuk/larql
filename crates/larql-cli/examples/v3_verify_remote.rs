@@ -23,7 +23,8 @@
 //! `--corrupt first|middle|last` is a negative control: every proposal,
 //! once cut before any stop id as the loop would cut it, has one token
 //! changed at that offset to a non-stop id, and `corrupted_offsets` records
-//! the offset per block. The ids must still equal `sequential`'s and
+//! the offset per verify block (every block has a non-empty proposal; single
+//! steps have none). The ids must still equal `sequential`'s and
 //! acceptance must fall. Its timing is not a result.
 //!
 //! One worker only (`--shards` takes exactly one url), so every exchange
@@ -32,7 +33,7 @@
 //! Protocol: `bench/v3-routed-experts/VERIFY-REMOTE-1.md`.
 //!
 //! ```text
-//! v3_verify_remote --model <container> --shards <url[,url]> \
+//! v3_verify_remote --model <container> --shards <url> \
 //!     --workload <workload.json> --arm sequential|verify-2|verify-4|verify-8 \
 //!     --generate <n> --stop <id[,id]> --corrupt none|first|middle|last \
 //!     --profile yes|no --out <trial.json>
@@ -265,7 +266,8 @@ fn main() -> Result<(), BoxErr> {
         },
         "units": target.units.iter().map(Unit::json).collect::<Vec<_>>(),
         "ledger": ledger.as_ref().map(ledger_json),
-        // Per verify block, in order: the proposal offset the control changed.
+        // Per verify block (one per ledger block, in order; single steps have
+        // none): the proposal offset the control changed.
         "corrupted_offsets": changed,
         "frames": {
             "whole_run": { SINGLE_ROW: count(0, SINGLE_ROW), MULTI_ROW: count(0, MULTI_ROW) },
