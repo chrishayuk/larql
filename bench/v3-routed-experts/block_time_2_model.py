@@ -43,7 +43,7 @@ SLOPE_BAND = bt.SLOPE_BAND
 # larger difference is an execution-cost change inside the pair that the
 # brackets either side cannot see. An engineering tolerance, not a measured
 # bound on natural variation, and not evidence of external interference.
-CONSISTENCY = 0.05
+CONSISTENCY = 0.03
 # Rule 5. A stall of the driver: a gap between its watch's ticks longer than
 # this in either clock. The watch ticks this often.
 STALL_TICK_S = 0.1

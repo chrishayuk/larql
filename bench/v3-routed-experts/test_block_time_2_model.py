@@ -181,42 +181,46 @@ class WithinPairConsistency(unittest.TestCase):
 
     PAIR = 4
 
-    def coordinator_case(self, share):
+    def coordinator_case(self, per_mille):
         def extra(entry):
             if entry["pair"] == self.PAIR and entry["role"] == bt.ROLE_ARM and entry["rtt_ms"] == 20.0:
-                return share * COORDINATOR_NS
+                return COORDINATOR_NS * per_mille // 1000  # whole nanoseconds: the boundary is exact
             return 0.0
         return run_schedule(extra=extra)[1][self.PAIR]
 
-    def execution_case(self, share):
+    def execution_case(self, per_mille):
         def damage(entry, run):
             if entry["pair"] == self.PAIR and entry["role"] == bt.ROLE_ARM and entry["rtt_ms"] == 20.0:
                 for record_ in run["worker_records"]:
-                    record_["worker"]["execute_ns"] = record_["worker"]["execute_ns"] * (1 + share)
+                    execute = record_["worker"]["execute_ns"]
+                    record_["worker"]["execute_ns"] = execute + execute * per_mille // 1000
         return run_schedule(damage=damage)[1][self.PAIR]
 
-    def test_the_threshold_is_five_percent(self):
-        self.assertEqual(b2.CONSISTENCY, 0.05)
+    # Below, at and above the registered 3%, in parts per thousand.
+    BOUNDARY = ((29, True), (30, True), (31, False))
 
-    def test_coordinator_at_below_and_above_five_percent(self):
-        for share, valid in ((0.05, True), (0.049, True), (0.051, False)):
-            verdict = self.coordinator_case(share)
-            self.assertAlmostEqual(verdict["within_pair_difference"]["coordinator"], share, places=9)
-            self.assertEqual(verdict["valid"], valid, share)
+    def test_the_threshold_is_three_percent(self):
+        self.assertEqual(b2.CONSISTENCY, 0.03)
+
+    def test_coordinator_below_at_and_above_three_percent(self):
+        for per_mille, valid in self.BOUNDARY:
+            verdict = self.coordinator_case(per_mille)
+            self.assertAlmostEqual(verdict["within_pair_difference"]["coordinator"], per_mille / 1000, places=9)
+            self.assertEqual(verdict["valid"], valid, per_mille)
             if not valid:
                 self.assertTrue(any(r.startswith("coordinator time differs") for r in verdict["void_reasons"]))
 
-    def test_worker_execution_at_below_and_above_five_percent(self):
-        for share, valid in ((0.05, True), (0.049, True), (0.051, False)):
-            verdict = self.execution_case(share)
-            self.assertAlmostEqual(verdict["within_pair_difference"]["execution"], share, places=9)
-            self.assertEqual(verdict["valid"], valid, share)
+    def test_worker_execution_below_at_and_above_three_percent(self):
+        for per_mille, valid in self.BOUNDARY:
+            verdict = self.execution_case(per_mille)
+            self.assertAlmostEqual(verdict["within_pair_difference"]["execution"], per_mille / 1000, places=9)
+            self.assertEqual(verdict["valid"], valid, per_mille)
             if not valid:
                 self.assertTrue(any(r.startswith("worker execution time differs") for r in verdict["void_reasons"]))
 
     def test_the_difference_is_symmetric_over_the_smaller_value(self):
-        self.assertEqual(b2.relative_difference(100.0, 105.0), b2.relative_difference(105.0, 100.0))
-        self.assertAlmostEqual(b2.relative_difference(100.0, 105.0), 0.05)
+        self.assertEqual(b2.relative_difference(100.0, 103.0), b2.relative_difference(103.0, 100.0))
+        self.assertEqual(b2.relative_difference(100.0, 103.0), 0.03)
 
     def test_missing_zero_or_non_finite_measurements_fail(self):
         for a, b in ((None, 1.0), (0.0, 1.0), (1.0, float("nan")), (float("inf"), 1.0), (-1.0, 1.0)):

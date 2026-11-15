@@ -98,9 +98,9 @@ A **pair is valid** only if all hold:
 3. The relay was on schedule in all four.
 4. **Within-pair execution-cost stability.** The arm's two trials, at 5 and
    20 ms, agree on **coordinator time per evaluated position** and on
-   **worker execution time per evaluated position**, each within **5%**:
+   **worker execution time per evaluated position**, each within **3%**:
 
-   `D = |x(20 ms) − x(5 ms)| / min(x(20 ms), x(5 ms))` ≤ 0.05
+   `D = |x(20 ms) − x(5 ms)| / min(x(20 ms), x(5 ms))` ≤ 0.03
 
    for `x` each of the two. A missing, zero, negative or non-finite value
    fails. Both costs are expected not to depend on the configured round
@@ -122,10 +122,15 @@ floor taken from the most recent bracket, so a pair's opening bracket is
 judged against the previous pair's closing one. This links neighbouring
 pairs only through that threshold.
 
-The 5% is an engineering tolerance, not a measured bound on natural
-variation. It rests on BLOCK-TIME-1, where the same arm's coordinator time
-at 5 and 20 ms agreed within 2 to 3% in undisturbed trials. It was added
-after the functional diagnostic found a pair corrupted by a 5-second stop
+The 3% is an engineering tolerance, not a measured bound on natural
+variation. BLOCK-TIME-1's undisturbed trials put the same arm's coordinator
+time at 5 and 20 ms within 2 to 3% of each other, so **3% is tight and may
+void pairs that were not disturbed. That is accepted: a missing slope is
+preferable to a misleading one.** If a run yields too few valid pairs, the
+slopes are reported missing by the rule above; the tolerance is not relaxed.
+It was first proposed at 5% and tightened to 3% before freezing, because at
+5% the two checked costs alone could move `block-8`'s slope by more than the
+10% band (below). It was added after the functional diagnostic found a pair corrupted by a 5-second stop
 inside its 20 ms trial (coordinator 34.4 against 123.7 ms per position,
 slope 8.98 against 3), whose brackets agreed within 0.7%.
 
@@ -141,14 +146,17 @@ ungated slope** per arm: the mean over pairs that pass every rule except
 rule 4 (with the same three-pair minimum). It is not the registered
 statement.
 
-**The shift rule 4 can still admit** in one pair is `0.05 × (C + E) / 15 ms`
+**The shift rule 4 can still admit** in one pair is `0.03 × (C + E) / 15 ms`
 round trips per position, with both checked costs moving by the full
 tolerance in the same direction. It is a lower bound on what the rules
 admit, since handler time outside execution and the transport remainder
 are not checked. With BLOCK-TIME-1's undisturbed 20 ms costs that is
-about 0.42 round trips for every arm: **1.8% of the prediction for
-`sequential` and `block-1`, 3.7% for `block-2`, 7.0% for `block-4`, and
-13.6% for `block-8`**, more than the 10% band. Averaging pairs reduces it
+about 0.25 round trips for every arm: **1.1% of the prediction for
+`sequential` and `block-1`, 2.2% for `block-2`, 4.2% for `block-4`, and
+8.1% for `block-8`**, inside the 10% band. **This covers the two checked
+costs only. It does not bound the worker's handler time outside execution
+or the transport remainder, so these rules do not bound a valid pair's
+total distortion below 10%.** Averaging pairs reduces it
 only if the shifts vary in sign; a delay-dependent effect would not. The
 analysis reports this bound for each arm from the costs of its valid pairs.
 
@@ -268,10 +276,10 @@ the driver too and is seen. **Stopping the worker, the relay or the trial
 process alone is not seen** by rule 5:
 
 - a stop of the trial process lands in its coordinator time, which rule 4
-  catches beyond about 0.1 s (5% of about 35 ms per position over 56
+  catches beyond about 0.06 s (3% of about 35 ms per position over 56
   positions);
 - a stop of the worker lands in worker execution if it falls inside it
-  (caught beyond about 0.24 s), and otherwise in exchange time;
+  (caught beyond about 0.14 s), and otherwise in exchange time;
 - a stop of the relay while it holds queued chunks makes them late on
   release, which the relay counts; rule 3 then voids the trial once the
   summed lateness passes 1% of the bracket's time per position over 216
