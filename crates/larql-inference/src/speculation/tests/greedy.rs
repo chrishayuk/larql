@@ -13,9 +13,17 @@ fn a_tie_goes_to_the_lowest_id() {
 }
 
 #[test]
-fn empty_or_non_finite_logits_have_no_greedy_id() {
+fn negative_infinity_is_a_score_that_is_never_chosen() {
+    assert_eq!(
+        greedy_id(&[f32::NEG_INFINITY, -5.0, f32::NEG_INFINITY]),
+        Some(1)
+    );
+    assert_eq!(greedy_id(&[f32::NEG_INFINITY, f32::NEG_INFINITY]), None);
+}
+
+#[test]
+fn without_a_defined_choice_there_is_no_greedy_id() {
     assert_eq!(greedy_id(&[]), None);
     assert_eq!(greedy_id(&[1.0, f32::NAN]), None);
     assert_eq!(greedy_id(&[f32::INFINITY, 1.0]), None);
-    assert_eq!(greedy_id(&[1.0, f32::NEG_INFINITY]), None);
 }

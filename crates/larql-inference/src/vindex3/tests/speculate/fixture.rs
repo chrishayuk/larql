@@ -8,7 +8,7 @@ use super::super::*;
 use crate::speculation::{greedy_id, propose};
 use crate::vindex3::routed_block::RoutedBlockSession;
 use crate::vindex3::routed_experts;
-use crate::vindex3::speculate::{greedy_speculate, prefill};
+use crate::vindex3::speculate::{greedy_speculate, prefill, Proposer};
 use larql_vindex::format::vindex3::fixtures_routed::{miniature_routed, LAYERS, VOCAB, WINDOW};
 use larql_vindex::format::vindex3::opplan::exec::kv::RowKvState;
 use larql_vindex::format::vindex3::opplan::exec::prepared::PreparedOperands;
@@ -90,7 +90,7 @@ fn speculative_ids_equal_sequential_greedy_over_remote_experts() {
                 .collect()
         };
         for width in WIDTHS {
-            type Make<'a> = Box<dyn FnMut(&[u32], usize, usize) -> Vec<u32> + 'a>;
+            type Make<'a> = Box<dyn Proposer + 'a>;
             let proposers: Vec<(&str, Make)> = vec![
                 ("prompt lookup", Box::new(propose)),
                 (

@@ -36,6 +36,8 @@ struct Scripted {
     pending: Option<Vec<u32>>,
     /// When set, the logits of this committed position are non-finite.
     poison_at: Option<usize>,
+    /// Every block verified, in order.
+    verified: Vec<Vec<u32>>,
 }
 
 impl Scripted {
@@ -57,6 +59,7 @@ impl BlockTarget for Scripted {
             rows.push(self.logits(&ctx));
         }
         self.pending = Some(tokens.to_vec());
+        self.verified.push(tokens.to_vec());
         Ok(rows)
     }
     fn commit(&mut self, count: usize) -> Result<(), InferenceError> {
@@ -106,13 +109,23 @@ fn oracle(ctx: &[u32], _source_len: usize, max: usize) -> Vec<u32> {
         .collect()
 }
 
-fn run(width: usize, n: usize, stop: &HashSet<u32>, proposer: Proposer<'_>) -> SpeculativeRun {
+fn run_on(
+    target: &mut Scripted,
+    width: usize,
+    n: usize,
+    stop: &HashSet<u32>,
+    proposer: &mut dyn Proposer,
+) -> SpeculativeRun {
     let prompt = prompt();
-    let mut target = Scripted::default();
-    let first = prefill(&mut target, &prompt, width).unwrap();
-    let run = greedy_speculate(&mut target, &prompt, first, n, width, stop, proposer).unwrap();
+    let first = prefill(target, &prompt, width).unwrap();
+    let run = greedy_speculate(target, &prompt, first, n, width, stop, proposer).unwrap();
     run.reconcile().unwrap();
+    assert_eq!(run.final_position, target.position());
     run
+}
+
+fn run(width: usize, n: usize, stop: &HashSet<u32>, proposer: &mut dyn Proposer) -> SpeculativeRun {
+    run_on(&mut Scripted::default(), width, n, stop, proposer)
 }
 
 #[test]
@@ -219,8 +232,19 @@ fn a_stop_anywhere_ends_generation_there_and_later_ids_are_not_emitted() {
         for at in 0..GENERATE {
             let stop = HashSet::from([expected[at]]);
             let end = expected.iter().position(|id| *id == expected[at]).unwrap() + 1;
-            let run = run(width, GENERATE, &stop, &mut oracle);
+            let mut target = Scripted::default();
+            let run = run_on(&mut target, width, GENERATE, &stop, &mut oracle);
             assert_eq!(run.ids, expected[..end], "width {width} stop at {at}");
+            // Nothing past the stop was verified or committed: after the
+            // prefill blocks, no verified block holds a stop id.
+            let prefill_blocks = prompt().len().div_ceil(width);
+            assert!(
+                target.verified[prefill_blocks..]
+                    .iter()
+                    .all(|block| !block.iter().any(|t| stop.contains(t))),
+                "width {width} stop at {at}: a stop id was verified inside a block"
+            );
+            assert_eq!(target.position(), prompt().len() + end - 1);
             let emitted = run.events.iter().filter(|e| e.emitted).count();
             assert_eq!(emitted, end);
         }
@@ -253,11 +277,44 @@ fn every_event_has_one_source_and_the_ledger_reconciles() {
     let run = run(4, GENERATE, &HashSet::new(), &mut oracle);
     assert_eq!(run.events[0].source, Source::Prefill);
     assert!(run.events[1..].iter().all(|e| e.source != Source::Prefill));
+    let swap = (1..run.events.len() - 1)
+        .find(|&i| run.events[i].id != run.events[i + 1].id)
+        .expect("the run has two different neighbouring ids");
     let mut tampered = run.clone();
-    tampered.events.swap(1, 2);
-    if tampered.events[1].id != run.events[1].id {
-        assert!(tampered.reconcile().is_err());
-    }
+    tampered.events.swap(swap, swap + 1);
+    assert!(tampered.reconcile().is_err(), "reordered events reconciled");
+    let mut miscounted = run.clone();
+    miscounted.blocks[0].accepted += 1;
+    assert!(
+        miscounted.reconcile().is_err(),
+        "a miscounted block reconciled"
+    );
+    // A block record that is self-consistent (fewer accepted, rejected
+    // there) but disagrees with the block's own events.
+    let k = run
+        .blocks
+        .iter()
+        .position(|b| b.accepted > 0)
+        .expect("a block accepted something");
+    let mut understated = run.clone();
+    understated.blocks[k].accepted -= 1;
+    understated.blocks[k].rejected_at = Some(understated.blocks[k].accepted);
+    assert!(
+        understated.reconcile().is_err(),
+        "a block understating its events reconciled"
+    );
+    let mut moved = run.clone();
+    moved.final_position += 1;
+    assert!(
+        moved.reconcile().is_err(),
+        "a wrong final position reconciled"
+    );
+    let mut shifted = run.clone();
+    shifted.blocks[0].start += 1;
+    assert!(
+        shifted.reconcile().is_err(),
+        "a wrong block start reconciled"
+    );
     let mut dropped = run.clone();
     dropped.events.pop();
     assert!(dropped.reconcile().is_err());
@@ -295,7 +352,9 @@ fn what_the_loop_cannot_do_is_refused() {
         &mut oracle,
     )
     .unwrap();
-    assert_eq!(none, SpeculativeRun::default());
+    assert!(none.ids.is_empty() && none.events.is_empty());
+    assert_eq!(none.final_position, prompt.len());
+    none.reconcile().unwrap();
     // Non-finite logits have no greedy id: the loop stops with an error.
     let mut poisoned = Scripted {
         poison_at: Some(prompt.len() + 2),
@@ -312,4 +371,15 @@ fn what_the_loop_cannot_do_is_refused() {
         &mut oracle
     )
     .is_err());
+}
+
+#[test]
+fn a_proposer_that_returns_too_much_is_cut_back_to_the_block() {
+    for width in WIDTHS {
+        let mut asks_for_more =
+            |ctx: &[u32], source_len: usize, max: usize| oracle(ctx, source_len, max + 5);
+        let run = run(width, GENERATE, &HashSet::new(), &mut asks_for_more);
+        assert_eq!(run.ids, reference(&prompt(), GENERATE));
+        assert!(run.blocks.iter().all(|b| b.width <= width), "width {width}");
+    }
 }

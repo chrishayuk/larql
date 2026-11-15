@@ -53,11 +53,25 @@ impl<B: PlanBackend> BlockTarget for RoutedBlockSession<'_, B> {
     }
 }
 
-/// Proposes up to `max` tokens from the context `ctx`, whose first
-/// `source_len` tokens are the prompt.
-pub type Proposer<'a> = &'a mut dyn FnMut(&[u32], usize, usize) -> Vec<u32>;
+/// Proposes tokens for the target to verify.
+///
+/// Any closure `FnMut(&[u32], usize, usize) -> Vec<u32>` is a proposer, so
+/// [`crate::speculation::propose`] can be passed directly.
+pub trait Proposer {
+    /// Up to `max` tokens to verify after `ctx`, whose first `source_len`
+    /// tokens are the prompt. Returning more than `max` is allowed; the loop
+    /// cuts the proposal back.
+    fn propose(&mut self, ctx: &[u32], source_len: usize, max: usize) -> Vec<u32>;
+}
+
+impl<F: FnMut(&[u32], usize, usize) -> Vec<u32> + ?Sized> Proposer for F {
+    fn propose(&mut self, ctx: &[u32], source_len: usize, max: usize) -> Vec<u32> {
+        self(ctx, source_len, max)
+    }
+}
 
 /// Where a generated id came from.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
     /// The prompt's own greedy id, from the last prefill position.
@@ -73,17 +87,21 @@ pub enum Source {
 }
 
 /// One generated id.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event {
     pub id: u32,
     pub source: Source,
     /// The verify block it came from, for proposals and corrections.
     pub block: Option<usize>,
-    /// False when the id came after a stop id or beyond the requested count.
+    /// False when the id came after a stop id or beyond the requested
+    /// count. The loop never produces such an id; the field keeps the
+    /// ledger honest if that ever changes.
     pub emitted: bool,
 }
 
 /// One verified block.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
     /// The committed position the block started from.
@@ -97,6 +115,7 @@ pub struct Block {
 }
 
 /// What one speculative generation did.
+#[non_exhaustive]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpeculativeRun {
     /// The generated ids: at most the requested count, ending at the first
@@ -105,12 +124,39 @@ pub struct SpeculativeRun {
     pub events: Vec<Event>,
     pub blocks: Vec<Block>,
     pub single_steps: usize,
+    /// Prompt length, already committed by prefill when the run began.
+    pub prompt_len: usize,
+    /// The target's committed position when the run ended.
+    pub final_position: usize,
 }
 
 impl SpeculativeRun {
-    /// The emitted events, in order, are exactly the generated ids; every
-    /// id has one source; the first is the prefill id.
+    /// Check the ledger against the output and against what ran.
+    ///
+    /// - The emitted events, in order, are exactly the generated ids, and
+    ///   no emitted event follows an unemitted one.
+    /// - The first event is the prefill id, and only it.
+    /// - Every block's events are contiguous: its accepted proposals, then
+    ///   one target correction. Their count matches the block's record;
+    ///   its width is its proposal plus one; its rejection offset is its
+    ///   accepted count when it rejected anything.
+    /// - Each block started at the position its preceding ids imply, and
+    ///   the target ended at `prompt_len + produced - 1` (the last id is
+    ///   produced, never fed).
+    /// - A run that generated nothing has no events, blocks or steps, and
+    ///   left the target where prefill did.
     pub fn reconcile(&self) -> Result<(), String> {
+        if self.events.is_empty() {
+            let untouched = self.ids.is_empty()
+                && self.blocks.is_empty()
+                && self.single_steps == 0
+                && self.final_position == self.prompt_len;
+            return if untouched {
+                Ok(())
+            } else {
+                Err("a run with no events generated or moved something".into())
+            };
+        }
         let emitted: Vec<u32> = self
             .events
             .iter()
@@ -130,17 +176,73 @@ impl SpeculativeRun {
                 ));
             }
         }
-        if self.events.first().map(|e| e.source) != Some(Source::Prefill) {
-            return Err("the first event is not the prefill id".into());
-        }
-        let accepted: usize = self.blocks.iter().map(|b| b.accepted).sum();
-        let count = |source: Source| self.events.iter().filter(|e| e.source == source).count();
-        if count(Source::AcceptedProposal) != accepted
-            || count(Source::TargetCorrection) != self.blocks.len()
-            || count(Source::SingleStep) != self.single_steps
-            || count(Source::Prefill) != 1
+        if self.events[0].source != Source::Prefill
+            || self.events[1..].iter().any(|e| e.source == Source::Prefill)
         {
-            return Err("event sources do not match the blocks and steps run".into());
+            return Err("the prefill id is not the first event, once".into());
+        }
+        let singles = self
+            .events
+            .iter()
+            .filter(|e| e.source == Source::SingleStep)
+            .count();
+        if singles != self.single_steps {
+            return Err(format!(
+                "{singles} single-step events, {} single steps",
+                self.single_steps
+            ));
+        }
+        for event in &self.events {
+            let in_block = matches!(
+                event.source,
+                Source::AcceptedProposal | Source::TargetCorrection
+            );
+            if in_block != event.block.is_some() {
+                return Err(format!("event {event:?} is attributed to the wrong place"));
+            }
+        }
+        for (index, block) in self.blocks.iter().enumerate() {
+            let at: Vec<usize> = (0..self.events.len())
+                .filter(|&i| self.events[i].block == Some(index))
+                .collect();
+            let Some(&first) = at.first() else {
+                return Err(format!("block {index} produced no ids"));
+            };
+            if at.windows(2).any(|w| w[1] != w[0] + 1) {
+                return Err(format!("block {index}'s ids are not contiguous"));
+            }
+            let sources: Vec<Source> = at.iter().map(|&i| self.events[i].source).collect();
+            let (correction, proposals) = sources.split_last().expect("non-empty");
+            if *correction != Source::TargetCorrection
+                || proposals.iter().any(|s| *s != Source::AcceptedProposal)
+                || proposals.len() != block.accepted
+            {
+                return Err(format!(
+                    "block {index}: {} accepted, events {sources:?}",
+                    block.accepted
+                ));
+            }
+            let rejected = (block.accepted < block.proposed).then_some(block.accepted);
+            if block.width != block.proposed + 1
+                || block.accepted > block.proposed
+                || block.rejected_at != rejected
+            {
+                return Err(format!("block {index} is inconsistent: {block:?}"));
+            }
+            if block.start + 1 != self.prompt_len + first {
+                return Err(format!(
+                    "block {index} started at {}, after {first} ids of a {}-token prompt",
+                    block.start, self.prompt_len
+                ));
+            }
+        }
+        if self.final_position + 1 != self.prompt_len + self.events.len() {
+            return Err(format!(
+                "the target ended at {}, after {} ids of a {}-token prompt",
+                self.final_position,
+                self.events.len(),
+                self.prompt_len
+            ));
         }
         Ok(())
     }
@@ -188,7 +290,7 @@ fn push(
 
 fn greedy(logits: &[f32]) -> Result<u32, InferenceError> {
     greedy_id(logits).ok_or_else(|| {
-        InferenceError::Parse("no greedy id: the logits were empty or not finite".into())
+        InferenceError::Parse("no greedy id: the logits were empty, NaN, +inf or all -inf".into())
     })
 }
 
@@ -199,6 +301,15 @@ fn greedy(logits: &[f32]) -> Result<u32, InferenceError> {
 /// The ids are exactly sequential greedy decoding's: a block keeps the
 /// prefix on which the target's greedy ids agree with the proposal, plus
 /// the target's own id after it, and the target commits those positions.
+///
+/// No position is verified that the output cannot use. A proposal is cut
+/// to the ids still wanted less one (the block's own correction) and cut
+/// before its first stop id, so nothing past a stop is ever verified or
+/// committed; if the target agrees, its correction supplies the stop.
+///
+/// **On error** the partial run is not returned, and the target may be
+/// left with a verified block pending or a position committed: discard it
+/// and start a fresh one.
 pub fn greedy_speculate<T: BlockTarget + ?Sized>(
     target: &mut T,
     prompt: &[u32],
@@ -206,14 +317,18 @@ pub fn greedy_speculate<T: BlockTarget + ?Sized>(
     n: usize,
     width: usize,
     stop: &HashSet<u32>,
-    proposer: Proposer<'_>,
+    proposer: &mut dyn Proposer,
 ) -> Result<SpeculativeRun, InferenceError> {
     if width < 2 {
         return Err(InferenceError::Parse(
             "speculation needs a block width of at least two".into(),
         ));
     }
-    let mut run = SpeculativeRun::default();
+    let mut run = SpeculativeRun {
+        prompt_len: prompt.len(),
+        final_position: target.position(),
+        ..Default::default()
+    };
     if n == 0 {
         return Ok(run);
     }
@@ -222,17 +337,20 @@ pub fn greedy_speculate<T: BlockTarget + ?Sized>(
     while run.ids.len() < n && !stop.contains(run.ids.last().expect("seeded")) {
         let last = *run.ids.last().expect("seeded");
         // A block yields its accepted proposals plus the target's own next
-        // id, so ask for at most one fewer than are still wanted: no
-        // position is verified that the output can never use. With nothing
-        // left to propose, the proposer is not asked.
+        // id, so ask for at most one fewer than are still wanted. With
+        // nothing left to propose, the proposer is not asked.
         let budget = (width - 1).min(n - run.ids.len() - 1);
         let mut guess = if budget == 0 {
             Vec::new()
         } else {
-            proposer(&ctx, prompt.len(), budget)
+            proposer.propose(&ctx, prompt.len(), budget)
         };
-        // A proposer that returns more than it was asked for is cut back.
+        // A proposer that returns more than it was asked for is cut back,
+        // and a proposal never runs through a stop id.
         guess.truncate(budget);
+        if let Some(at) = guess.iter().position(|token| stop.contains(token)) {
+            guess.truncate(at);
+        }
         if guess.is_empty() {
             let id = greedy(&target.step(last)?)?;
             run.single_steps += 1;
@@ -279,5 +397,6 @@ pub fn greedy_speculate<T: BlockTarget + ?Sized>(
     for event in run.events.iter_mut().skip(run.ids.len()) {
         event.emitted = false;
     }
+    run.final_position = target.position();
     Ok(run)
 }
