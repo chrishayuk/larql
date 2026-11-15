@@ -11,24 +11,27 @@ COORDINATOR_NS = 20_000_000  # per position, outside the exchanges
 RELAY_ON_TIME = [{"late_sum_ns": 0, "late_max_ns": 0, "chunks": 10, "bytes": 1}]
 
 
-def record(entry, extra_ns=0.0):
-    """A trial that obeys the exchange model exactly, plus `extra_ns` per position."""
+def record(entry, extra_ns=0.0, exchange_extra_ns=0.0):
+    """A trial that obeys the exchange model exactly, plus `extra_ns` per position of
+    coordinator time and `exchange_extra_ns` per position spread over its exchanges."""
     width = bt.ARMS[entry["arm"]] or 1
     run = trial(entry["arm"], handler_ns=width * WORKER_NS)
-    roundtrip = width * WORKER_NS + entry["rtt_ms"] * bt.NS_PER_MS
+    count = len(run["exchanges"])
+    roundtrip = width * WORKER_NS + entry["rtt_ms"] * bt.NS_PER_MS \
+        + exchange_extra_ns * bt.MEASURED_POSITIONS / count
     for exchange in run["exchanges"]:
-        exchange["roundtrip_ns"] = int(roundtrip)
-    run["wall_ns"] = int(len(run["exchanges"]) * roundtrip
-                         + bt.MEASURED_POSITIONS * (COORDINATOR_NS + extra_ns))
+        exchange["roundtrip_ns"] = roundtrip
+    run["wall_ns"] = count * roundtrip + bt.MEASURED_POSITIONS * (COORDINATOR_NS + extra_ns)
     return run
 
 
-def run_schedule(extra=lambda entry: 0.0, relay=lambda entry: RELAY_ON_TIME, damage=lambda entry, run: None):
+def run_schedule(extra=lambda entry: 0.0, relay=lambda entry: RELAY_ON_TIME, damage=lambda entry, run: None,
+                 exchange_extra=lambda entry: 0.0):
     """Every scheduled trial through BLOCK-TIME-1's per-trial gates, then BLOCK-TIME-2's judging."""
     import block_time as b1
     observations = []
     for entry in b2.schedule():
-        run = record(entry, extra(entry))
+        run = record(entry, extra(entry), exchange_extra(entry))
         damage(entry, run)
         observations.append(b1.observe(entry, run, relay(entry), HASHES, BASE_NS))
     return observations, b2.judge_pairs(observations)
@@ -173,6 +176,134 @@ class PairValidity(unittest.TestCase):
             b1.observe(entry, changed, RELAY_ON_TIME, HASHES, BASE_NS)
 
 
+class WithinPairConsistency(unittest.TestCase):
+    """The arm's two trials in a pair must agree on coordinator and worker execution time."""
+
+    PAIR = 4
+
+    def coordinator_case(self, share):
+        def extra(entry):
+            if entry["pair"] == self.PAIR and entry["role"] == bt.ROLE_ARM and entry["rtt_ms"] == 20.0:
+                return share * COORDINATOR_NS
+            return 0.0
+        return run_schedule(extra=extra)[1][self.PAIR]
+
+    def execution_case(self, share):
+        def damage(entry, run):
+            if entry["pair"] == self.PAIR and entry["role"] == bt.ROLE_ARM and entry["rtt_ms"] == 20.0:
+                for record_ in run["worker_records"]:
+                    record_["worker"]["execute_ns"] = record_["worker"]["execute_ns"] * (1 + share)
+        return run_schedule(damage=damage)[1][self.PAIR]
+
+    def test_the_threshold_is_five_percent(self):
+        self.assertEqual(b2.CONSISTENCY, 0.05)
+
+    def test_coordinator_at_below_and_above_five_percent(self):
+        for share, valid in ((0.05, True), (0.049, True), (0.051, False)):
+            verdict = self.coordinator_case(share)
+            self.assertAlmostEqual(verdict["within_pair_difference"]["coordinator"], share, places=9)
+            self.assertEqual(verdict["valid"], valid, share)
+            if not valid:
+                self.assertTrue(any(r.startswith("coordinator time differs") for r in verdict["void_reasons"]))
+
+    def test_worker_execution_at_below_and_above_five_percent(self):
+        for share, valid in ((0.05, True), (0.049, True), (0.051, False)):
+            verdict = self.execution_case(share)
+            self.assertAlmostEqual(verdict["within_pair_difference"]["execution"], share, places=9)
+            self.assertEqual(verdict["valid"], valid, share)
+            if not valid:
+                self.assertTrue(any(r.startswith("worker execution time differs") for r in verdict["void_reasons"]))
+
+    def test_the_difference_is_symmetric_over_the_smaller_value(self):
+        self.assertEqual(b2.relative_difference(100.0, 105.0), b2.relative_difference(105.0, 100.0))
+        self.assertAlmostEqual(b2.relative_difference(100.0, 105.0), 0.05)
+
+    def test_missing_zero_or_non_finite_measurements_fail(self):
+        for a, b in ((None, 1.0), (0.0, 1.0), (1.0, float("nan")), (float("inf"), 1.0), (-1.0, 1.0)):
+            self.assertIsNone(b2.relative_difference(a, b), (a, b))
+
+        def damage(entry, run):
+            if entry["pair"] == self.PAIR and entry["role"] == bt.ROLE_ARM and entry["rtt_ms"] == 5.0:
+                run["worker_records"][0] = {"worker_profile_complete": False}
+        verdict = run_schedule(damage=damage)[1][self.PAIR]
+        self.assertFalse(verdict["valid"])
+        self.assertIn("worker execution time missing, zero or not finite in an arm trial", verdict["void_reasons"])
+
+    def test_differences_are_reported_for_every_pair_valid_or_void(self):
+        _, verdicts = run_schedule(extra=lambda e: 0.03 * BASE_NS if e["pair"] == 2 and e["bracket"] == "after" else 0.0)
+        self.assertFalse(verdicts[2]["valid"])
+        for verdict in verdicts:
+            for name in ("coordinator", "execution"):
+                self.assertIsNotNone(verdict["within_pair_difference"][name], (verdict["pair"], name))
+
+    def test_failures_are_counted_by_arm_and_by_delay_order(self):
+        observations, verdicts = run_schedule(extra=lambda e: 0.2 * COORDINATOR_NS
+                                              if e["pair"] == self.PAIR and e["role"] == bt.ROLE_ARM
+                                              and e["rtt_ms"] == 20.0 else 0.0)
+        report = b2.analyse(observations, verdicts)
+        arm = verdicts[self.PAIR]["arm"]
+        self.assertEqual(report["arms"][arm]["within_pair_failures"], {"coordinator": 1, "execution": 0, "of": 4})
+        order = verdicts[self.PAIR]["order"]
+        self.assertEqual(report["within_pair_failures_by_order"][order]["coordinator"], 1)
+
+    def test_the_diagnostics_five_second_pause_fails_the_coordinator_gate(self):
+        # Pair 0 of the recorded functional diagnostic: a 5 s SIGSTOP fell inside
+        # its 20 ms trial and its brackets still agreed. Read from the record,
+        # not reconstructed; the diagnostic's own verdict is not changed.
+        import json
+        from pathlib import Path
+        record_path = (Path(__file__).with_name("link-results") / "block-time-2" / "20261115-01-diagnostic"
+                       / "trials.json")
+        members = [o for o in json.loads(record_path.read_text()) if o["pair"] == 0]
+        brackets = [m for m in members if m["role"] == bt.ROLE_BRACKET]
+        self.assertLessEqual(bt.bracket_drift(brackets[0]["summary"], brackets[1]["summary"]), bt.GATE)
+        differences, reasons = b2.within_pair([m for m in members if m["role"] == bt.ROLE_ARM])
+        self.assertGreater(differences["coordinator"], 2.0)
+        self.assertLessEqual(differences["execution"], b2.CONSISTENCY)
+        self.assertEqual(len(reasons), 1)
+        self.assertTrue(reasons[0].startswith("coordinator time differs"))
+
+
+class Suspension(unittest.TestCase):
+    """A stall of the driver inside a trial voids that trial's pair."""
+
+    def test_a_jump_in_either_clock_beyond_the_threshold_is_a_stall(self):
+        import block_time_2 as driver
+        self.assertIsNone(driver.suspension_between((0.0, 100.0), (0.2, 100.2)))
+        self.assertIsNone(driver.suspension_between((0.0, 100.0), (2.0, 102.0)))
+        found = driver.suspension_between((0.0, 100.0), (5.2, 105.2))
+        self.assertEqual((found["start_epoch"], found["end_epoch"]), (100.0, 105.2))
+        self.assertAlmostEqual(found["seconds"], 5.2)
+        # A sleep of the machine can stop the monotonic clock but not the wall clock.
+        self.assertIsNotNone(driver.suspension_between((0.0, 100.0), (0.2, 160.0)))
+        self.assertEqual(driver.SUSPENSION_GAP_S, 2.0)
+
+    def test_the_watch_records_a_stall_from_its_clocks(self):
+        import time
+        import block_time_2 as driver
+        ticks = iter([(0.0, 100.0), (0.2, 100.2), (6.0, 106.0)] + [(6.2 + i, 106.2 + i) for i in range(10**6)])
+        with driver.SuspensionWatch(tick=0.001, clocks=lambda: next(ticks)) as watch:
+            time.sleep(0.05)
+        self.assertEqual(len(watch.suspensions), 1)
+        self.assertEqual(watch.suspensions[0]["start_epoch"], 100.2)
+
+    def test_a_trial_overlapping_a_stall_voids_its_pair_by_name(self):
+        import block_time_2 as driver
+        observations, _ = run_schedule()
+        for index, observation in enumerate(observations):
+            observation["started_epoch"], observation["ended_epoch"] = 1000.0 + 60 * index, 1060.0 + 60 * index
+        target = observations[9]
+        stall = {"start_epoch": target["started_epoch"] + 10, "end_epoch": target["started_epoch"] + 15,
+                 "seconds": 5.0}
+        between = {"start_epoch": 5000.0 - 0.5 + 0.0, "end_epoch": 5000.0 - 0.1, "seconds": 0.4}
+        driver.attach_suspensions(observations, [stall])
+        verdicts = b2.judge_pairs(observations)
+        self.assertEqual([v["pair"] for v in verdicts if not v["valid"]], [target["pair"]])
+        self.assertIn(f"{target['label']}: driver suspended 5.0 s during the trial",
+                      verdicts[target["pair"]]["void_reasons"])
+        self.assertEqual(driver.overlapping([between], 0.0, 10.0), [])
+
+
 class Analysis(unittest.TestCase):
     def test_a_run_on_the_model_recovers_every_predicted_slope(self):
         observations, verdicts = run_schedule()
@@ -224,24 +355,24 @@ class Analysis(unittest.TestCase):
         self.assertEqual(report["arms"]["block-2"]["pairs_valid"], 3)
 
     def test_a_slope_outside_the_band_is_not_said_to_follow_the_model(self):
-        def extra(entry):
+        def exchange_extra(entry):
             # block-8 pays 4.5 round trips per position at each delay instead of 3.
             if entry["role"] == bt.ROLE_ARM and entry["arm"] == "block-8":
                 return 1.5 * entry["rtt_ms"] * bt.NS_PER_MS
             return 0.0
-        observations, verdicts = run_schedule(extra=extra)
+        observations, verdicts = run_schedule(exchange_extra=exchange_extra)
         entry = b2.analyse(observations, verdicts)["arms"]["block-8"]
         self.assertAlmostEqual(entry["slope"], 4.5, places=6)
         self.assertFalse(entry["follows_exchange_model"])
 
     def test_a_delay_order_effect_is_reported(self):
-        def extra(entry):
+        def exchange_extra(entry):
             # Whichever delay runs second in a pair is 1 ms per position slower.
             if entry["role"] != bt.ROLE_ARM:
                 return 0.0
             second = (entry["order"] == b2.LOW_FIRST) == (entry["rtt_ms"] == 20.0)
             return bt.NS_PER_MS if second else 0.0
-        observations, verdicts = run_schedule(extra=extra)
+        observations, verdicts = run_schedule(exchange_extra=exchange_extra)
         order = b2.analyse(observations, verdicts)["arms"]["sequential"]["order"]
         span = b2.DELAY_SPAN_NS
         self.assertAlmostEqual(order[b2.LOW_FIRST], 24 + bt.NS_PER_MS / span, places=6)

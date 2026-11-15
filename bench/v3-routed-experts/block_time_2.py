@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import threading
 import time
 
 import block_time as b1
@@ -57,10 +58,64 @@ def wait_while_paused(out, before_pair, pauses, sleep=time.sleep, now=None):
     print(f"resumed before pair {before_pair}", flush=True)
 
 
+# A stall of the driver itself: its process was stopped (SIGSTOP), the machine
+# slept, or the thread was starved. Any of these inside a trial puts time in
+# its measurement that no other gate can see, so the trial's pair is void.
+SUSPENSION_TICK_S = 0.2
+SUSPENSION_GAP_S = 2.0
+
+
+def suspension_between(previous, current, threshold=SUSPENSION_GAP_S):
+    """A stall between two (monotonic, wall) ticks, or None. Either clock may show it."""
+    elapsed = max(current[0] - previous[0], current[1] - previous[1])
+    if elapsed <= threshold:
+        return None
+    return {"start_epoch": previous[1], "end_epoch": current[1], "seconds": elapsed}
+
+
+def overlapping(suspensions, start_epoch, end_epoch):
+    return [s for s in suspensions if s["start_epoch"] < end_epoch and s["end_epoch"] > start_epoch]
+
+
+class SuspensionWatch:
+    """Ticks in a thread and records every stall longer than the threshold."""
+
+    def __init__(self, tick=SUSPENSION_TICK_S, clocks=lambda: (time.monotonic(), time.time())):
+        self.tick, self.clocks = tick, clocks
+        self.suspensions, self.stop_event = [], threading.Event()
+        self.thread = threading.Thread(target=self.loop, daemon=True)
+
+    def loop(self):
+        previous = self.clocks()
+        while not self.stop_event.wait(self.tick):
+            current = self.clocks()
+            found = suspension_between(previous, current)
+            if found:
+                self.suspensions.append(found)
+            previous = current
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop_event.set()
+        self.thread.join(timeout=5)
+        return False
+
+
 def timed_trial(root, model, ids, out, env, entry, worker_urls):
-    started = ht.utc_now()
+    started, started_epoch = ht.utc_now(), time.time()
     trial, relay_records = b1.run_trial(root, model, ids, out, env, entry, worker_urls)
-    return trial, relay_records, {"started_utc": started, "ended_utc": ht.utc_now()}
+    return trial, relay_records, {"started_utc": started, "ended_utc": ht.utc_now(),
+                                  "started_epoch": started_epoch, "ended_epoch": time.time()}
+
+
+def attach_suspensions(observations, suspensions):
+    """Give every trial the stalls that overlap it; a trial with any voids its pair."""
+    for observation in observations:
+        observation["suspensions"] = overlapping(suspensions, observation["started_epoch"],
+                                                 observation["ended_epoch"])
 
 
 def warm_up(root, model, args, out, env, worker_urls, saved, stream):
@@ -123,11 +178,13 @@ def execute(args, root, model, out, kind):
                       "gates_anything": False},
         "clock": "monotonic wall time around the measured region inside each trial process",
         "pause": {"file": PAUSE_FILE, "where": "between pairs only", "poll_s": PAUSE_POLL_S},
+        "suspension_watch": {"tick_s": SUSPENSION_TICK_S, "gap_s": SUSPENSION_GAP_S,
+                             "effect": "a trial overlapping a stall voids its pair"},
         "started_utc": started,
     }
     save(out / "manifest.json", manifest)
     observations, stop, pauses = [], None, []
-    with ht.Sampler(out / "telemetry.jsonl") as sampler:
+    with ht.Sampler(out / "telemetry.jsonl") as sampler, SuspensionWatch() as watch:
         try:
             with workers(root, model, out, b1.TOPOLOGY, args.port, env) as worker_urls:
                 wait_while_paused(out, BEFORE_WARM_UP, pauses)
@@ -148,13 +205,15 @@ def execute(args, root, model, out, kind):
             print(f"STOPPED: {stop}", flush=True)
     ended = ht.utc_now()
     save(out / "spotlight.json", ht.spotlight_starts(started, ended))
+    attach_suspensions(observations, watch.suspensions)
+    save(out / "suspensions.json", watch.suspensions)
     verdicts = b2.judge_pairs(observations)
     save(out / "trials.json", observations)
     complete = stop is None and len(observations) == len(order)
     report = b2.analyse(observations, verdicts) if complete else {"note": "the run stopped; nothing is analysed"}
     report.update(kind=kind, counts=kind == "admissible" and complete, complete=complete, stopped=stop,
                   scheduled=len(order), observed=len(observations), telemetry_samples=sampler.samples,
-                  pauses=pauses,
+                  pauses=pauses, suspensions=watch.suspensions,
                   outcomes={
                       "valid_pairs": [v["pair"] for v in verdicts if v["valid"]],
                       "void_pairs": {str(v["pair"]): v["void_reasons"] for v in verdicts if not v["valid"]},

@@ -7,6 +7,7 @@ or reads a clock.
 Per-trial gates (parity, frame counts, relay lateness), the decomposition and
 the bracket drift are BLOCK-TIME-1's, imported, not restated.
 """
+import math
 import random
 import statistics
 
@@ -36,6 +37,13 @@ SHUFFLE_SEED = 20261115
 
 GATE = bt.GATE
 SLOPE_BAND = bt.SLOPE_BAND
+# Within a pair, the arm's two trials must agree on coordinator time and on
+# worker execution per position, each within this share of the smaller one.
+# Both costs are expected not to depend on the configured round trip, so a
+# larger difference is an execution-cost change inside the pair that the
+# brackets either side cannot see. An engineering tolerance, not a measured
+# bound on natural variation, and not evidence of external interference.
+CONSISTENCY = 0.05
 ROLE_BRACKET, ROLE_ARM = bt.ROLE_BRACKET, bt.ROLE_ARM
 
 if len(ORDER_SEQUENCE) != ROUNDS:
@@ -75,7 +83,33 @@ def trial_defects(observation):
     reasons = list(observation["frame_defects"])
     if observation.get("relay") is not None and not observation["relay"]["relay_on_schedule"]:
         reasons.append("relay behind schedule")
+    for suspension in observation.get("suspensions", []):
+        reasons.append(f"driver suspended {suspension['seconds']:.1f} s during the trial")
     return reasons
+
+
+def relative_difference(a, b):
+    """|a - b| over the smaller; None unless both are positive and finite."""
+    if a is None or b is None or not (math.isfinite(a) and math.isfinite(b)) or min(a, b) <= 0:
+        return None
+    return abs(a - b) / min(a, b)
+
+
+def coordinator_per_position(observation):
+    return observation["summary"]["coordinator_ns"] / bt.MEASURED_POSITIONS
+
+
+def within_pair(arms):
+    """Coordinator and worker-execution differences between a pair's two arm trials, and reasons to void."""
+    coordinator = relative_difference(*(coordinator_per_position(m) for m in arms))
+    execution = relative_difference(*(execution_per_position(m) for m in arms))
+    reasons = []
+    for name, value in (("coordinator", coordinator), ("worker execution", execution)):
+        if value is None:
+            reasons.append(f"{name} time missing, zero or not finite in an arm trial")
+        elif value > CONSISTENCY:
+            reasons.append(f"{name} time differs by {value:.4f} between the pair's delays")
+    return {"coordinator": coordinator, "execution": execution}, reasons
 
 
 def judge_pairs(observations):
@@ -90,13 +124,15 @@ def judge_pairs(observations):
             reasons += [f"{member['label']}: {reason}" for reason in trial_defects(member)]
         brackets = {m["bracket"]: m for m in members if m["role"] == ROLE_BRACKET}
         arms = [m for m in members if m["role"] == ROLE_ARM]
-        drift = None
+        drift, differences = None, {"coordinator": None, "execution": None}
         if set(brackets) != {"before", "after"} or len(arms) != 2:
             reasons.append("incomplete pair")
         else:
             drift = bt.bracket_drift(brackets["before"]["summary"], brackets["after"]["summary"])
             if drift > GATE:
                 reasons.append(f"brackets differ by {drift:.4f}")
+            differences, inconsistent = within_pair(arms)
+            reasons += inconsistent
         for member in members:
             member["pair_valid"] = not reasons
             member["valid"] = not reasons
@@ -104,6 +140,7 @@ def judge_pairs(observations):
         verdicts.append({"pair": pair, "round": members[0]["round"], "arm": members[0]["pair_arm"],
                          "arm_pair": members[0]["arm_pair"],
                          "order": members[0]["order"], "bracket_drift": drift,
+                         "within_pair_difference": differences,
                          "valid": not reasons, "void_reasons": reasons})
     return verdicts
 
@@ -129,6 +166,15 @@ def spread(values):
     return {"min": values[0], "median": statistics.median(values), "max": values[-1], "values": values}
 
 
+def within_pair_failures(pairs):
+    """Pairs whose coordinator or worker-execution difference exceeded the consistency gate."""
+    def failed(pair, name):
+        value = pair["within_pair_difference"][name]
+        return value is not None and value > CONSISTENCY
+    return {"coordinator": sum(failed(p, "coordinator") for p in pairs),
+            "execution": sum(failed(p, "execution") for p in pairs), "of": len(pairs)}
+
+
 def analyse(observations, verdicts):
     """The pre-registered per-pair and per-arm statements. Void pairs are never fitted or pooled."""
     members = {}
@@ -145,7 +191,10 @@ def analyse(observations, verdicts):
         mine = [p for p in pairs if p["arm"] == arm]
         valid = [p for p in mine if p["valid"] and p["slope"] is not None]
         entry = {"predicted": predicted, "pairs_scheduled": len(mine), "pairs_valid": len(valid),
-                 "valid_slopes": [p["slope"] for p in valid]}
+                 "valid_slopes": [p["slope"] for p in valid],
+                 # How often the within-pair gate fired for this arm: reported,
+                 # so a gate that keeps rejecting one arm is visible as a finding.
+                 "within_pair_failures": within_pair_failures(mine)}
         if len(valid) >= MINIMUM_VALID_PAIRS:
             mean = statistics.fmean(entry["valid_slopes"])
             entry.update(slope=mean, ratio=mean / predicted,
@@ -172,8 +221,11 @@ def analyse(observations, verdicts):
 
     return {
         "protocol": PROTOCOL, "pairs": pairs, "arms": arms,
+        "within_pair_failures_by_order": {order: within_pair_failures([p for p in pairs if p["order"] == order])
+                                          for order in (LOW_FIRST, HIGH_FIRST)},
         "valid_pairs": sum(p["valid"] for p in pairs), "void_pairs": sum(not p["valid"] for p in pairs),
-        "thresholds": {"gate": GATE, "slope_band": SLOPE_BAND, "minimum_valid_pairs": MINIMUM_VALID_PAIRS},
+        "thresholds": {"gate": GATE, "slope_band": SLOPE_BAND, "minimum_valid_pairs": MINIMUM_VALID_PAIRS,
+                       "within_pair_consistency": CONSISTENCY},
         "reading": "evaluated positions only; the three-of-four rule is a reporting minimum and the band "
                    "a model-fit criterion, neither is statistical significance; no speed comparison is made",
     }
