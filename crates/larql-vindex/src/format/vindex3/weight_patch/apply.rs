@@ -455,7 +455,10 @@ fn write_stage(
         if rel == at.entry.segment || derived_segments.contains(rel.as_str()) {
             continue;
         }
-        let from = src.join(&rel);
+        // A segment may be a symlink, as in a Hugging Face cache snapshot, where it is a RELATIVE link into the blob
+        // store. A hard link to the symlink itself would carry that relative target into the new container, where it
+        // dangles; link (or copy) the file it resolves to instead.
+        let from = std::fs::canonicalize(src.join(&rel))?;
         let to = crate::format::vindex3::container_path::prepare_write(stage, &rel)?;
         if std::fs::hard_link(&from, &to).is_err() {
             std::fs::copy(&from, &to)?;

@@ -7,6 +7,7 @@ mod apply;
 mod errors;
 mod fixture;
 mod golden;
+mod hf_cache_layout;
 mod inspection;
 mod lifecycle;
 mod live_exec;
