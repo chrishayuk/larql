@@ -27,9 +27,11 @@ use std::io::Write;
 use std::path::Path;
 
 mod bf16;
+mod gemma3;
 mod hybrid;
 mod quantised;
 pub use bf16::*;
+pub use gemma3::*;
 pub use hybrid::*;
 pub use quantised::*;
 
