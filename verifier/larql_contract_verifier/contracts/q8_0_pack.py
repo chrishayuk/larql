@@ -29,7 +29,8 @@ from refcheck import numconv
 from refcheck import q8_0 as Q
 
 from . import vlp_numerics as V
-from .weight_patches_v4 import CannotEvaluate, Store, container_digest, file_digests
+from .weight_patches_v4 import (CONTAINER_FILES_READ, CannotEvaluate, Store, container_digest, file_digests,
+                               report_resolution)
 
 CONTRACT = "Q8_0_PACK_DERIVATION"
 STATEMENT = (
@@ -334,7 +335,7 @@ def evaluate(out: dict, container: str) -> dict:
         {"name": "matrices the pack leaves unquantised (informational: the selection is not judged)",
          "value": str(c["unquantised_matrices"])},
         {"name": "not established", "value": "; ".join(NOT_ESTABLISHED)},
-    ]
+    ] + report_resolution(out["container"], CONTAINER_FILES_READ, files)
     out["derivations"] = judge.derivations
     if not judge.violations:
         if judge.reasons:

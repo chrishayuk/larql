@@ -531,7 +531,8 @@ class NeverAVacuousPass(Fixture):
 
     def test_a_container_the_reader_refuses_is_not_an_exception(self):
         root = self.copy()
-        os.symlink("index.json", os.path.join(root, "link.json"))
+        # A link out of the container (one inside it is followed: see test_container_symlinks.py).
+        os.symlink(os.path.join(BASE, "index.json"), os.path.join(root, "link.json"))
         self.assertNotJudged(self.judge(root), "symlink")
 
     def assertNotJudged(self, out, reason):

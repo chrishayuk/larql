@@ -24,10 +24,12 @@ the compiled canonical payload, but it is not re-quantised here.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
 import re
+import stat
 import struct
 from fractions import Fraction
 from pathlib import PurePosixPath
@@ -198,18 +200,148 @@ def sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
-def file_digests(root: str) -> dict[str, tuple[int, str]]:
-    """`{relative path: (size, sha256)}` of every regular file under `root`. A symlink is refused: the comparison of
-    files and the container digest must cover the bytes that are actually there."""
+class ContainerFiles(dict):
+    """`{relative path: (size, sha256)}`, and `resolution`: how the files were reached (`resolve_container`)."""
+
+    resolution: Resolution | None = None
+
+
+class Resolution:
+    """Where a container's files were read from. `layout` is `LAYOUT_DIRECTORY` or `LAYOUT_HF_SNAPSHOT`; `boundaries`
+    are the real directories a symlink may resolve into; `followed` is `{relative path: the real file it resolved to}`
+    for each symlink followed."""
+
+    def __init__(self, layout: str, boundaries: tuple[str, ...]):
+        self.layout, self.boundaries = layout, boundaries
+        self.followed: dict[str, str] = {}
+
+    def describe(self, total: int) -> str:
+        """The measurement's value: how many of `total` files were reached through a symlink, and where they may be."""
+        return f"{len(self.followed)} of {total} files read through a symlink; a link is followed only into " \
+               f"{' or '.join(self.boundaries)} ({self.layout} layout)"
+
+    def detail(self) -> dict:
+        """The answer's `resolution` field for one container."""
+        return {"layout": self.layout, "boundaries": list(self.boundaries), "symlinks_followed": len(self.followed)}
+
+
+LAYOUT_DIRECTORY = "directory"
+LAYOUT_HF_SNAPSHOT = "hf_snapshot"
+#: The Hugging Face cache: `<cache>/models--<org>--<name>/snapshots/<revision>/<file>`, each file a symlink to
+#: `../../blobs/<sha>`. The repository directory's name is checked as well as its structure, never instead of it.
+HF_SNAPSHOTS_DIR = "snapshots"
+HF_BLOBS_DIR = "blobs"
+HF_REPO_DIR = re.compile(r"models--[^/\\]+")
+#: More links in one chain than this is treated as a loop (Linux's own limit is 40).
+MAX_LINK_HOPS = 40
+
+
+def is_real_directory(path: str) -> bool:
+    """A directory that is not itself a symlink."""
+    try:
+        return stat.S_ISDIR(os.lstat(path).st_mode)
+    except OSError:
+        return False
+
+
+def hf_snapshot_blobs(real_root: str) -> str | None:
+    """The `blobs/` directory a Hugging Face snapshot's links may resolve into, or None when `real_root` (already a
+    real path) is not a snapshot. Decided from the structure, `<repo>/snapshots/<revision>` with a real directory
+    `<repo>/blobs` beside `snapshots`, in a repository directory named `models--<org>--<name>`: a directory merely
+    named `snapshots` is not one."""
+    snapshots = os.path.dirname(real_root)
+    repo = os.path.dirname(snapshots)
+    if os.path.basename(snapshots) != HF_SNAPSHOTS_DIR or not HF_REPO_DIR.fullmatch(os.path.basename(repo)):
+        return None
+    blobs = os.path.join(repo, HF_BLOBS_DIR)
+    return blobs if is_real_directory(snapshots) and is_real_directory(blobs) else None
+
+
+def inside(path: str, boundary: str) -> bool:
+    return os.path.commonpath([path, boundary]) == boundary
+
+
+def resolve_link(p: str, res: Resolution) -> str:
+    """The real regular file the symlink `p` resolves to, or CannotEvaluate saying why it is refused. Every place the
+    chain passes through, not only its end, must be inside one of `res.boundaries`."""
+    try:
+        st = os.stat(p)
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            raise CannotEvaluate(f"{p} is a symlink loop: it never resolves to a file") from None
+        if e.errno in (errno.ENOENT, errno.ENOTDIR):
+            raise CannotEvaluate(f"{p} is a dangling symlink: its target {os.readlink(p)!r} does not exist") from None
+        raise
+    within = " or ".join(res.boundaries)
+    cur = p
+    for _ in range(MAX_LINK_HOPS + 1):  # the last pass only finds the chain's end
+        if not os.path.islink(cur):
+            break
+        named = os.path.join(os.path.dirname(cur), os.readlink(cur))
+        head, tail = os.path.split(named)
+        # The place this link names, its directory resolved and its last component not (that may be a link itself).
+        cur = os.path.join(os.path.realpath(head), tail) if tail not in ("", os.curdir, os.pardir) \
+            else os.path.realpath(named)
+        if not any(inside(cur, b) for b in res.boundaries):
+            raise CannotEvaluate(f"{p} is a symlink that escapes its boundary: it resolves to {cur}, outside "
+                                 f"{within} ({res.layout} layout)")
+    else:
+        raise CannotEvaluate(f"{p} is a symlink loop: it never resolves to a file")
+    if not stat.S_ISREG(st.st_mode):
+        what = "a directory" if stat.S_ISDIR(st.st_mode) else "a file that is not a regular file"
+        raise CannotEvaluate(f"{p} is a symlink to {what} ({cur}); this contract reads regular files only")
+    return cur
+
+
+def resolve_container(root: str) -> tuple[dict[str, str], Resolution]:
+    """`{relative path: the real file to read}` for every file under `root`, and how they were reached.
+
+    A regular file is read where it is. A symlink is followed only to a regular file whose real path is inside the
+    container directory, or, when `root` is a Hugging Face snapshot (`hf_snapshot_blobs`), inside that repository's
+    `blobs/`. A symlink that leaves those, dangles, loops, or ends at a directory or another non-regular file is
+    refused (CannotEvaluate), as is any entry that is neither a regular file, a directory nor a symlink. A symlinked
+    directory is never descended into, so every directory walked is a real one."""
+    real_root = os.path.realpath(root)
+    blobs = hf_snapshot_blobs(real_root)
+    res = Resolution(LAYOUT_HF_SNAPSHOT, (real_root, blobs)) if blobs else Resolution(LAYOUT_DIRECTORY, (real_root,))
     out = {}
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames.sort()
         for name in sorted(filenames + [d for d in dirnames if os.path.islink(os.path.join(dirpath, d))]):
             p = os.path.join(dirpath, name)
-            if os.path.islink(p):
-                raise CannotEvaluate(f"{p} is a symlink; this contract reads regular files only")
             rel = os.path.relpath(p, root).replace(os.sep, "/")
-            out[rel] = (os.path.getsize(p), sha256_file(p))
+            mode = os.lstat(p).st_mode
+            if stat.S_ISLNK(mode):
+                out[rel] = res.followed[rel] = resolve_link(p, res)
+            elif stat.S_ISREG(mode):
+                out[rel] = p
+            else:
+                raise CannotEvaluate(f"{p} is not a regular file; this contract reads regular files only")
+    return out, res
+
+
+#: The measurement `report_resolution` adds, by the answer's name for the container it describes.
+FILES_READ = {"base": "base: where its files were read", "container": "container: where its files were read"}
+CONTAINER_FILES_READ = FILES_READ["container"]
+
+
+def report_resolution(side: dict, name: str, files) -> list[dict]:
+    """Where a container's files were read from, in an answer: `side["resolution"]` (`Resolution.detail`) and the one
+    measurement `name` (`Resolution.describe`) to add to the answer's, or none when the files were not read."""
+    res = getattr(files, "resolution", None)
+    if res is None:
+        return []
+    side["resolution"] = res.detail()
+    return [{"name": name, "value": res.describe(len(files))}]
+
+
+def file_digests(root: str) -> ContainerFiles:
+    """`{relative path: (size, sha256)}` of every file under `root`, read as `resolve_container` resolves it: a file
+    reached through a symlink is read and hashed at the real path that was checked, exactly as a regular file is, so
+    the comparison of files and the container digest cover the bytes that are actually there."""
+    paths, res = resolve_container(root)
+    out = ContainerFiles((rel, (os.path.getsize(real), sha256_file(real))) for rel, real in paths.items())
+    out.resolution = res
     return out
 
 
@@ -1445,6 +1577,7 @@ def evaluate(out: dict, base: str, container: str, patch: bytes | None = None,
     for side, held in (("base", files[0]), ("container", files[1])):
         if held is not None:
             out[side]["sha256"] = digest_or_none(held)
+            out["measurements"] += report_resolution(out[side], FILES_READ[side], held)
     return out
 
 
