@@ -95,9 +95,35 @@ A **pair is valid** only if all hold:
 1. Its two brackets agree within 1% (BLOCK-TIME-1's bracket drift).
 2. None of its four trials has a frame-count defect.
 3. The relay was on schedule in all four.
+4. **Within-pair execution-cost stability.** The arm's two trials, at 5 and
+   20 ms, agree on **coordinator time per evaluated position** and on
+   **worker execution time per evaluated position**, each within **5%**:
+
+   `D = |x(20 ms) − x(5 ms)| / min(x(20 ms), x(5 ms))` ≤ 0.05
+
+   for `x` each of the two. A missing, zero, negative or non-finite value
+   fails. Both costs are expected not to depend on the configured round
+   trip for the same arm, so a larger difference is a change in execution
+   cost inside the pair, which the brackets either side cannot see.
+5. **No stall of the driver inside any of its four trials** (see Pausing).
 
 A parity mismatch in any trial stops the run, as in BLOCK-TIME-1. A void
-pair is kept, with its reasons, and is never fitted or pooled.
+pair is kept, with its measurements and named reasons, and is never fitted
+or pooled.
+
+The 5% is an engineering tolerance, not a measured bound on natural
+variation. It rests on BLOCK-TIME-1, where the same arm's coordinator time
+at 5 and 20 ms agreed within 2 to 3% in undisturbed trials. It was added
+after the functional diagnostic found a pair corrupted by a 5-second stop
+inside its 20 ms trial (coordinator 34.4 against 123.7 ms per position,
+slope 8.98 against 3), whose brackets agreed within 0.7%.
+
+**A failure of rule 4 is reported as an observed execution-cost change,
+not as external interference.** The rule assumes both costs are invariant
+to the configured delay, which is plausible here but not guaranteed:
+different pacing could change scheduling and CPU behaviour. If the rule
+fails systematically for one arm or one delay order, that is a finding to
+report, and not a reason to change the tolerance.
 
 ## Analysis, fixed in advance
 
@@ -106,7 +132,9 @@ pair is kept, with its reasons, and is never fitted or pooled.
 1. **Per pair**: `s = (t(20 ms) − t(5 ms)) / 15 ms`, in round trips per
    evaluated position, for every pair, valid or void; only valid pairs are
    used below. Each pair is reported with its order, bracket drift, both
-   times, and void reasons if any.
+   times, its within-pair coordinator and worker-execution differences, and
+   void reasons if any. The number of pairs failing rule 4 is reported per
+   arm and per delay order.
 2. **Per arm**, if **at least three of its four pairs are valid**: the mean
    of the valid pairs' `s`, its ratio to `24 / W`, each valid pair's `s`,
    and whether the mean lies within 10% of the prediction ("follows the
@@ -173,11 +201,23 @@ a pause voids nothing: every pair is bracketed on its own. Every pause is
 recorded with the pair it preceded and its start and end times, in
 `pauses.json` and the analysis.
 
-Stopping the run's processes with a signal (`SIGSTOP`) is **not** a pause
-under this protocol. It freezes a trial mid-measurement, its time would
-include the stop, and no gate can see that. In an admissible run, a pair
-that overlaps a signal stop is declared void by the operator, with the
-times, before the analysis is read. In a diagnostic it is only recorded.
+**There is no way to pause inside a pair, and none may be used in an
+admissible run.** Stopping the run's processes with a signal (`SIGSTOP`), or
+anything else that suspends the driver mid-trial, is not a pause under this
+protocol: the stopped time lands inside a measurement. The driver therefore
+watches for its own suspension. A thread ticks every 0.2 s; a gap of more
+than 2 s in either the monotonic or the wall clock is recorded as a stall,
+with its start, end and length, in `suspensions.json` and the analysis.
+**Any trial that overlaps a stall voids its pair**, by name (rule 5). A stall
+can also be a starved thread on an overloaded host or a system sleep; it
+voids the pair either way, and is reported as a stall, not as a cause. A
+stall shorter than 2 s is not detected as a stall. Rule 4 catches a shorter
+one only where it lands: in coordinator time (at about 35 ms per position,
+anything over about 0.1 s in a trial exceeds 5%) or in worker execution
+(about 0.24 s). A stall while the coordinator waits on an exchange lands in
+exchange time, which rule 4 does not compare, so one shorter than 2 s there
+is not detected by any rule. The quiet request and the absence of any pause
+mechanism inside a pair are the controls for it.
 
 ## Budget
 
