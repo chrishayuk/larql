@@ -2,7 +2,8 @@
 
 Status: **DRAFT, revision 1. Not frozen, not approved for a qualifying or
 admissible run.** Nothing below has been measured. Once frozen, a change to
-this document or to `block_time_2_model.py` is a new revision, not an edit.
+this document, `block_time_2_model.py` or `block_time_2.py` is a new
+revision, not an edit.
 
 ## Why this exists
 
@@ -130,9 +131,10 @@ slope 8.98 against 3), whose brackets agreed within 0.7%.
 
 **What rule 4 conditions on.** The configured delay per position is fixed
 by the exchange count, which rule 2 fixes. So a pair's slope can leave
-`24 / W` only through changes between its two delays in three things:
-coordinator time, worker handler time, and the transport remainder. Rule 4
-voids pairs on the first two. **A systematic deviation from the model in
+`24 / W` only through changes between its two delays in four things:
+coordinator time, worker execution, the rest of the worker's handler time
+(queueing, decoding, encoding), and the transport remainder. Rule 4 voids
+pairs on the first two only; the other two are not compared within a pair. **A systematic deviation from the model in
 either of them therefore shows as missing slopes, never as "does not
 follow".** To keep it visible, the analysis also reports a **secondary,
 ungated slope** per arm: the mean over pairs that pass every rule except
@@ -140,13 +142,15 @@ rule 4 (with the same three-pair minimum). It is not the registered
 statement.
 
 **The shift rule 4 can still admit** in one pair is `0.05 × (C + E) / 15 ms`
-round trips per position, with both costs moving by the full tolerance in
-the same direction. With BLOCK-TIME-1's undisturbed 20 ms costs that is
+round trips per position, with both checked costs moving by the full
+tolerance in the same direction. It is a lower bound on what the rules
+admit, since handler time outside execution and the transport remainder
+are not checked. With BLOCK-TIME-1's undisturbed 20 ms costs that is
 about 0.42 round trips for every arm: **1.8% of the prediction for
 `sequential` and `block-1`, 3.7% for `block-2`, 7.0% for `block-4`, and
 13.6% for `block-8`**, more than the 10% band. Averaging pairs reduces it
 only if the shifts vary in sign; a delay-dependent effect would not. The
-analysis reports this bound for each arm from the run's own costs.
+analysis reports this bound for each arm from the costs of its valid pairs.
 
 **A failure of rule 4 is reported as an observed execution-cost change,
 not as external interference.** The rule assumes both costs are invariant
@@ -172,8 +176,9 @@ report, and not a reason to change the tolerance.
    reported as **missing**, with the count. The three-of-four rule is a
    minimum for reporting, not a confidence level or significance test.
 3. **Secondary, ungated slope** per arm (see "What rule 4 conditions on"),
-   and the shift rule 4 admits for that arm, from its measured costs.
-   Neither is the registered statement.
+   and the shift rule 4 admits for that arm, from its valid pairs' costs;
+   and for every arm trial, its largest and median per-exchange remainder.
+   None of these is the registered statement.
 4. **Delay order**: per arm, the mean `s` of its valid 5→20 pairs and of
    its valid 20→5 pairs, and their difference. Reported, not gated.
 5. **Worker execution**: for each arm and delay, the worker's execution time
@@ -267,7 +272,11 @@ process alone is not seen** by rule 5:
   positions);
 - a stop of the worker lands in worker execution if it falls inside it
   (caught beyond about 0.24 s), and otherwise in exchange time;
-- a stop of the relay, or any stall while the coordinator waits on an
+- a stop of the relay while it holds queued chunks makes them late on
+  release, which the relay counts; rule 3 then voids the trial once the
+  summed lateness passes 1% of the bracket's time per position over 216
+  positions (about 0.3 s at 130 ms per position). A stop of the relay while
+  it holds nothing, or any other stall while the coordinator waits on an
   exchange, lands in exchange time, which no rule compares within a pair.
 
 How large an undetected stall in exchange time is: one of `d` seconds in a
@@ -278,7 +287,12 @@ considered and not adopted: unlike coordinator and execution time it does
 depend on the delay (BLOCK-TIME-1: 6.4 ms per position for `sequential` at
 0 ms, 10.1 at 20 ms), so there is no invariant to compare. The quiet
 request, the absence of any pause inside a pair, and the per-arm mean over
-three or four pairs are the controls for it.
+three or four pairs are the controls for it. To make one visible, every arm
+trial reports its **largest per-exchange remainder against the median of
+its own exchanges** (round trip less worker handler and delay): a stall in
+one exchange stands far above the median at any delay. It is reported, not
+a gate. The transport-remainder evidence above compares 0 and 20 ms; it is
+the same relay and frames at 5 ms, but that point was not measured.
 
 ## Budget
 
@@ -299,11 +313,13 @@ worker start, **about 70 to 75 minutes**. The quiet window to request is
   not count, and its pair 0, which held a 5-second stop, led to rules 4
   and 5.
 - On freezing: hashes of this document and the contract it depends on
-  (`block_time_2_model.py`, `block_time_model.py`,
+  (`block_time_2_model.py`, `block_time_2.py`, `block_time_model.py`,
   `link_block_frames_model.py`, `link_model.py`, `profile_exact.py`,
   `block_frames.json`) added to `frozen-protocols.json` under
-  "BLOCK-TIME-2 revision 1". The driver and telemetry are implementation:
-  every receipt records their hashes.
+  "BLOCK-TIME-2 revision 1". The driver is frozen too, because the stall
+  watch, the order in which stalls are attached before pairs are judged,
+  and the decision whether a run counts are in it. Telemetry is
+  implementation; every receipt records its hash.
 
 ## Implementation
 
