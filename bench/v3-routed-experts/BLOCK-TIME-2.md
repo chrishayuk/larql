@@ -162,6 +162,23 @@ and downloads of large files, large file writes, and any other CPU- or
 disk-intensive work. Reading, editing small files and `git`/`gh` commands
 that do not rewrite a working tree are allowed.
 
+### Pausing
+
+Other sessions' work takes priority over this run, so the run can be
+held. Creating a file named `PAUSE` in the run directory makes the driver
+finish the pair it is in, then wait before the next pair's first bracket
+until the file is removed. The worker stays resident (about 12 GB) but idle.
+Pausing is possible only there and before warm-up, never inside a pair, so
+a pause voids nothing: every pair is bracketed on its own. Every pause is
+recorded with the pair it preceded and its start and end times, in
+`pauses.json` and the analysis.
+
+Stopping the run's processes with a signal (`SIGSTOP`) is **not** a pause
+under this protocol. It freezes a trial mid-measurement, its time would
+include the stop, and no gate can see that. In an admissible run, a pair
+that overlaps a signal stop is declared void by the operator, with the
+times, before the analysis is read. In a diagnostic it is only recorded.
+
 ## Budget
 
 From BLOCK-TIME-1's trial durations (including process start): a bracket
