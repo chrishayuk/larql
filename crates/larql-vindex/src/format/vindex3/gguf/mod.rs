@@ -9,6 +9,7 @@
 //! fact is missing from the graph — see the format spec's
 //! independent-backend test.
 
+pub mod dense;
 pub mod emit;
 pub mod export;
 pub mod geometry;
