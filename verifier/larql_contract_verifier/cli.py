@@ -95,6 +95,9 @@ def evaluate_operator(contract: str, operator: str, witness: str, container: str
 
 
 NOT_CHECKED = "not_checked"
+# What `checkpoint.container_sha256` raises for a container it cannot digest: a file it cannot read, or (ValueError) a
+# file name that is not valid UTF-8 and so has no place in the digest.
+NO_DIGEST = (OSError, ValueError)
 
 
 def with_axes(out: dict) -> dict:
@@ -135,7 +138,7 @@ def judge_patch(contract: str, patch: str, base: str, container: str) -> dict:
         out["patch"]["sha256"] = hashlib.sha256(Path(patch).read_bytes()).hexdigest()
         out["base"]["sha256"] = checkpoint.container_sha256(os.path.abspath(base))
         before = checkpoint.container_sha256(os.path.abspath(container))
-    except OSError as e:
+    except NO_DIGEST as e:
         return q8_0_t2.could_not(out, f"an input can't be read: {e}")
     out["container"]["sha256"] = before
     structured_patch.evaluate(out, os.path.abspath(patch), os.path.abspath(base), os.path.abspath(container))
@@ -143,11 +146,11 @@ def judge_patch(contract: str, patch: str, base: str, container: str) -> dict:
     try:
         unchanged = (checkpoint.container_sha256(os.path.abspath(container)) == before
                      and checkpoint.container_sha256(os.path.abspath(base)) == out["base"]["sha256"])
-    except OSError:
+    except NO_DIGEST:
         unchanged = False
     if not unchanged and out["status"] != "could_not_evaluate":
         out.update(violations=0, measurements=[], offending=[])
-        q8_0_t2.could_not(out, "an input changed during the evaluation")
+        q8_0_t2.could_not(out, "an input changed during the evaluation, or has no digest to hold it to")
     return out
 
 
@@ -189,11 +192,19 @@ def evaluate_ledger(contract: str, base: str, container: str, patch: str | None 
     try:
         unchanged = (checkpoint.container_sha256(os.path.abspath(container)) == out["container"]["sha256"]
                      and checkpoint.container_sha256(os.path.abspath(base)) == out["base"]["sha256"])
-    except OSError:
+    except NO_DIGEST:
         unchanged = False
     if not unchanged:
-        out.update(violations=0, offending=[])
-        q8_0_t2.could_not(out, "an input changed during the evaluation")
+        # Neither verdict stands on bytes that changed under it: the halves are withdrawn with the status.
+        reason = "an input changed during the evaluation, or has no digest to hold it to"
+        for half in out["verdicts"].values():
+            half.update(status="could_not_evaluate", violations=0, offending=[], offending_total=0,
+                        reasons=half["reasons"] + [reason])
+        detail = dict(out["provenance_detail"], base_binding="could_not_evaluate", op_digest="could_not_evaluate")
+        out.update(violations=0, offending=[], failed_halves=list(out["verdicts"]),
+                   numerical_satisfaction="could_not_evaluate", ledger_integrity="could_not_evaluate",
+                   provenance="could_not_evaluate", provenance_detail=detail)
+        q8_0_t2.could_not(out, reason)
     return out
 
 
@@ -217,7 +228,7 @@ def evaluate_pack(contract: str, container: str) -> dict:
     # The digest and the bytes judged came from separate reads, so a verdict needs the input not to have changed.
     try:
         unchanged = checkpoint.container_sha256(os.path.abspath(container)) == out["container"]["sha256"]
-    except (OSError, ValueError):  # ValueError: a file name with no digest (not valid UTF-8)
+    except NO_DIGEST:
         unchanged = False
     if not unchanged:
         out.update(violations=0, offending=[])
@@ -249,7 +260,7 @@ def evaluate_residency(contract: str, record: str, container: str) -> dict:
     # The digest and the bytes judged came from separate reads, so a verdict needs the input not to have changed.
     try:
         unchanged = checkpoint.container_sha256(os.path.abspath(container)) == out["container"]["sha256"]
-    except (OSError, ValueError):  # ValueError: a file name with no digest (not valid UTF-8)
+    except NO_DIGEST:
         unchanged = False
     if not unchanged:
         # Neither verdict stands on bytes that changed under it: the halves are withdrawn with the status.

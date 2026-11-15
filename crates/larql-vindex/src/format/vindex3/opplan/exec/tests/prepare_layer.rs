@@ -77,6 +77,12 @@ impl KvState for Materialising {
     fn set_position(&mut self, position: usize) {
         self.inner.set_position(position)
     }
+    fn invalidate(&mut self, reason: &str) {
+        self.inner.invalidate(reason)
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.inner.invalidated()
+    }
     fn recurrent_state(&mut self, layer: usize) -> Result<&mut RecurrentState, ContinuationError> {
         self.inner.recurrent_state(layer)
     }
@@ -105,6 +111,12 @@ impl KvState for SkipsTheHook {
     }
     fn set_position(&mut self, position: usize) {
         self.0.set_position(position)
+    }
+    fn invalidate(&mut self, reason: &str) {
+        self.0.invalidate(reason)
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.0.invalidated()
     }
     fn recurrent_state(&mut self, layer: usize) -> Result<&mut RecurrentState, ContinuationError> {
         self.0.recurrent_state(layer)

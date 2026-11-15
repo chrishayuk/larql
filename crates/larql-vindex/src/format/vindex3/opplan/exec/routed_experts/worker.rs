@@ -353,10 +353,18 @@ impl PreparedRoutedExperts {
             }
         }
         let mut out = Vec::with_capacity(pairs);
+        let mut transform_ns = 0u64;
         for (expert, members) in &groups {
             for index in members {
                 let row = &rows[*index];
-                let output = self.transform(backend, prepared, *expert, row.input)?;
+                // Timed only when accounting was asked for, as the
+                // single-row profiled path does.
+                let timed = accounting.as_ref().map(|_| std::time::Instant::now());
+                let output = self.transform(backend, prepared, *expert, row.input);
+                if let Some(timed) = timed {
+                    transform_ns += timed.elapsed().as_nanos() as u64;
+                }
+                let output = output?;
                 super::super::dense_ffn::validate_row(&output, self.hidden)?;
                 out.push(RowExpertOutput {
                     row: row.id,
@@ -371,6 +379,7 @@ impl PreparedRoutedExperts {
                 pairs,
                 distinct_experts: groups.len(),
                 transform_calls: out.len(),
+                transform_ns,
             };
         }
         Ok(out)

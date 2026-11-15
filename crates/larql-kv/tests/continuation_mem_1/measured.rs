@@ -731,6 +731,12 @@ impl<P: Inspect> ContinuationProvider for Measured<P> {
             *sink.lock().expect("sink") = Some(inventory);
         }
     }
+    fn invalidate(&mut self, reason: &str) {
+        self.inner.invalidate(reason)
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.inner.invalidated()
+    }
 
     fn recurrent_state(&mut self, layer: usize) -> Result<&mut RecurrentState, ContinuationError> {
         self.close_window();

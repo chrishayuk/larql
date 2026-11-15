@@ -74,7 +74,9 @@ fn carried_files(src: &Path) -> Result<Vec<String>, WeightPatchError> {
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().to_string();
-        if entry.file_type()?.is_dir() {
+        // `Path::is_dir` follows a symlink: a linked directory is a directory here, refused by name like any
+        // other, where the entry's own file type would call it a file and the copy would fail on it.
+        if entry.path().is_dir() {
             if name != SEGMENTS_DIR {
                 return Err(WeightPatchError::UnexpectedEntry(name));
             }

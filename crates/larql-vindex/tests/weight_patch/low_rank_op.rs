@@ -136,6 +136,28 @@ fn resolving_gives_exactly_what_the_frozen_interpreter_gives_and_only_written_el
     }
 }
 
+/// A top-level symlink to a directory is a directory the container does not define: refused by name before
+/// anything is written, as a real directory is, and not as an I/O failure of a copy.
+#[cfg(unix)]
+#[test]
+fn a_top_level_symlink_to_a_directory_is_refused_by_name() {
+    const LINKED: &str = "linked-directory";
+    let src = source_with_pack();
+    let elsewhere = src.out("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, src.container.join(LINKED)).unwrap();
+    let op = the_op(&src);
+    let (declared, origins) =
+        declare_patches(&src.container, &[WeightOpRef::LowRankColumns(&op)]).unwrap();
+    let out = src.out("linked.vindex3");
+    let refusal = apply_declared_patches(&src.container, &declared, &origins, &out).unwrap_err();
+    assert!(
+        matches!(&refusal, WeightPatchError::UnexpectedEntry(name) if name == LINKED),
+        "{refusal}"
+    );
+    assert!(!out.exists(), "a refused compile left a container behind");
+}
+
 #[test]
 fn compiling_records_the_operation_and_leaves_every_element_outside_the_written_set_byte_identical()
 {
@@ -395,12 +417,27 @@ mod footprint {
     fn the_session_overlay_holds_it_by_the_same_rule_and_counts_it_as_structured() {
         let src = source_with_pack();
         let mut overlay = KnowledgeOverlay::new();
-        overlay
-            .stage_low_rank_columns_op(rank_one(&src, &[8, 9]))
-            .unwrap();
+        let tensor = rank_one(&src, &[8, 9]).tensor;
+        // Only an `add_low_rank_columns` op makes its tensor an operation target, and only its own tensor.
         overlay
             .stage_structured_op(remove_direction(&src, &[40]))
             .unwrap();
+        assert!(!overlay.is_operation_target(&tensor));
+        overlay
+            .stage_low_rank_columns_op(rank_one(&src, &[8, 9]))
+            .unwrap();
+        assert!(overlay.is_operation_target(&tensor));
+        assert!(!overlay.is_operation_target("another.tensor"));
+        // A removal too large for the element form is noted, never refused, and only where it would not compile.
+        use larql_vindex::format::vindex3::weight_patch::MAX_PATCH_ELEMENTS;
+        let over = MAX_PATCH_ELEMENTS + 1;
+        assert!(overlay.element_form_notice(&tensor, over).is_none());
+        assert!(overlay
+            .element_form_notice("another.tensor", MAX_PATCH_ELEMENTS)
+            .is_none());
+        let notice = overlay.element_form_notice("another.tensor", over).unwrap();
+        assert!(notice.contains("another.tensor"), "{notice}");
+        assert!(notice.contains("in either order"), "{notice}");
         assert_eq!(overlay.structured_op_count(), 2);
         assert_eq!(overlay.weight_edit_count(), 0);
         assert!(matches!(

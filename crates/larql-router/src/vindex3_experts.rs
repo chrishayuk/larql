@@ -81,17 +81,20 @@ impl ExpertTransport for HttpExpertShards {
         rows: &[rows_wire::Row],
     ) -> Result<Vec<rows_wire::Output>, String> {
         let started = profile::enabled().then(std::time::Instant::now);
-        let result = self.rows_exchange(shard, layer, rows);
-        if let Some(started) = started {
-            // One record per network request, so requests can be counted
-            // apart from the pairs they carried.
-            profile::record_provider_call(serde_json::json!({
+        // One record per network request, so requests can be counted
+        // apart from the pairs they carried.
+        let mut record = started.map(|_| {
+            serde_json::json!({
                 "wire": "expert-rows-f32-v1", "shard": shard, "layer": layer,
                 "rows": rows.len(),
                 "pairs": rows.iter().map(|row| row.experts.len()).sum::<usize>(),
-                "total_ns": started.elapsed().as_nanos() as u64,
-                "complete": result.is_ok(),
-            }));
+            })
+        });
+        let result = self.rows_exchange(shard, layer, rows, record.as_mut());
+        if let (Some(mut record), Some(started)) = (record, started) {
+            record["total_ns"] = (started.elapsed().as_nanos() as u64).into();
+            record["complete"] = result.is_ok().into();
+            profile::record_provider_call(record);
         }
         result
     }
@@ -205,6 +208,7 @@ impl HttpExpertShards {
         shard: usize,
         layer: usize,
         rows: &[rows_wire::Row],
+        mut record: Option<&mut serde_json::Value>,
     ) -> Result<Vec<rows_wire::Output>, String> {
         let binding = self.bindings.get(shard).ok_or("unknown expert worker")?;
         let hidden = binding.program.hidden;
@@ -214,13 +218,21 @@ impl HttpExpertShards {
             .map_err(|_| "expert sequence exhausted")?;
         let body = rows_wire::encode_request(handle, sequence, layer, hidden, rows)?;
         let pairs: usize = rows.iter().map(|row| row.experts.len()).sum();
-        let response = self
+        if let Some(record) = record.as_deref_mut() {
+            record["request_bytes"] = body.len().into();
+        }
+        // A profiled call asks the worker for its own timing. The header is
+        // diagnostics only and the frame is the same either way.
+        let roundtrip = record.as_ref().map(|_| std::time::Instant::now());
+        let mut request = self
             .client
             .post(&self.rows_urls[shard])
             .header(reqwest::header::CONTENT_TYPE, rows_wire::CONTENT_TYPE)
-            .body(body)
-            .send()
-            .map_err(|e| e.to_string())?;
+            .body(body);
+        if record.is_some() {
+            request = request.header(wire::PROFILE_HEADER, "1");
+        }
+        let response = request.send().map_err(|e| e.to_string())?;
         if !response.status().is_success() {
             return Err(format!(
                 "expert worker refused the multi-row frame: HTTP {}",
@@ -234,12 +246,26 @@ impl HttpExpertShards {
         {
             return Err("expert rows response content type mismatch".into());
         }
+        let worker = record
+            .as_ref()
+            .and_then(|_| response.headers().get(wire::PROFILE_HEADER))
+            .and_then(|h| serde_json::from_slice::<wire::WorkerTiming>(h.as_bytes()).ok());
         let limit = rows_wire::response_len(hidden, pairs)?;
         let mut bytes = Vec::with_capacity(limit);
         response
             .take(limit as u64 + 1)
             .read_to_end(&mut bytes)
             .map_err(|e| e.to_string())?;
+        if let (Some(record), Some(roundtrip)) = (record, roundtrip) {
+            let ns = roundtrip.elapsed().as_nanos() as u64;
+            record["roundtrip_ns"] = ns.into();
+            record["response_bytes"] = bytes.len().into();
+            record["worker_profile_complete"] = worker.is_some().into();
+            if let Some(worker) = worker {
+                record["transport_remainder_ns"] = ns.checked_sub(worker.handler_ns).into();
+                record["worker"] = serde_json::to_value(worker).map_err(|e| e.to_string())?;
+            }
+        }
         // A request row carries at most `pairs` experts, which bounds what a
         // reply may claim per row without trusting the reply's own header.
         let decoded = rows_wire::decode_response(&bytes, hidden, rows.len(), pairs)?;

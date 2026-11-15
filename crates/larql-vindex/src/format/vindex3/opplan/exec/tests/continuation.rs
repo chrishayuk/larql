@@ -492,6 +492,11 @@ fn a_kv_only_provider_refuses_the_two_region_layer() {
             0
         }
         fn set_position(&mut self, _position: usize) {}
+        // Holds no state a failed advance could leave behind.
+        fn invalidate(&mut self, _reason: &str) {}
+        fn invalidated(&self) -> Option<&str> {
+            None
+        }
         fn recurrent_state(
             &mut self,
             layer: usize,
@@ -574,6 +579,11 @@ fn a_kv_only_provider_refuses_a_latent_layer_and_names_that_region() {
             0
         }
         fn set_position(&mut self, _position: usize) {}
+        // Holds no state a failed advance could leave behind.
+        fn invalidate(&mut self, _reason: &str) {}
+        fn invalidated(&self) -> Option<&str> {
+            None
+        }
         fn recurrent_state(
             &mut self,
             layer: usize,

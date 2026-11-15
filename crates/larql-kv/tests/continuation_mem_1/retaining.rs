@@ -46,6 +46,8 @@ impl RetentionCheck {
 pub struct ExactRetention {
     layers: Vec<Layer>,
     position: usize,
+    /// Why this state can no longer be continued, once a failed advance could not be put back.
+    invalid: Option<String>,
     armed: bool,
     pub checks: Vec<RetentionCheck>,
 }
@@ -60,6 +62,7 @@ impl Default for ExactRetention {
         Self {
             layers: Vec::new(),
             position: 0,
+            invalid: None,
             armed: false,
             checks: Vec::with_capacity(CHECK_CAPACITY),
         }
@@ -150,6 +153,12 @@ impl ContinuationProvider for ExactRetention {
 
     fn set_position(&mut self, position: usize) {
         self.position = position;
+    }
+    fn invalidate(&mut self, reason: &str) {
+        self.invalid = Some(reason.to_string());
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.invalid.as_deref()
     }
 
     fn recurrent_state(&mut self, layer: usize) -> Result<&mut RecurrentState, ContinuationError> {

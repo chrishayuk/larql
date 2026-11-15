@@ -66,6 +66,8 @@ gpu = [
 ]
 
 [dev-dependencies]
+# v3_block_check example: wraps the expert transport to count frames
+larql-router-protocol = { path = "../larql-router-protocol" }
 # `test-utils` exposes `larql_models::test_fixtures::make_test_weights`,
 # used by run_cmd_image tests to borrow a real ModelConfig without
 # enumerating every field by hand. Production builds don't compile it.

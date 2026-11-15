@@ -208,6 +208,8 @@ pub struct MappedCodec {
     map: CompressMap,
     layers: Vec<Layer>,
     position: usize,
+    /// Why this state can no longer be continued, once a failed advance could not be put back.
+    invalid: Option<String>,
     scratch_layer: Option<usize>,
     scratch_base: usize,
     keys: Vec<f32>,
@@ -224,6 +226,7 @@ impl MappedCodec {
             map,
             layers: Vec::new(),
             position: 0,
+            invalid: None,
             scratch_layer: None,
             scratch_base: 0,
             keys: Vec::new(),
@@ -387,6 +390,12 @@ impl ContinuationProvider for MappedCodec {
     fn set_position(&mut self, position: usize) {
         self.position = position;
     }
+    fn invalidate(&mut self, reason: &str) {
+        self.invalid = Some(reason.to_string());
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.invalid.as_deref()
+    }
 
     fn recurrent_state(&mut self, layer: usize) -> Result<&mut RecurrentState, ContinuationError> {
         Err(ContinuationError::RecurrentUnsupported {
@@ -510,6 +519,12 @@ impl<P: ContinuationProvider + Retained> ContinuationProvider for Recorder<P> {
     }
     fn set_position(&mut self, position: usize) {
         self.inner.set_position(position)
+    }
+    fn invalidate(&mut self, reason: &str) {
+        self.inner.invalidate(reason)
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.inner.invalidated()
     }
     fn recurrent_state(&mut self, layer: usize) -> Result<&mut RecurrentState, ContinuationError> {
         self.inner.recurrent_state(layer)

@@ -323,6 +323,12 @@ impl KvState for NoRollback {
     fn set_position(&mut self, position: usize) {
         self.0.set_position(position)
     }
+    fn invalidate(&mut self, reason: &str) {
+        self.0.invalidate(reason)
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.0.invalidated()
+    }
     fn recurrent_state(&mut self, layer: usize) -> Result<&mut RecurrentState, ContinuationError> {
         self.0.recurrent_state(layer)
     }

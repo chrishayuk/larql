@@ -276,6 +276,10 @@ impl Session {
         let Backend::Vindex3 { overlay, .. } = &mut self.backend else {
             unreachable!("matched above")
         };
+        // Whether this op fits a compile depends on what else is compiled with it, so it is not refused
+        // here: staging refuses what is wrong with the statement alone. It is said, so the compile's refusal
+        // is not the first the author hears of it.
+        let notice = overlay.element_form_notice(tensor, resolved.edits.len());
         overlay
             .stage_structured_op(op.clone())
             .map_err(refused_direction)?;
@@ -291,6 +295,7 @@ impl Session {
             file.bits.len(),
             resolved.edits.len()
         )];
+        out.extend(notice.map(|notice| format!("  note: {notice}")));
         out.push(format!("  op digest {}", &digest[..16]));
         out.push("  results are BF16 as the profile defines them; no f32 delta is involved".into());
         out.push(format!(

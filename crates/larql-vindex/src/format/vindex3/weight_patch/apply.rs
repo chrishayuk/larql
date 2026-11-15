@@ -286,6 +286,19 @@ pub fn plan_declared_patch(
     }
 }
 
+/// Refuse more listed elements than one compile may carry ([`MAX_PATCH_ELEMENTS`]). The one statement of the
+/// bound. Only the compile refuses by it, because the count depends on the whole set of ops compiled together;
+/// staging uses it to warn.
+pub fn check_element_count(count: usize) -> Result<(), WeightPatchError> {
+    match count > MAX_PATCH_ELEMENTS {
+        true => Err(WeightPatchError::TooManyElements {
+            count,
+            limit: MAX_PATCH_ELEMENTS,
+        }),
+        false => Ok(()),
+    }
+}
+
 /// What only the set can break, cheapest first: the element total within
 /// the limit, then [`validate`] for each patch, and no tensor twice.
 fn validate_all(patches: &[DeclaredPatch]) -> Result<(), WeightPatchError> {
@@ -293,13 +306,7 @@ fn validate_all(patches: &[DeclaredPatch]) -> Result<(), WeightPatchError> {
         return Err(WeightPatchError::Empty);
     }
     // Element patches only: an operation patch lists no elements and is bounded by `MAX_STRUCTURED_*`.
-    let count: usize = patches.iter().map(|p| p.len()).sum();
-    if count > MAX_PATCH_ELEMENTS {
-        return Err(WeightPatchError::TooManyElements {
-            count,
-            limit: MAX_PATCH_ELEMENTS,
-        });
-    }
+    check_element_count(patches.iter().map(|p| p.len()).sum())?;
     let mut names = BTreeSet::new();
     for p in patches {
         validate(p)?;
@@ -337,12 +344,7 @@ fn validate(patch: &DeclaredPatch) -> Result<(), WeightPatchError> {
     if patch.len() == 0 {
         return Err(WeightPatchError::Empty);
     }
-    if patch.len() > MAX_PATCH_ELEMENTS {
-        return Err(WeightPatchError::TooManyElements {
-            count: patch.len(),
-            limit: MAX_PATCH_ELEMENTS,
-        });
-    }
+    check_element_count(patch.len())?;
     if let DeclaredPatch::Deltas(p) = patch {
         for e in &p.edits {
             if !e.delta.is_finite() {

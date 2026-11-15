@@ -284,6 +284,12 @@ impl KvState for Perturbed {
     fn set_position(&mut self, position: usize) {
         self.inner.set_position(position)
     }
+    fn invalidate(&mut self, reason: &str) {
+        self.inner.invalidate(reason)
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.inner.invalidated()
+    }
     fn prepare_continuation(
         &mut self,
         layers: &[LayerContinuationGeometry],
@@ -332,5 +338,59 @@ fn a_one_ulp_perturbation_is_caught_on_both_fixtures() {
         let record = drive(&plan, &store, prompt, &mut perturbed);
         assert!(perturbed.moved, "{name}: the perturbation never fired");
         assert!(record != reference, "{name}: a one-ULP change went unseen");
+    }
+}
+
+/// Codec width and exact-K window for the codec providers built here.
+const CODEC_BITS: u8 = 4;
+const CODEC_RECENT_WINDOW: usize = 2;
+
+/// Every shipped provider answers an invalidation itself: it records the
+/// reason, and from then on neither a batch prefill nor a decode step runs
+/// over it. A failed rollback makes the STATE unusable, whichever provider
+/// holds it.
+#[test]
+fn every_shipped_provider_records_an_invalidation_and_is_then_refused() {
+    const REASON: &str = "a failed advance could not be put back";
+    const UNUSABLE: &str = "unusable and must be discarded";
+    let (_c, plan, store) = open(miniature_glimmer, "invalidated");
+    let backend = ReferenceBackend::new();
+    let providers: [(&str, Box<dyn KvState + Send>); 5] = [
+        ("row/v1", Box::new(RowKvState::default())),
+        ("canonical/v1", Box::new(CanonicalKvState::new())),
+        ("window/v1", Box::new(super::super::WindowKvState::new())),
+        (
+            "codec/v1",
+            Box::new(super::super::CodecKvState::new(CODEC_BITS)),
+        ),
+        (
+            "codec-recent",
+            Box::new(super::super::CodecRecentKvState::new(
+                CODEC_BITS,
+                CODEC_RECENT_WINDOW,
+            )),
+        ),
+    ];
+    for (name, mut state) in providers {
+        assert!(state.invalidated().is_none(), "{name}: fresh");
+        state.invalidate(REASON);
+        assert_eq!(state.invalidated(), Some(REASON), "{name}: not recorded");
+
+        let prefill = prefill_plan(&plan, &store, &G_TOKENS, &backend, &mut *state);
+        let refusal = prefill.map(|_| ()).unwrap_err().to_string();
+        assert!(
+            refusal.contains(UNUSABLE) && refusal.contains(REASON),
+            "{name}: {refusal}"
+        );
+        assert_eq!(state.position(), 0, "{name}: a refused prefill moved it");
+
+        let mut session =
+            DecodeSession::with_kv_state(&plan, &store, &backend, &mut *state).unwrap();
+        let refusal = session
+            .step(G_TOKENS[0])
+            .map(|_| ())
+            .unwrap_err()
+            .to_string();
+        assert!(refusal.contains(UNUSABLE), "{name}: {refusal}");
     }
 }

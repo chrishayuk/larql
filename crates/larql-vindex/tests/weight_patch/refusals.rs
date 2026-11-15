@@ -45,6 +45,17 @@ fn the_element_limit_is_enforced() {
 }
 
 #[test]
+fn the_element_limit_has_one_statement_and_is_inclusive() {
+    use larql_vindex::format::vindex3::weight_patch::check_element_count;
+    assert!(check_element_count(0).is_ok());
+    assert!(check_element_count(MAX_PATCH_ELEMENTS).is_ok());
+    assert!(matches!(
+        check_element_count(MAX_PATCH_ELEMENTS + 1).unwrap_err(),
+        WeightPatchError::TooManyElements { count, limit } if count == MAX_PATCH_ELEMENTS + 1 && limit == MAX_PATCH_ELEMENTS
+    ));
+}
+
+#[test]
 fn conflicting_edits_to_one_element_are_refused() {
     let err = refusal(on(TENSOR, vec![edit(3, 4, 0.5), edit(3, 4, 0.25)]));
     assert!(matches!(

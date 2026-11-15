@@ -170,6 +170,7 @@ pub async fn forward_rows(
         .headers()
         .get(wire::PROFILE_HEADER)
         .is_some_and(|h| h == "1");
+    let started = accounted.then(std::time::Instant::now);
     if request
         .headers()
         .get(axum::http::header::CONTENT_TYPE)
@@ -217,7 +218,18 @@ pub async fn forward_rows(
         request.layer,
         request.rows.len(),
     );
-    let (outputs, accounting) = tokio::task::spawn_blocking(move || {
+    // Diagnostics only, as for the single-row frame: read when the caller
+    // asked, never part of the numerical frame.
+    let mut timing = wire::WorkerTiming::default();
+    if let Some(started) = started {
+        timing.decode_ns = started.elapsed().as_nanos() as u64;
+    }
+    let queued = accounted.then(std::time::Instant::now);
+    let (outputs, accounting, mut timing) = tokio::task::spawn_blocking(move || {
+        if let Some(queued) = queued {
+            timing.queue_ns = queued.elapsed().as_nanos() as u64;
+        }
+        let execute = accounted.then(std::time::Instant::now);
         let rows: Vec<_> = request
             .rows
             .iter()
@@ -227,18 +239,24 @@ pub async fn forward_rows(
                 experts: &row.experts,
             })
             .collect();
-        let mut accounting = Default::default();
-        model
+        let mut accounting: larql_inference::vindex3::routed_experts::RowsAccounting =
+            Default::default();
+        let outputs = model
             .expert_wire
             .as_ref()
             .unwrap()
             .execution
-            .apply_rows(layer, &rows, Some(&mut accounting))
-            .map(|outputs| (outputs, accounting))
-            .map_err(|e| ServerError::BadRequest(e.to_string()))
+            .apply_rows(layer, &rows, accounted.then_some(&mut accounting))
+            .map_err(|e| ServerError::BadRequest(e.to_string()))?;
+        if let Some(execute) = execute {
+            timing.execute_ns = execute.elapsed().as_nanos() as u64;
+            timing.experts_ns = accounting.transform_ns;
+        }
+        Ok::<_, ServerError>((outputs, accounting, timing))
     })
     .await
     .map_err(|e| ServerError::Internal(e.to_string()))??;
+    let encode = accounted.then(std::time::Instant::now);
     let outputs: Vec<_> = outputs
         .into_iter()
         .map(|o| rows_wire::Output {
@@ -266,6 +284,18 @@ pub async fn forward_rows(
             value
                 .parse()
                 .map_err(|e| ServerError::Internal(format!("expert rows accounting: {e}")))?,
+        );
+    }
+    if let (Some(started), Some(encode)) = (started, encode) {
+        timing.encode_ns = encode.elapsed().as_nanos() as u64;
+        timing.handler_ns = started.elapsed().as_nanos() as u64;
+        let value =
+            serde_json::to_string(&timing).map_err(|e| ServerError::Internal(e.to_string()))?;
+        response.headers_mut().insert(
+            wire::PROFILE_HEADER,
+            value
+                .parse()
+                .map_err(|e| ServerError::Internal(format!("expert timing header: {e}")))?,
         );
     }
     Ok(response)

@@ -194,6 +194,69 @@ class Fixture(unittest.TestCase):
             " | ".join(out["verdicts"][half]["reasons"])
 
 
+class Withdrawn(Fixture):
+    """An answer the CLI withdraws, and a ledger section that is not the object it should be."""
+
+    def assertWithdrawn(self, out):
+        self.assertEqual((out["status"], out["violations"], out["offending"]), (CNE, 0, []))
+        self.assertEqual((out["numerical_satisfaction"], out["ledger_integrity"], out["provenance"]), (CNE, CNE, CNE))
+        self.assertEqual(out["failed_halves"], [W.NUMERICAL, W.LEDGER])
+        self.assertEqual({h["status"] for h in out["verdicts"].values()}, {CNE})
+        self.assertEqual({h["violations"] for h in out["verdicts"].values()}, {0})
+        self.assertEqual(out["provenance_detail"]["base_binding"], CNE)
+        self.assertEqual(out["provenance_detail"]["op_digest"], CNE)
+
+    def test_an_input_that_changed_withdraws_both_verdicts_and_not_only_the_status(self):
+        root = self.copy("low_rank_k2")
+        self.assertHalves(self.judge(root), SAT, SAT)
+        with mock.patch.object(cli.checkpoint, "container_sha256", lambda root: "0" * 64):
+            self.assertWithdrawn(self.judge(root))
+
+    def test_a_violated_verdict_on_an_input_that_changed_is_withdrawn_too(self):
+        root = self.copy("low_rank_k2")
+        self.edit_ledger(root, lambda doc: doc["source"].update(model="another"))
+        self.assertEqual(self.judge(root)["status"], VIOL)
+        with mock.patch.object(cli.checkpoint, "container_sha256", lambda root: "0" * 64):
+            self.assertWithdrawn(self.judge(root))
+
+    def test_a_container_with_no_digest_at_the_second_read_is_withdrawn_and_not_a_failure(self):
+        def no_digest(_root):  # what a file name that is not valid UTF-8 raises on Linux
+            raise ValueError("a file name is not valid UTF-8")
+
+        with mock.patch.object(cli.checkpoint, "container_sha256", no_digest):
+            self.assertWithdrawn(self.judge(self.copy("low_rank_k2")))
+
+    def test_a_file_name_that_is_not_text_is_withdrawn_at_the_first_digest_and_not_an_exception(self):
+        # Such a name cannot be created on every file system, so the listing is given one: it arrives from the
+        # operating system surrogate-escaped, which is what a strict encode refuses. No digest function is mocked.
+        real = W.file_digests
+
+        def with_a_bad_name(root):
+            files = real(root)
+            files["segments/bad\udcff"] = (0, sha(b""))
+            return files
+
+        for tamper in (False, True):
+            with self.subTest(ledger_also_wrong=tamper):
+                root = self.copy("low_rank_k2")
+                if tamper:
+                    self.edit_ledger(root, lambda doc: doc["source"].update(model="another"))
+                with mock.patch.object(W, "file_digests", with_a_bad_name):
+                    out = self.judge(root)
+                self.assertWithdrawn(out)
+                self.assertIsNone(out["container"]["sha256"])
+
+    def test_a_canonical_section_that_is_not_an_object_is_a_ledger_finding(self):
+        for section in ("source", "result"):
+            for value in ("x", [1], 7, True):
+                with self.subTest(section=section, value=value):
+                    root = self.copy("low_rank_k2")
+                    self.edit_ledger(root, lambda doc: doc[section].update(canonical=value))
+                    out = self.judge(root)
+                    self.assertEqual(out["ledger_integrity"], VIOL, out["reasons"])
+                    self.assertIn(f"{section}.canonical.", self.findings(out, W.LEDGER))
+
+
 class Untampered(Fixture):
     def test_each_committed_fixture_verifies_on_both_halves(self):
         for case in CASES:

@@ -121,6 +121,8 @@ pub struct CodecKvState {
     codec: TurboQuant,
     layers: Vec<Layer>,
     position: usize,
+    /// Why this state can no longer be continued, once a failed advance could not be put back.
+    invalid: Option<String>,
     scratch: Scratch,
     encode_f32: Vec<f32>,
     encode_u8: Vec<u8>,
@@ -136,6 +138,7 @@ impl CodecKvState {
             codec: TurboQuant::new(bits),
             layers: Vec::new(),
             position: 0,
+            invalid: None,
             scratch: Scratch::default(),
             encode_f32: Vec::new(),
             encode_u8: Vec::new(),
@@ -330,6 +333,12 @@ impl KvState for CodecKvState {
 
     fn set_position(&mut self, position: usize) {
         self.position = position;
+    }
+    fn invalidate(&mut self, reason: &str) {
+        self.invalid = Some(reason.to_string());
+    }
+    fn invalidated(&self) -> Option<&str> {
+        self.invalid.as_deref()
     }
 
     fn recurrent_state(&mut self, layer: usize) -> Result<&mut RecurrentState, ContinuationError> {

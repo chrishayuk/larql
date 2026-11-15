@@ -6,8 +6,7 @@ use std::path::Path;
 use super::super::bf16;
 use super::super::error::WeightPatchError;
 use super::super::ledger::{EditEncoding, LedgerEdit};
-use super::super::op_target::{tensor_sha256, OperationPatch};
-use super::read::read_bf16_tensor;
+use super::super::op_target::OperationPatch;
 use super::{DeclaredPatch, BF16_BYTES, BF16_DTYPE};
 use crate::format::vindex3::encode::segment::{
     read_exact_at, read_segment_header, SegmentHeader, SegmentTensor,
@@ -153,8 +152,7 @@ pub(super) fn resolve_edits<'a>(
             )));
         }
         // The ops were resolved against a base; refuse to write them over another.
-        let (_, base) = read_bf16_tensor(src, &p.tensor)?;
-        if tensor_sha256(&base) != p.base_tensor_sha256 {
+        if stored_tensor_sha256(src, at)? != p.base_tensor_sha256 {
             return Err(WeightPatchError::Structured(format!(
                 "`{}` differs from the base its operations were compiled against",
                 p.tensor
@@ -224,4 +222,29 @@ pub(super) fn resolve_edits<'a>(
         DeclaredPatch::Operations(_) => unreachable!("returned above"),
     }
     Ok(Resolved::Edits(out))
+}
+
+/// How much of a stored tensor is held in memory at a time while it is hashed.
+const HASH_CHUNK_BYTES: usize = 1 << 20;
+
+/// The digest [`tensor_sha256`](super::super::op_target::tensor_sha256) gives the located tensor, read from its
+/// segment a chunk at a time. Stored BF16 is little-endian, which is the byte order that digest is defined over, so
+/// the stored bytes are hashed as they are and the tensor is never held whole: an operation target may be gigabytes.
+fn stored_tensor_sha256(src: &Path, at: &Located) -> Result<String, WeightPatchError> {
+    use sha2::{Digest, Sha256};
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = File::open(src.join(&at.entry.segment))?;
+    file.seek(SeekFrom::Start(at.payload_start + at.tensor.offset))?;
+    let elements: u64 = at.tensor.shape.iter().map(|d| *d as u64).product();
+    let mut stored = file.take(elements * BF16_BYTES);
+    let mut hash = Sha256::new();
+    let mut chunk = vec![0u8; HASH_CHUNK_BYTES];
+    // A segment shorter than its tensor table says hashes to another digest, and is refused as another base.
+    loop {
+        let read = stored.read(&mut chunk)?;
+        if read == 0 {
+            return Ok(super::hex(&hash.finalize()));
+        }
+        hash.update(&chunk[..read]);
+    }
 }
