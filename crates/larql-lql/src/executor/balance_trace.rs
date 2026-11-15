@@ -27,7 +27,8 @@
 use std::sync::{Arc, Mutex};
 
 use super::vindex3::{
-    compose_overrides, encode_raw_prompt, top_k_probs, v3_continuation, V3Runtime,
+    confirm_patched_weights_ran, encode_raw_prompt, execution_overrides, top_k_probs,
+    v3_continuation, V3Runtime,
 };
 use crate::error::LqlError;
 use larql_vindex::format::vindex3::knowledge::KnowledgeOverlay;
@@ -142,18 +143,18 @@ impl<'a> StepContext<'a> {
     pub fn top_k(&self, prompt: &str, k: usize) -> Result<Vec<(u32, f32)>, LqlError> {
         let ids = encode_raw_prompt(self.tokenizer, prompt, self.bos)?;
         let continuation = v3_continuation(self.runtime)?;
-        let output = match compose_overrides(self.runtime, self.overlay)? {
-            Some(overrides) => self.runtime.execute_streaming_overlaid(
-                &ids,
-                &overrides,
-                &continuation,
-                &mut |_| Ok(()),
-            ),
+        let overrides = execution_overrides(self.runtime, self.overlay)?;
+        let output = match &overrides {
+            Some(overrides) => {
+                self.runtime
+                    .execute_streaming_overlaid(&ids, overrides, &continuation, &mut |_| Ok(()))
+            }
             None => self
                 .runtime
                 .execute_streaming(&ids, &continuation, &mut |_| Ok(())),
         }
         .map_err(|e| LqlError::exec("balance trace: forward pass failed", e))?;
+        confirm_patched_weights_ran(overrides.as_ref())?;
         let logits = output
             .logits
             .ok_or_else(|| LqlError::Execution("balance trace: no output head".into()))?;

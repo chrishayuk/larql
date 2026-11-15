@@ -133,3 +133,65 @@ fn the_embedding_under_its_stock_name_is_ambiguous_with_the_final_norm_and_is_re
         "{err:?}"
     );
 }
+
+/// Rewrite one JSON file of a container copy through `change`.
+fn rewrite_json(path: &Path, change: impl FnOnce(&mut serde_json::Value)) {
+    let mut value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    change(&mut value);
+    std::fs::write(path, serde_json::to_string(&value).unwrap()).unwrap();
+}
+
+/// A container that cannot say what kind of object holds the tensor refuses the op: the kind is never guessed
+/// from the tensor's name.
+#[test]
+fn a_container_that_cannot_say_what_holds_the_tensor_refuses_the_op() {
+    const INDEX: &str = "index.json";
+    const GRAPH_FIELD: &str = "system_graph";
+    const COLUMN: usize = 33;
+    let src = source_with_pack();
+    let copy = |name: &str| {
+        let dir = src.out(name);
+        copy_tree(&src.dir.path().join(BF16_ONLY), &dir);
+        dir
+    };
+    let graph_of = |container: &Path| {
+        let index: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(container.join(INDEX)).unwrap()).unwrap();
+        container.join(
+            index[GRAPH_FIELD]
+                .as_str()
+                .expect("the fixture names its graph"),
+        )
+    };
+    let refusal = |container: &Path| match op_on(container, TENSOR, COLUMN).resolve(container) {
+        Err(error) => error.to_string(),
+        Ok(_) => panic!("an op on a tensor of undetermined kind must be refused"),
+    };
+
+    // The index names no system graph.
+    let ungraphed = copy("ungraphed.vindex3");
+    rewrite_json(&ungraphed.join(INDEX), |index| {
+        index[GRAPH_FIELD] = serde_json::Value::Null;
+    });
+    let why = refusal(&ungraphed);
+    assert!(
+        why.contains("cannot tell what kind of object holds")
+            && why.contains("declares no system graph"),
+        "{why}"
+    );
+
+    // The graph does not hold the object the tensor's representation belongs to.
+    let orphaned = copy("orphaned.vindex3");
+    rewrite_json(&graph_of(&orphaned), |graph| {
+        graph["objects"] = serde_json::json!([]);
+    });
+    let why = refusal(&orphaned);
+    assert!(why.contains("the graph has no object"), "{why}");
+
+    // The graph does not parse.
+    let unreadable = copy("unreadable.vindex3");
+    std::fs::write(graph_of(&unreadable), "not a graph").unwrap();
+    let why = refusal(&unreadable);
+    assert!(why.contains("parse"), "{why}");
+}

@@ -320,8 +320,8 @@ pub(super) static DIFF: StatementHelp = StatementHelp {
     )],
     effect: &[
         "Read-only without INTO PATCH. CURRENT is the bound container as stored: stored-weight ops",
-        "that are staged and not compiled are not part of it, and the reply says how many are pending.",
-        "Compile them, then DIFF the base against the compiled container.",
+        "that are staged and not compiled are not part of it, though INFER executes them, and the",
+        "reply says how many are pending. Compile them, then DIFF the base against the compiled container.",
     ],
     operands: &[],
     refusals: &[

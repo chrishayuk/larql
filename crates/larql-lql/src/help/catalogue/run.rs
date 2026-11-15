@@ -2,15 +2,19 @@
 
 use crate::help::entry::{GroupHelp, Need, StatementHelp};
 use crate::help::topic::HelpGroup;
+use crate::live_scope::executed_by;
 
 pub(super) static GROUP: GroupHelp = GroupHelp {
     name: "RUN",
     aliases: &["INFERENCE", "EXECUTE"],
     title: "Run the model",
     intro: &[
-        "These run the bound model as it is stored, plus the session's knowledge edits (INSERT,",
-        "DELETE, UPDATE EDGES). They never see a staged stored-weight op: to run edited weights,",
-        "COMPILE them into a container and USE that container.",
+        concat!("These run the bound model with the session's edits. ", executed_by!(), " compute with pending"),
+        "stored-weight ops (UPDATE WEIGHTS, REMOVE DIRECTION, ADD LOW RANK, or a patch applied with",
+        "APPLY PATCH) as a container compiled from them would, or are refused with the reason: they",
+        "never run the stored weights while such an op is pending. Knowledge edits (INSERT, DELETE,",
+        "UPDATE EDGES) are seen too, but not together with stored-weight ops: that mix is refused.",
+        "WALK reads the stored weights.",
     ],
 };
 
@@ -36,8 +40,11 @@ pub(super) static INFER: StatementHelp = StatementHelp {
         Need::Other("On a VINDEX2 vindex: model weights (EXTRACT ... WITH INFERENCE or WITH ALL)."),
     ],
     effect: &[
-        "Read-only. It computes with the weights of the bound container as stored. A stored-weight op",
-        "staged in this session (UPDATE WEIGHTS, REMOVE DIRECTION, ADD LOW RANK) is NOT applied.",
+        "Read-only. It computes with the bound container's weights and the session's edits. A pending",
+        "stored-weight op (UPDATE WEIGHTS, REMOVE DIRECTION, ADD LOW RANK, or one a patch applied)",
+        "is executed: the tensors it edits are computed with as a container compiled from the op",
+        "stores them. If the session cannot do that exactly, INFER is refused with the reason and",
+        "does not run the stored weights in their place (HELP UPDATE WEIGHTS; lists when).",
     ],
     operands: &[],
     refusals: &[
@@ -111,7 +118,11 @@ pub(super) static TRACE: StatementHelp = StatementHelp {
         Need::Tokenizer,
         Need::Other("On a VINDEX2 vindex: model weights (EXTRACT ... WITH ALL)."),
     ],
-    effect: &["Read-only unless SAVE is given. Like INFER, it does not see staged stored-weight ops."],
+    effect: &[
+        "Read-only unless SAVE is given.",
+        concat!(executed_by!(), " run the same program: TRACE computes with pending stored-weight ops, or is"),
+        "refused, exactly as INFER is.",
+    ],
     operands: &[],
     refusals: &[
         "The container carries no tokenizer.json.",

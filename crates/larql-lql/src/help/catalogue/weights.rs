@@ -2,6 +2,7 @@
 
 use crate::help::entry::{GroupHelp, Need, StatementHelp};
 use crate::help::topic::HelpGroup;
+use crate::live_scope::{executed_by, reads_stored};
 
 pub(super) static GROUP: GroupHelp = GroupHelp {
     name: "WEIGHTS",
@@ -10,8 +11,11 @@ pub(super) static GROUP: GroupHelp = GroupHelp {
     intro: &[
         "Each statement stages one op on one stored BF16 matrix of the bound container. Staging",
         "checks everything it can and writes nothing. The bound container is never modified.",
-        "A staged op is NOT seen by INFER or any other statement in the session. It exists only in",
-        "the container COMPILE CURRENT INTO VINDEX writes: USE that container to run the edit.",
+        concat!("A staged op takes effect at once in the session: ", executed_by!(), " compute with the"),
+        "patched weights, held in memory, and the reply lists each patched tensor with its SHA-256.",
+        "COMPILE CURRENT INTO VINDEX writes a container that stores exactly those bytes.",
+        concat!("If the session cannot execute an op exactly, ", executed_by!(), " are refused while it is"),
+        "pending: they never run the stored weights in its place. HELP UPDATE WEIGHTS; lists when.",
         "One compile takes several ops on several tensors of one canonical representation.",
         "A container compiled with stored-weight ops carries a ledger and cannot be edited again:",
         "stage every op on the unedited base and compile once.",
@@ -27,10 +31,17 @@ const TENSOR_NAME: Need = Need::Other(
 
 /// What every staged op has in common about visibility.
 const STAGED_EFFECT: &[&str] = &[
-    "Staging writes nothing and changes nothing the session runs. INFER, DIFF ... CURRENT and every",
-    "other statement in this session still see the stored weights.",
-    "The edit exists only in a container written by COMPILE CURRENT INTO VINDEX \"<out>\". To run",
-    "it, USE \"<out>\" afterwards, in the same batch or a later process.",
+    concat!("Staging writes nothing to disk. From the next statement, ", executed_by!(), " in this session"),
+    "compute with the patched weights: the reply says so and lists each patched tensor with the",
+    "SHA-256 of its bytes, which is the digest that tensor has in a container compiled from the op.",
+    concat!(reads_stored!(), " ... CURRENT still read the stored weights."),
+    concat!(executed_by!(), " are refused, not run on the stored weights, while an op is pending and:"),
+    "  the session's representation source is not `stored`;",
+    "  a knowledge edit (INSERT, UPDATE EDGES, DELETE) is pending too;",
+    "  the tensor is one execution reads past the patched bytes (an expert bank, a shared expert, a",
+    "  routed or hybrid layer, a mixer other than softmax attention) or does not project through;",
+    "  or COMPILE would refuse the op before writing.",
+    "To keep the edit, COMPILE CURRENT INTO VINDEX \"<out>\". To withdraw it, DISCARD WEIGHT EDITS.",
     "While a BEGIN PATCH recording is open the op is also recorded, so SAVE PATCH can write it.",
 ];
 

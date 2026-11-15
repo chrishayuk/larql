@@ -58,8 +58,8 @@ pub struct OperandRecord {
     pub object: String,
     pub tensor: String,
     pub shape: Vec<usize>,
-    /// The dtype the container stores the tensor as; `None` for an operand carrying overlay edits, which has no
-    /// stored bytes to read.
+    /// The dtype the container stores the tensor as; `None` for an operand carrying overlay edits or replaced
+    /// by a weight patch's bytes, which executes no stored bytes the record could read.
     pub stored_dtype: Option<String>,
     /// SHA-256 of the stored bytes the loader read; `None` as for `stored_dtype`.
     pub stored_sha256: Option<String>,
@@ -142,7 +142,13 @@ pub(super) fn note(
         return;
     }
     // An operand carrying overlay edits has no stored bytes that mean what it executes; `load_raw` refuses it.
-    let stored = store.load_raw(operand).ok();
+    // Neither has one whose bytes a weight patch replaced: `load_raw` would hand back the replacement, which the
+    // container does not store, so it is recorded the same way.
+    let stored = if store.is_patched(operand) {
+        None
+    } else {
+        store.load_raw(operand).ok()
+    };
     let (rule, resident_sha256, resident_digest_layout) = resident(loaded);
     store.store().push_residency(OperandRecord {
         order: 0,

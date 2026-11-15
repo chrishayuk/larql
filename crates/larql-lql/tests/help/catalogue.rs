@@ -238,9 +238,10 @@ fn the_limits_a_page_quotes_are_the_engines() {
 fn the_weight_edit_pages_say_what_an_agent_must_know() {
     for topic in ["UPDATE WEIGHTS", "REMOVE DIRECTION", "ADD LOW RANK"] {
         let page = help(&format!("HELP {topic};")).join("\n");
-        // Visibility: staging is not seen by the session.
-        assert!(page.contains("still see the stored weights"), "{topic}");
+        // Visibility: what executes a staged op and what does not is held to the engine in `live_effect.rs`.
+        assert!(page.contains("Staging writes nothing to disk"), "{topic}");
         assert!(page.contains("COMPILE CURRENT INTO VINDEX"), "{topic}");
+        assert!(page.contains("DISCARD WEIGHT EDITS"), "{topic}");
         assert!(page.contains("VINDEX3 container"), "{topic}");
     }
     let remove = help("HELP REMOVE DIRECTION;").join("\n");

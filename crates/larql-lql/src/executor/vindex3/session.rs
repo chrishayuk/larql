@@ -150,14 +150,17 @@ impl Session {
         })?;
         let prompt_ids = encode_raw_prompt(tokenizer, prompt, *bos_token)?;
 
-        // TRACE observes the same effective program INFER runs — a
-        // compose edit must not fork the two.
+        // TRACE observes the same effective program INFER runs — neither
+        // a compose edit nor a pending stored-weight op may fork the two.
         let continuation = v3_continuation(runtime)?;
-        let mut session = match compose_overrides(runtime, overlay)? {
-            Some(overrides) => runtime.session_overlaid(&overrides, &continuation),
+        let overrides = execution_overrides(runtime, overlay)?;
+        let mut session = match &overrides {
+            Some(overrides) => runtime.session_overlaid(overrides, &continuation),
             None => runtime.session(&continuation),
         }
         .map_err(|e| LqlError::exec("v3 session failed", e))?;
+        // The session captured its operands at construction.
+        confirm_patched_weights_ran(overrides.as_ref())?;
         let mut out = vec!["Trace (VINDEX3 program, observed execution):".into()];
         let mut logits = Vec::new();
         for (offset, &token) in prompt_ids.iter().enumerate() {

@@ -43,6 +43,7 @@
 //! conformance fixtures this rung gates on; lazy/memoised annotation
 //! for large containers is deliberately later, perf-shaped work.
 
+pub mod live_weights;
 pub mod overlay;
 pub mod postings;
 pub mod reconcile;
@@ -50,6 +51,7 @@ pub mod reconcile;
 #[cfg(test)]
 mod tests;
 
+pub use live_weights::{ExecutionBinding, LiveTensor, LiveWeightRefusal, LiveWeightView};
 pub use overlay::KnowledgeOverlay;
 pub use postings::{FeatureAddress, PostingIndex, PostingLookup};
 pub use reconcile::{

@@ -38,6 +38,39 @@ pub(crate) fn compose_overrides(
         .map_err(|e| LqlError::exec("failed to derive operand overrides", e))
 }
 
+/// What an EXECUTION of the session's program runs over: the replacements for its pending stored-weight ops,
+/// or else its compose edits, or `None` when the overlay changes nothing execution computes.
+///
+/// Every statement that runs the program asks this, never [`compose_overrides`] — which is what CURRENT means
+/// to `DIFF` and to the knowledge COMPILE, and deliberately leaves stored-weight ops out. With such an op in
+/// effect the answer is its patched bytes or a refusal that says why; it is never the stored weights.
+pub(crate) fn execution_overrides(
+    runtime: &V3Runtime,
+    overlay: &larql_vindex::format::vindex3::knowledge::KnowledgeOverlay,
+) -> Result<Option<larql_inference::vindex3::OperandOverrides>, LqlError> {
+    match overlay.live_weight_overrides() {
+        Ok(Some(overrides)) => Ok(Some(overrides)),
+        Ok(None) => compose_overrides(runtime, overlay),
+        Err(refusal) => Err(LqlError::Execution(format!(
+            "refused: stored-weight ops are pending in this session and cannot be executed, and the stored \
+             weights will not be executed in their place: {refusal}"
+        ))),
+    }
+}
+
+/// End an execution by refusing its result unless every patched tensor was read through the operand seam:
+/// a tensor loaded from the container instead means the run was not the patched model.
+pub(crate) fn confirm_patched_weights_ran(
+    overrides: Option<&larql_inference::vindex3::OperandOverrides>,
+) -> Result<(), LqlError> {
+    match overrides {
+        Some(overrides) => overrides
+            .ensure_patched_read()
+            .map_err(|e| LqlError::exec("refused: no result is reported", e)),
+        None => Ok(()),
+    }
+}
+
 pub(crate) fn capture_layer_residual(
     runtime: &V3Runtime,
     tokenizer: &Tokenizer,
@@ -66,6 +99,7 @@ pub(crate) fn capture_layer_residual(
         None => runtime.execute_streaming(&prompt_ids, &continuation, &mut sink),
     }
     .map_err(|e| LqlError::exec("v3 capture pass failed", e))?;
+    confirm_patched_weights_ran(overrides)?;
     captured.ok_or_else(|| LqlError::Execution(format!("no residual captured at layer {layer}")))
 }
 

@@ -9,10 +9,11 @@ pub(super) static GROUP: GroupHelp = GroupHelp {
     title: "Knowledge edits",
     intro: &[
         "These edit what the model retrieves, through an overlay on the bound vindex or container.",
-        "Unlike stored-weight ops they take effect at once: DESCRIBE and INFER in the same session",
-        "see them. They need a tokenizer. The base files are never modified.",
+        "They take effect at once: DESCRIBE and INFER in the same session see them. They need a",
+        "tokenizer. The base files are never modified.",
         "Without BEGIN PATCH they start an anonymous recording, which BEGIN PATCH then adopts.",
-        "COMPILE refuses knowledge edits and stored-weight ops in one container.",
+        "COMPILE refuses knowledge edits and stored-weight ops in one container, and while both are",
+        "pending INFER and TRACE are refused too (HELP WEIGHTS;).",
     ],
 };
 
@@ -37,6 +38,7 @@ pub(super) static INSERT: StatementHelp = StatementHelp {
     operands: &[],
     refusals: &[
         "The container carries no tokenizer.json.",
+        "MODE COMPOSE while a stored-weight op is pending: the install is computed on the stored weights.",
         "On a remote backend ALPHA and MODE are not forwarded.",
     ],
     related: &["DESCRIBE", "INFER", "BEGIN PATCH", "REBALANCE", "COMPILE"],
