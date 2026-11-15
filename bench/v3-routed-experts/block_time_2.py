@@ -58,9 +58,11 @@ def wait_while_paused(out, before_pair, pauses, sleep=time.sleep, now=None):
     held = out / PAUSED_FILE
     held.write_text(f"holding before pair {before_pair} since {started}; remove {PAUSE_FILE} to resume\n")
     print(f"paused before pair {before_pair} at {started}: remove {flag} to resume", flush=True)
-    while flag.exists():
-        sleep(PAUSE_POLL_S)
-    held.unlink(missing_ok=True)
+    try:
+        while flag.exists():
+            sleep(PAUSE_POLL_S)
+    finally:
+        held.unlink(missing_ok=True)
     pauses.append({"before_pair": before_pair, "paused_utc": started, "resumed_utc": now()})
     print(f"resumed before pair {before_pair}", flush=True)
 
@@ -182,7 +184,7 @@ def execute(args, root, model, out, kind):
                         save(out / "pauses.json", pauses)
                     trial, relay_records, clock = timed_trial(root, model, args.ids, out, env, entry, worker_urls)
                     observation = b1.observe(entry, trial, relay_records, reference, floor_ns)
-                    observation.update(clock)
+                    observation.update(clock, exchange_remainder=b2.largest_exchange_remainder(trial, entry["rtt_ms"]))
                     if entry["role"] == bt.ROLE_BRACKET:
                         floor_ns = observation["summary"]["per_position_ns"]
                     observations.append(observation)
@@ -198,7 +200,6 @@ def execute(args, root, model, out, kind):
             (out / "failure.txt").write_text(traceback.format_exc())
             print(f"STOPPED: {stop}", flush=True)
     ended = ht.utc_now()
-    save(out / "spotlight.json", ht.spotlight_starts(started, ended))
     b2.attach_stalls(observations, watch.stalls)
     save(out / "suspensions.json", watch.stalls)
     verdicts = b2.judge_pairs(observations)
@@ -222,6 +223,12 @@ def execute(args, root, model, out, kind):
                   host_after=host_after, exclusivity_evidence_supplied=handshake is not None,
                   ended_utc=ended)
     save(out / "analysis.json", report)
+    # Last, and after every record is saved: the unified-log query can take
+    # minutes, and nothing above may depend on it finishing.
+    try:
+        save(out / "spotlight.json", ht.spotlight_starts(started, ended))
+    except (Exception, KeyboardInterrupt) as error:
+        save(out / "spotlight.json", {"error": f"{type(error).__name__}: {error}"})
     save(out / "verification.json",
          {"complete": complete, "sha256": {str(p.relative_to(out)): sha(p)
                                            for p in sorted(out.rglob("*")) if p.is_file()}})

@@ -194,6 +194,22 @@ def execution_per_position(observation):
     return None if worker is None else worker["execute_ns"] / bt.MEASURED_POSITIONS
 
 
+def largest_exchange_remainder(trial, rtt_ms):
+    """The largest and median per-exchange remainder (round trip less worker handler and delay), ns.
+
+    Reported, never a gate. A stall while the coordinator waits on one
+    exchange piles into that exchange, so it stands far above the median of
+    its own trial, whatever the delay. None without worker timing.
+    """
+    records = trial.get("worker_records", [])
+    exchanges = trial["exchanges"]
+    if len(records) != len(exchanges) or not all(r.get("worker") for r in records):
+        return None
+    delay = rtt_ms * bt.NS_PER_MS
+    remainders = sorted(e["roundtrip_ns"] - r["worker"]["handler_ns"] - delay for e, r in zip(exchanges, records))
+    return {"largest_ns": remainders[-1], "median_ns": statistics.median(remainders)}
+
+
 def spread(values):
     values = list(values)
     present = sorted(v for v in values if v is not None)
@@ -222,7 +238,9 @@ def analyse(observations, verdicts):
     pairs = []
     for verdict in verdicts:
         slope, low, high = pair_slope(members[verdict["pair"]])
-        pairs.append(dict(verdict, slope=slope, low_ns=low, high_ns=high))
+        remainders = {m["label"]: m.get("exchange_remainder") for m in members[verdict["pair"]]
+                      if m["role"] == ROLE_ARM}
+        pairs.append(dict(verdict, slope=slope, low_ns=low, high_ns=high, exchange_remainders=remainders))
 
     arms = {}
     for arm in ARMS:
@@ -245,8 +263,11 @@ def analyse(observations, verdicts):
             "ratio": None if ungated_mean is None else ungated_mean / predicted}
         # The largest slope shift rule 4 can still admit in one pair: both costs
         # moving by the full tolerance, in round trips per position.
-        costs = [coordinator_per_position(o) + (execution_per_position(o) or 0.0)
-                 for o in observations if o["role"] == ROLE_ARM and o["arm"] == arm]
+        # From the arm trials of valid pairs only, and only where both costs are present.
+        valid_pairs = {p["pair"] for p in valid}
+        costs = [coordinator_per_position(o) + execution_per_position(o)
+                 for o in observations if o["role"] == ROLE_ARM and o["arm"] == arm
+                 and o["pair"] in valid_pairs and execution_per_position(o) is not None]
         entry["rule_4_admits_shift"] = None if not costs else {
             "round_trips": CONSISTENCY * statistics.fmean(costs) / DELAY_SPAN_NS,
             "share_of_predicted": CONSISTENCY * statistics.fmean(costs) / DELAY_SPAN_NS / predicted}

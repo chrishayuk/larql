@@ -331,7 +331,7 @@ class Suspension(unittest.TestCase):
 class Execute(unittest.TestCase):
     """The driver's run loop end to end, with every process replaced by a fake."""
 
-    def run_execute(self, fail_at=None, stall_trial=None, busy_at_end=(), kind="diagnostic"):
+    def run_execute(self, fail_at=None, stall_trial=None, busy_at_end=(), kind="diagnostic", spotlight=None):
         import argparse
         import contextlib
         import json
@@ -394,7 +394,7 @@ class Execute(unittest.TestCase):
             for name, value in replaced.items():
                 setattr(driver, name, value)
             driver.ht.Sampler = Sampler
-            driver.ht.spotlight_starts = lambda start, end: {"per_minute": {}}
+            driver.ht.spotlight_starts = spotlight or (lambda start, end: {"per_minute": {}})
             driver.b1.provenance = lambda root, sources: {}
             driver.lp.host_state = lambda: {"load_average": [0, 0, 0], "busy_processes": list(busy_at_end)}
             ids = Path(driver.__file__).with_name("link-results") / "control" / "ids.json"
@@ -434,6 +434,21 @@ class Execute(unittest.TestCase):
         self.assertEqual(len(report["outcomes"]["not_run"]), 50)
         self.assertTrue({"analysis.json", "verification.json", "suspensions.json", "failure.txt"} <= files)
         self.assertIn("nothing is analysed", report["note"])
+
+    def test_a_failing_spotlight_query_loses_no_record(self):
+        def spotlight(start, end):
+            raise KeyboardInterrupt
+        report, files, trials, out = self.run_execute(spotlight=spotlight)
+        self.assertTrue(report["complete"])
+        self.assertTrue({"trials.json", "analysis.json", "suspensions.json", "verification.json",
+                         "spotlight.json"} <= files)
+        import json
+        self.assertIn("KeyboardInterrupt", json.loads((out / "spotlight.json").read_text())["error"])
+
+    def test_every_arm_trial_records_its_largest_exchange_remainder(self):
+        _, _, trials, _ = self.run_execute()
+        for trial_ in trials:
+            self.assertEqual(trial_["exchange_remainder"]["largest_ns"], 0, trial_["label"])
 
     def test_a_busy_machine_at_the_end_means_an_admissible_run_does_not_count(self):
         quiet, _, _, _ = self.run_execute(kind="admissible")
@@ -531,6 +546,86 @@ class Analysis(unittest.TestCase):
         report = b2.analyse(observations, verdicts)
         self.assertNotIn("faster", report)
         self.assertIn("no speed comparison", report["reading"])
+
+
+class SecondaryReports(unittest.TestCase):
+    """What the analysis reports beside the registered slope; none of it is a statement."""
+
+    def test_the_secondary_slope_keeps_pairs_that_only_rule_4_voided(self):
+        target = [i for i, u in enumerate(b2.pair_units()) if u["arm"] == "block-4"][:2]
+
+        def exchange_extra(entry):
+            # The 20 ms trial of two block-4 pairs pays 0.9 extra round trips per position...
+            if entry["pair"] in target and entry["role"] == bt.ROLE_ARM and entry["rtt_ms"] == 20.0:
+                return 0.9 * b2.DELAY_SPAN_NS
+            return 0.0
+
+        def extra(entry):
+            # ...and its coordinator moves 10%, so rule 4 alone voids those pairs.
+            if entry["pair"] in target and entry["role"] == bt.ROLE_ARM and entry["rtt_ms"] == 20.0:
+                return 0.10 * COORDINATOR_NS
+            return 0.0
+        observations, verdicts = run_schedule(extra=extra, exchange_extra=exchange_extra)
+        for pair in target:
+            self.assertFalse(verdicts[pair]["valid"])
+            self.assertTrue(verdicts[pair]["valid_without_rule_4"])
+        entry = b2.analyse(observations, verdicts)["arms"]["block-4"]
+        self.assertEqual(entry["pairs_valid"], 2)
+        self.assertIsNone(entry["slope"])
+        secondary = entry["secondary_without_rule_4"]
+        self.assertEqual(secondary["pairs"], 4)
+        shift = 0.9 + 0.10 * COORDINATOR_NS / b2.DELAY_SPAN_NS
+        self.assertAlmostEqual(secondary["slope"], 6.0 + shift / 2, places=6)
+        self.assertAlmostEqual(secondary["ratio"], (6.0 + shift / 2) / 6.0, places=6)
+
+    def test_a_pair_void_by_another_rule_is_not_in_the_secondary_slope(self):
+        target = next(i for i, u in enumerate(b2.pair_units()) if u["arm"] == "block-2")
+        _, verdicts = run_schedule(extra=lambda e: 0.03 * BASE_NS
+                                   if e["pair"] == target and e["bracket"] == "after" else 0.0)
+        self.assertFalse(verdicts[target]["valid_without_rule_4"])
+
+    def test_the_shift_rule_4_admits_is_the_tolerance_on_both_costs_over_the_span(self):
+        observations, verdicts = run_schedule()
+        for arm, entry in b2.analyse(observations, verdicts)["arms"].items():
+            width = bt.ARMS[arm] or 1
+            # Per position: coordinator, plus the worker's execution (half its handler) per exchange.
+            execution = bt.exchanges_per_position(arm) * width * WORKER_NS / 2
+            expected = b2.CONSISTENCY * (COORDINATOR_NS + execution) / b2.DELAY_SPAN_NS
+            self.assertAlmostEqual(entry["rule_4_admits_shift"]["round_trips"], expected, places=9, msg=arm)
+            self.assertAlmostEqual(entry["rule_4_admits_shift"]["share_of_predicted"],
+                                   expected / bt.exchanges_per_position(arm), places=9, msg=arm)
+
+    def test_the_shift_bound_uses_valid_pairs_only(self):
+        target = next(i for i, u in enumerate(b2.pair_units()) if u["arm"] == "block-8")
+        def extra(entry):
+            # A void pair (its brackets drift) whose arm trials carry huge costs.
+            if entry["pair"] != target:
+                return 0.0
+            if entry["role"] == bt.ROLE_ARM:
+                return 100 * COORDINATOR_NS
+            return 0.03 * BASE_NS if entry["bracket"] == "after" else 0.0
+        observations, verdicts = run_schedule(extra=extra)
+        self.assertFalse(verdicts[target]["valid"])
+        clean_obs, clean_verdicts = run_schedule()
+        bound = b2.analyse(observations, verdicts)["arms"]["block-8"]["rule_4_admits_shift"]
+        clean = b2.analyse(clean_obs, clean_verdicts)["arms"]["block-8"]["rule_4_admits_shift"]
+        self.assertAlmostEqual(bound["round_trips"], clean["round_trips"], places=9)
+
+    def test_spread_counts_missing_values(self):
+        self.assertEqual(b2.spread([3.0, None, 1.0, None])["missing"], 2)
+        self.assertEqual(b2.spread([3.0, None, 1.0])["values"], [1.0, 3.0])
+        self.assertEqual(b2.spread([None, None]), {"missing": 2, "values": []})
+        self.assertIsNone(b2.spread([]))
+
+    def test_the_largest_exchange_remainder_shows_a_stall_in_one_exchange(self):
+        entry = next(e for e in b2.schedule() if e["role"] == bt.ROLE_ARM and e["arm"] == "block-8")
+        run = record(entry)
+        run["exchanges"][17]["roundtrip_ns"] += 500 * bt.NS_PER_MS
+        found = b2.largest_exchange_remainder(run, entry["rtt_ms"])
+        self.assertEqual(found["median_ns"], 0)
+        self.assertEqual(found["largest_ns"], 500 * bt.NS_PER_MS)
+        run["worker_records"][0] = {}
+        self.assertIsNone(b2.largest_exchange_remainder(run, entry["rtt_ms"]))
 
 
 class Pausing(unittest.TestCase):
