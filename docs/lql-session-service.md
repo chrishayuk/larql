@@ -182,7 +182,8 @@ in-process Python method call; no LQL text is accepted or built.
   answered with an error and the service stops answering.
 - **One client.** While a client is connected, a second connection is sent one `busy` error and closed (checked
   between requests). Requests are answered one at a time. A response must be written whole within 10 s (a
-  client that stopped reading is hung up on); it is written a chunk at a time, each write waiting at most
+  client that stopped reading is hung up on, and its `disconnect` record says `write_deadline_expired`, apart
+  from `client_gone` for a write the socket refused outright); it is written a chunk at a time, each write waiting at most
   50 ms, and a shutdown between chunks ends it at once. The audit log is locked (`flock`) for the service's
   lifetime: a second service on the same log refuses to start.
 - **Shutdown.** SIGTERM, SIGINT or SIGHUP: the request in flight is finished, the connection closed, the `stop` record

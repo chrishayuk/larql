@@ -268,6 +268,12 @@ fn converse(
     }
 }
 
+/// How a conversation ends when a response could not be written within its deadline: the client stopped
+/// reading. Told apart from [`WRITE_FAILED`], where the socket itself refused the write (the peer is gone).
+pub const WRITE_DEADLINE_EXPIRED: &str = "write_deadline_expired";
+/// How a conversation ends when a write failed outright (EPIPE, ECONNRESET): the client went away.
+pub const WRITE_FAILED: &str = "client_gone";
+
 /// Write a whole response within `deadline` of starting, a chunk at a time, giving up on shutdown between
 /// chunks. Each `write` waits at most [`POLL`], so neither a stalled client nor a signal waits longer.
 fn write_response(
@@ -283,18 +289,19 @@ fn write_response(
             return Err("shutdown");
         }
         if started.elapsed() >= deadline {
-            return Err("client_gone");
+            return Err(WRITE_DEADLINE_EXPIRED);
         }
         let end = (written + READ_CHUNK).min(bytes.len());
         match stream.write(&bytes[written..end]) {
-            Ok(0) => return Err("client_gone"),
+            Ok(0) => return Err(WRITE_FAILED),
             Ok(n) => written += n,
+            // A full socket buffer: the client is not reading (yet). Waited out until the deadline.
             Err(e)
                 if matches!(
                     e.kind(),
                     IoKind::WouldBlock | IoKind::TimedOut | IoKind::Interrupted
                 ) => {}
-            Err(_) => return Err("client_gone"),
+            Err(_) => return Err(WRITE_FAILED),
         }
     }
     Ok(())

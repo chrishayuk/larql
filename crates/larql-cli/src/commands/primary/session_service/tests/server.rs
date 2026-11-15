@@ -190,6 +190,10 @@ fn a_socket_path_that_exists_is_not_bound_or_removed() {
     assert!(BoundSocket::bind(&fx.logs.path().join("no/dir/s.sock")).is_err());
 }
 
+/// A client that asks for far more than the socket buffers hold and never reads is hung up on when the write
+/// deadline passes, the service does not block on it, and shutdown proceeds. The client never reads a byte:
+/// it learns of the hang-up only from its own writes failing (EPIPE once the service has closed), so the
+/// service's write can end only by its deadline, and the recorded reason is that, on every platform.
 #[test]
 fn a_client_that_stops_reading_is_hung_up_on() {
     let fx = Fixture::new();
@@ -200,26 +204,31 @@ fn a_client_that_stops_reading_is_hung_up_on() {
     let flag = shutdown.clone();
     let client = std::thread::spawn(move || {
         let mut stream = UnixStream::connect(&path).unwrap();
+        stream
+            .set_write_timeout(Some(std::time::Duration::from_millis(200)))
+            .unwrap();
         let request = format!(
             "{}\n",
             json!({"protocol": "larql-session/v1", "op": "tensor", "args": {"name": TENSOR}})
         );
-        // Ask for far more than the socket buffers, and never read.
+        // Ask for far more than the socket buffers (each answer is a whole tensor), and never read.
         for _ in 0..400 {
             if stream.write_all(request.as_bytes()).is_err() {
                 break;
             }
         }
         let started = std::time::Instant::now();
+        let mut hung_up = false;
         while started.elapsed() < std::time::Duration::from_secs(20) {
-            if !fx_disconnected(&stream) {
-                std::thread::sleep(super::super::server::POLL);
-            } else {
+            if service_hung_up(&mut stream) {
+                hung_up = true;
                 break;
             }
+            std::thread::sleep(super::super::server::POLL);
         }
         flag.store(true, Ordering::SeqCst);
         drop(stream);
+        hung_up
     });
     let stopped = super::super::server::serve_with(
         &mut svc,
@@ -227,7 +236,7 @@ fn a_client_that_stops_reading_is_hung_up_on() {
         &shutdown,
         std::time::Duration::from_millis(200),
     );
-    client.join().unwrap();
+    assert!(client.join().unwrap(), "the service never hung up");
     assert_eq!(stopped, Stopped::Shutdown);
     let how: Vec<Value> = fx
         .records()
@@ -235,26 +244,22 @@ fn a_client_that_stops_reading_is_hung_up_on() {
         .filter(|r| r["event"] == "disconnect")
         .map(|r| r["how"].clone())
         .collect();
-    assert_eq!(how, [json!("client_gone")]);
+    assert_eq!(how, [json!(super::super::server::WRITE_DEADLINE_EXPIRED)]);
     assert!(socket.remove());
 }
 
-/// Whether the service has hung up on `stream`'s connection.
-fn fx_disconnected(stream: &UnixStream) -> bool {
-    let mut probe = [0u8; 1];
-    stream.set_nonblocking(true).unwrap();
-    // The service never wrote less than a whole buffer; a hang-up shows as a reset or EOF once drained.
-    let mut s = stream;
-    let gone = loop {
-        match std::io::Read::read(&mut s, &mut probe) {
-            Ok(0) => break true,
-            Ok(_) => continue,
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break false,
-            Err(_) => break true,
-        }
-    };
-    stream.set_nonblocking(false).unwrap();
-    gone
+/// Whether the service has closed `stream`'s connection, found without reading: a byte that is not a
+/// request (no newline) is written, and only a closed peer makes that fail outright.
+fn service_hung_up(stream: &mut UnixStream) -> bool {
+    match stream.write_all(b" ") {
+        Ok(()) => false,
+        Err(e) => !matches!(
+            e.kind(),
+            std::io::ErrorKind::WouldBlock
+                | std::io::ErrorKind::TimedOut
+                | std::io::ErrorKind::Interrupted
+        ),
+    }
 }
 
 #[test]
