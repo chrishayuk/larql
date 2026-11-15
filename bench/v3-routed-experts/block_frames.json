@@ -1,0 +1,11 @@
+{
+  "note": "One-worker GPT-OSS 20B multi-row expert frames (VXR1 request, VXS1 response) per block width. Pinned against the wire encoder by crates/larql-router-protocol/tests/test_block_frame_geometry.rs.",
+  "hidden": 2880,
+  "experts_per_row": 4,
+  "widths": {
+    "1": {"request_bytes": 11588, "response_bytes": 46156},
+    "2": {"request_bytes": 23132, "response_bytes": 92268},
+    "4": {"request_bytes": 46220, "response_bytes": 184492},
+    "8": {"request_bytes": 92396, "response_bytes": 368940}
+  }
+}

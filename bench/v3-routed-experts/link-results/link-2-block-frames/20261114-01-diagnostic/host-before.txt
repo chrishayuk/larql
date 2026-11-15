@@ -1,0 +1,35 @@
+utc: 2026-11-14T21:24:08Z
+load: { 13.45 19.76 26.00 }
+swap: total = 1024.00M  used = 155.38M  free = 868.62M  (encrypted)
+System-wide memory free percentage: 91%
+Pages free:                                  3082397.
+Pages active:                                1549144.
+Pages wired down:                             312799.
+Pages stored in compressor:                   717976.
+Pages occupied by compressor:                 431532.
+Pageins:                                   143118226.
+Pageouts:                                      14434.
+Swapins:                                      644249.
+Swapouts:                                     684824.
+--- top by cpu
+  PID STAT  %CPU    RSS COMM
+  600 S     49.8  25680 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent
+17412 R+    44.1 721136 claude
+98224 S+    31.2 698944 claude
+  400 Ss    30.1  84128 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+92472 S     26.8 676880 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+  369 Ss    11.5 201456 /usr/libexec/xprotectd
+ 7189 S+     9.4 608480 claude
+--- top by resident memory (kB)
+  PID STAT  %CPU    RSS COMM
+96803 S      0.0 980064 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+17466 S      0.0 861952 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/156.1.98.63/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+36924 S+     5.7 839488 claude
+27214 T      0.0 4928512 target/release/examples/gwbreadcrumb1
+17412 S+    44.1 721136 claude
+98224 S+    31.2 698944 claude
+ 1616 Ss     0.0 696704 /System/Library/PrivateFrameworks/MediaConversionService.framework/Versions/A/XPCServices/com.apple.photos.ImageConversionService.xpc/Contents/MacOS/com.apple.photos.ImageConversionService
+--- stopped processes
+  PID STAT  %CPU    RSS COMM
+27213 T      0.0    816 /bin/zsh
+27214 T      0.0 4928512 target/release/examples/gwbreadcrumb1

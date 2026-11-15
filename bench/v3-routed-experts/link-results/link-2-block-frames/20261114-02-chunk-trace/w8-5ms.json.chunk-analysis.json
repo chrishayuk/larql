@@ -1,0 +1,76 @@
+{
+  "one_way_delay_ns": 2500000,
+  "request_bytes": 92396,
+  "response_bytes": 368940,
+  "exchanges": {
+    "baseline": 1000,
+    "shaped": 1000
+  },
+  "median_ns": {
+    "request_in": {
+      "baseline": 44042.0,
+      "shaped": 23125.0,
+      "shaped_minus_baseline_minus_configured": -20917.0
+    },
+    "request_hold": {
+      "baseline": 5667.0,
+      "shaped": 2506875.0,
+      "shaped_minus_baseline_minus_configured": 1208.0
+    },
+    "turnaround": {
+      "baseline": 56583.0,
+      "shaped": 82625.0,
+      "shaped_minus_baseline_minus_configured": 26042.0
+    },
+    "response_in": {
+      "baseline": 196167.0,
+      "shaped": 89292.0,
+      "shaped_minus_baseline_minus_configured": -106875.0
+    },
+    "response_hold": {
+      "baseline": 4959.0,
+      "shaped": 2540583.5,
+      "shaped_minus_baseline_minus_configured": 35624.5
+    },
+    "relay_total": {
+      "baseline": 313500.0,
+      "shaped": 5261792.0,
+      "shaped_minus_baseline_minus_configured": -51708.0
+    },
+    "request_chunks": {
+      "baseline": 6.0,
+      "shaped": 6.0,
+      "shaped_minus_baseline_minus_configured": 0.0
+    },
+    "response_chunks": {
+      "baseline": 23.0,
+      "shaped": 23.0,
+      "shaped_minus_baseline_minus_configured": 0.0
+    },
+    "request_last_late": {
+      "baseline": 375.0,
+      "shaped": 3792.0,
+      "shaped_minus_baseline_minus_configured": 3417.0
+    },
+    "response_last_late": {
+      "baseline": 333.0,
+      "shaped": 35416.5,
+      "shaped_minus_baseline_minus_configured": 35083.5
+    },
+    "response_first_hold": {
+      "baseline": 5500.0,
+      "shaped": 2509333.5,
+      "shaped_minus_baseline_minus_configured": 3833.5
+    }
+  },
+  "probe_median_ns": {
+    "baseline": 405000.5,
+    "shaped": 5387334.0
+  },
+  "probe_error_ns": -17666.5,
+  "outside_relay_ns": {
+    "baseline": 91500.5,
+    "shaped": 125542.0,
+    "shaped_minus_baseline": 34041.5
+  }
+}

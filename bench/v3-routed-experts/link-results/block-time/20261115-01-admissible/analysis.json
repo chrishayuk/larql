@@ -1,0 +1,470 @@
+{
+  "cells": [
+    {
+      "arm": "sequential",
+      "rtt_ms": 0.0,
+      "repeats_ns": [
+        127883205.35714285,
+        null
+      ],
+      "mean_ns": 127883205.35714285
+    },
+    {
+      "arm": "sequential",
+      "rtt_ms": 5.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "sequential",
+      "rtt_ms": 20.0,
+      "repeats_ns": [
+        617940320.6785715,
+        617829989.5892857
+      ],
+      "mean_ns": 617885155.1339285
+    },
+    {
+      "arm": "block-1",
+      "rtt_ms": 0.0,
+      "repeats_ns": [
+        137048779.75,
+        null
+      ],
+      "mean_ns": 137048779.75
+    },
+    {
+      "arm": "block-1",
+      "rtt_ms": 5.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-1",
+      "rtt_ms": 20.0,
+      "repeats_ns": [
+        622898455.3571428,
+        620100837.8035715
+      ],
+      "mean_ns": 621499646.5803571
+    },
+    {
+      "arm": "block-2",
+      "rtt_ms": 0.0,
+      "repeats_ns": [
+        128083411.46428572,
+        null
+      ],
+      "mean_ns": 128083411.46428572
+    },
+    {
+      "arm": "block-2",
+      "rtt_ms": 5.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-2",
+      "rtt_ms": 20.0,
+      "repeats_ns": [
+        378732398.8214286,
+        369315181.5535714
+      ],
+      "mean_ns": 374023790.1875
+    },
+    {
+      "arm": "block-4",
+      "rtt_ms": 0.0,
+      "repeats_ns": [
+        123089242.55357143,
+        null
+      ],
+      "mean_ns": 123089242.55357143
+    },
+    {
+      "arm": "block-4",
+      "rtt_ms": 5.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-4",
+      "rtt_ms": 20.0,
+      "repeats_ns": [
+        249328170.375,
+        251572194.19642857
+      ],
+      "mean_ns": 250450182.28571427
+    },
+    {
+      "arm": "block-8",
+      "rtt_ms": 0.0,
+      "repeats_ns": [
+        120196826.625,
+        null
+      ],
+      "mean_ns": 120196826.625
+    },
+    {
+      "arm": "block-8",
+      "rtt_ms": 5.0,
+      "repeats_ns": [
+        null,
+        null
+      ],
+      "mean_ns": null
+    },
+    {
+      "arm": "block-8",
+      "rtt_ms": 20.0,
+      "repeats_ns": [
+        184564925.5892857,
+        182156136.9107143
+      ],
+      "mean_ns": 183360531.25
+    }
+  ],
+  "slopes": {
+    "sequential": {
+      "predicted": 24.0,
+      "fitted": null,
+      "ratio": null,
+      "intercept_ns": null,
+      "residuals_ns": null,
+      "fit_within_band": null,
+      "differential": null,
+      "differential_ratio": null,
+      "differential_per_repeat": null,
+      "differential_within_band": null,
+      "follows_exchange_model": null,
+      "note": "a delay has no valid trial"
+    },
+    "block-1": {
+      "predicted": 24.0,
+      "fitted": null,
+      "ratio": null,
+      "intercept_ns": null,
+      "residuals_ns": null,
+      "fit_within_band": null,
+      "differential": null,
+      "differential_ratio": null,
+      "differential_per_repeat": null,
+      "differential_within_band": null,
+      "follows_exchange_model": null,
+      "note": "a delay has no valid trial"
+    },
+    "block-2": {
+      "predicted": 12.0,
+      "fitted": null,
+      "ratio": null,
+      "intercept_ns": null,
+      "residuals_ns": null,
+      "fit_within_band": null,
+      "differential": null,
+      "differential_ratio": null,
+      "differential_per_repeat": null,
+      "differential_within_band": null,
+      "follows_exchange_model": null,
+      "note": "a delay has no valid trial"
+    },
+    "block-4": {
+      "predicted": 6.0,
+      "fitted": null,
+      "ratio": null,
+      "intercept_ns": null,
+      "residuals_ns": null,
+      "fit_within_band": null,
+      "differential": null,
+      "differential_ratio": null,
+      "differential_per_repeat": null,
+      "differential_within_band": null,
+      "follows_exchange_model": null,
+      "note": "a delay has no valid trial"
+    },
+    "block-8": {
+      "predicted": 3.0,
+      "fitted": null,
+      "ratio": null,
+      "intercept_ns": null,
+      "residuals_ns": null,
+      "fit_within_band": null,
+      "differential": null,
+      "differential_ratio": null,
+      "differential_per_repeat": null,
+      "differential_within_band": null,
+      "follows_exchange_model": null,
+      "note": "a delay has no valid trial"
+    }
+  },
+  "faster": [
+    {
+      "arm": "block-2",
+      "rtt_ms": 0.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-2",
+      "rtt_ms": 5.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-2",
+      "rtt_ms": 20.0,
+      "reduction_per_repeat": [
+        0.38710521688318433,
+        0.40223817591133654
+      ],
+      "faster_in_every_repeat": true
+    },
+    {
+      "arm": "block-4",
+      "rtt_ms": 0.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-4",
+      "rtt_ms": 5.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-4",
+      "rtt_ms": 20.0,
+      "reduction_per_repeat": [
+        0.5965173949141105,
+        0.5928132359459178
+      ],
+      "faster_in_every_repeat": true
+    },
+    {
+      "arm": "block-8",
+      "rtt_ms": 0.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-8",
+      "rtt_ms": 5.0,
+      "reduction_per_repeat": null,
+      "faster_in_every_repeat": null
+    },
+    {
+      "arm": "block-8",
+      "rtt_ms": 20.0,
+      "reduction_per_repeat": [
+        0.7013224102505374,
+        0.7051678617416969
+      ],
+      "faster_in_every_repeat": true
+    }
+  ],
+  "profiling_overhead": [
+    {
+      "arm": "sequential",
+      "repeat": 0,
+      "profiled_ns": 127883205.35714285,
+      "unprofiled_ns": 127344744.78571428,
+      "relative": 0.00422836900207108
+    },
+    {
+      "arm": "sequential",
+      "repeat": 1,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    },
+    {
+      "arm": "block-1",
+      "repeat": 0,
+      "profiled_ns": 137048779.75,
+      "unprofiled_ns": 137007848.2142857,
+      "relative": 0.00029875321923368905
+    },
+    {
+      "arm": "block-1",
+      "repeat": 1,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    },
+    {
+      "arm": "block-2",
+      "repeat": 0,
+      "profiled_ns": 128083411.46428572,
+      "unprofiled_ns": 127757260.41071428,
+      "relative": 0.002552896426574285
+    },
+    {
+      "arm": "block-2",
+      "repeat": 1,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    },
+    {
+      "arm": "block-4",
+      "repeat": 0,
+      "profiled_ns": 123089242.55357143,
+      "unprofiled_ns": 128182882.44642857,
+      "relative": -0.03973728625572075
+    },
+    {
+      "arm": "block-4",
+      "repeat": 1,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    },
+    {
+      "arm": "block-8",
+      "repeat": 0,
+      "profiled_ns": 120196826.625,
+      "unprofiled_ns": 121412389.89285715,
+      "relative": -0.010011855206291944
+    },
+    {
+      "arm": "block-8",
+      "repeat": 1,
+      "profiled_ns": null,
+      "unprofiled_ns": null,
+      "relative": null
+    }
+  ],
+  "valid": 30,
+  "void": 20,
+  "thresholds": {
+    "slope_band": 0.1,
+    "minimum_effect": 0.01,
+    "gate": 0.01
+  },
+  "reading": "evaluated positions only; the thresholds are a model-fit band and a minimum effect across two repeats, not statistical significance",
+  "kind": "admissible",
+  "counts": true,
+  "complete": true,
+  "stopped": null,
+  "scheduled": 50,
+  "observed": 50,
+  "outcomes": {
+    "valid": [
+      "trial-000",
+      "trial-001",
+      "trial-002",
+      "trial-003",
+      "trial-004",
+      "trial-005",
+      "trial-006",
+      "trial-007",
+      "trial-008",
+      "trial-009",
+      "trial-010",
+      "trial-011",
+      "trial-012",
+      "trial-018",
+      "trial-019",
+      "trial-020",
+      "trial-021",
+      "trial-022",
+      "trial-023",
+      "trial-024",
+      "trial-025",
+      "trial-026",
+      "trial-027",
+      "trial-028",
+      "trial-029",
+      "trial-030",
+      "trial-031",
+      "trial-032",
+      "trial-038",
+      "trial-049"
+    ],
+    "void_by_gate": {
+      "trial-013": [
+        "brackets differ by 0.0510"
+      ],
+      "trial-014": [
+        "brackets differ by 0.0510"
+      ],
+      "trial-015": [
+        "brackets differ by 0.0510"
+      ],
+      "trial-016": [
+        "brackets differ by 0.0510"
+      ],
+      "trial-017": [
+        "brackets differ by 0.0510"
+      ],
+      "trial-033": [
+        "brackets differ by 0.2078"
+      ],
+      "trial-034": [
+        "brackets differ by 0.2078"
+      ],
+      "trial-035": [
+        "brackets differ by 0.2078"
+      ],
+      "trial-036": [
+        "brackets differ by 0.2078"
+      ],
+      "trial-037": [
+        "brackets differ by 0.2078"
+      ],
+      "trial-039": [
+        "brackets differ by 0.2275"
+      ],
+      "trial-040": [
+        "brackets differ by 0.2275"
+      ],
+      "trial-041": [
+        "brackets differ by 0.2275"
+      ],
+      "trial-042": [
+        "brackets differ by 0.2275"
+      ],
+      "trial-043": [
+        "brackets differ by 0.2275"
+      ],
+      "trial-044": [
+        "brackets differ by 0.2275"
+      ],
+      "trial-045": [
+        "brackets differ by 0.2275"
+      ],
+      "trial-046": [
+        "brackets differ by 0.2275"
+      ],
+      "trial-047": [
+        "brackets differ by 0.2275"
+      ],
+      "trial-048": [
+        "brackets differ by 0.2275"
+      ]
+    },
+    "not_run": [],
+    "worker_timing_incomplete": []
+  },
+  "host_after": {
+    "load_average": [
+      4.97705078125,
+      6.16259765625,
+      5.1416015625
+    ],
+    "busy_processes": [],
+    "utc": "2026-11-15T10:08:07Z"
+  },
+  "exclusivity_evidence_supplied": true
+}
