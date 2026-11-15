@@ -5,6 +5,15 @@ Runs of [`block_time_2.py`](../../block_time_2.py) under
 The diagnostic below ran on the draft; the protocol was frozen as revision 1
 on 2026-11-15, after it and with rules it led to.
 
+**Erratum to the frozen revision 1 text** (found by the independent
+review after freezing; the document is not edited, and the code is not
+affected): in "What rule 4 conditions on", the sentence "A systematic
+deviation from the model in either of them therefore shows as missing
+slopes, never as 'does not follow'" refers to the two costs rule 4 checks,
+coordinator time and worker execution. A deviation in the two it does not
+check, handler time outside execution and the transport remainder, passes
+rule 4 and would show as "does not follow".
+
 | Run | Kind | Outcome |
 |---|---|---|
 | [`20261115-01-diagnostic`](20261115-01-diagnostic/analysis.json) | Declared functional diagnostic with `--continue-unsettled` on a heavily loaded host; does not count | Complete: 80 of 80 trials, no stop; 1 pair valid, 19 void; no arm reportable |
