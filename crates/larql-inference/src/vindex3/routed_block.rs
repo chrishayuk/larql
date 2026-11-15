@@ -73,11 +73,8 @@ impl<'a, B: PlanBackend> RoutedBlockSession<'a, B> {
         backend: &'a B,
         continuation: &SelectedContinuation,
     ) -> Result<Self, InferenceError> {
-        if !matches!(ops.slice(), ExecutionSlice::RoutedExpertCoordinator) {
-            return Err(InferenceError::Parse(
-                "a routed block session requires routed-expert coordinator operands".into(),
-            ));
-        }
+        // What block verification itself cannot do is refused first, for
+        // any operands: these refusals hold whatever the slice.
         if ops.carries_hyper_connection() || ops.carries_attention_residual() {
             return Err(InferenceError::Parse(
                 "a routed block session needs a single-stream residual: this component leaves \
@@ -91,6 +88,11 @@ impl<'a, B: PlanBackend> RoutedBlockSession<'a, B> {
                 "a routed block session needs an output head: these operands have no logits to \
                  return"
                     .into(),
+            ));
+        }
+        if !matches!(ops.slice(), ExecutionSlice::RoutedExpertCoordinator) {
+            return Err(InferenceError::Parse(
+                "a routed block session requires routed-expert coordinator operands".into(),
             ));
         }
         let geometry = plan_continuation_geometry(plan).map_err(InferenceError::Parse)?;
