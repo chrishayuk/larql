@@ -116,6 +116,11 @@ pub enum LayerFfnLowering<'a> {
     Dense {
         weights: FfnWeights<'a>,
         shape: FfnShape,
+        /// The whole layer output is multiplied by this after the FFN's
+        /// residual add, exactly as the hybrid arm's
+        /// [`HybridFfnLowering::layer_scale`]. `None` = no such op (not a
+        /// multiply by one).
+        layer_scale: Option<f32>,
     },
     /// Boxed: a routed FFN carries a whole `MoeLayerWeights` (per-expert
     /// slice vectors), several times a dense op's size.
@@ -252,7 +257,11 @@ impl MetalBackend {
             self.encode_attention(encs, src, mid, &layer.attn, &ascratch, &layer.attn_shape);
 
             let hidden = match &layer.ffn {
-                LayerFfnLowering::Dense { weights, shape } => {
+                LayerFfnLowering::Dense {
+                    weights,
+                    shape,
+                    layer_scale,
+                } => {
                     let fscratch = FfnScratch {
                         normed: s.ffn_normed,
                         gate: s.ffn_gate,
@@ -261,6 +270,10 @@ impl MetalBackend {
                         down: s.ffn_down,
                     };
                     self.encode_gated_ffn(encs, mid, dst, weights, &fscratch, shape);
+                    if let Some(scale) = layer_scale {
+                        let enc = encs.stage(Stage::FfnOut);
+                        self.encode_scale_vector(enc, dst, shape.hidden, *scale);
+                    }
                     shape.hidden
                 }
                 // The routed FFN reads the post-attention residual (`mid`)
@@ -354,7 +367,11 @@ impl MetalBackend {
                 rows,
             )?;
             match &layer.ffn {
-                LayerFfnLowering::Dense { weights, shape } => {
+                LayerFfnLowering::Dense {
+                    weights,
+                    shape,
+                    layer_scale,
+                } => {
                     let fscratch = FfnScratch {
                         normed: s.ffn_normed,
                         gate: s.ffn_gate,
@@ -365,6 +382,12 @@ impl MetalBackend {
                     self.encode_gated_ffn_rows(
                         encs, mid, dst, weights, &fscratch, s.ffn_post, shape, rows,
                     )?;
+                    // Elementwise, so the block's `[rows, hidden]` output
+                    // scales in one dispatch with the per-position arithmetic.
+                    if let Some(scale) = layer_scale {
+                        let enc = encs.stage(Stage::FfnOut);
+                        self.encode_scale_vector(enc, dst, rows * shape.hidden, *scale);
+                    }
                 }
                 // Each row runs the single-position routed layer at its byte
                 // offset of the block: its own route, the same dispatches,

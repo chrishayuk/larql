@@ -45,6 +45,9 @@ const OFFSET: f32 = 1.0;
 /// Glimmer's final norm is uncentred.
 const HEAD_OFFSET: f32 = 0.0;
 const RESIDUAL_SCALE: f32 = 0.5;
+/// The stack's last layer carries a whole-layer output scalar on its
+/// dense FFN, so the block's scale arm is held to the per-position one.
+const LAYER_SCALE: f32 = 0.75;
 /// Kimi-K3's SiTU-GLU bounds (`test_lowering_situ`).
 const SITU_BETA: f32 = 4.0;
 const SITU_LINEAR_BETA: f32 = 25.0;
@@ -565,6 +568,7 @@ fn layers<'a>(
                         activation,
                         residual_scale: None,
                     },
+                    layer_scale: (l == LAYERS - 1).then_some(LAYER_SCALE),
                 },
                 k_cache,
                 v_cache,

@@ -464,6 +464,7 @@ fn step(d: &Device<'_>, ws: &[LayerW], h0: &[f32], t: usize, share: bool) -> Vec
                         activation: FfnActivation::Silu,
                         residual_scale: None,
                     },
+                    layer_scale: None,
                 },
                 k_cache: &d.kv[ci].0,
                 v_cache: &d.kv[ci].1,

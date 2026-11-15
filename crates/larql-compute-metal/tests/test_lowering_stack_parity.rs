@@ -49,6 +49,19 @@ const QSCALE: f32 = 3.87;
 const THETA: f64 = 500_000.0;
 const WINDOW: usize = 4;
 const CHECKPOINTS: [usize; 6] = [0, 3, 12, 25, 38, 51];
+/// Every this-many layers carries a whole-layer output scalar on its
+/// dense FFN (Gemma 4 E-series `layer_scalar`); the others carry none.
+const LAYER_SCALE_STRIDE: usize = 5;
+/// The scalar's base and per-layer step: near one, distinct per layer,
+/// so a scale applied to the wrong layer or skipped shows in parity.
+const LAYER_SCALE_BASE: f32 = 0.8;
+const LAYER_SCALE_STEP: f32 = 0.01;
+
+/// This layer's output scalar, `None` = the op is absent.
+fn layer_scale_for(layer: usize) -> Option<f32> {
+    (layer % LAYER_SCALE_STRIDE == LAYER_SCALE_STRIDE - 1)
+        .then_some(LAYER_SCALE_BASE + LAYER_SCALE_STEP * layer as f32)
+}
 
 fn det(n: usize, seed: u32) -> Vec<f32> {
     let mut s = seed.wrapping_mul(2654435761).wrapping_add(17);
@@ -281,6 +294,9 @@ fn cpu_stack(h0: &[f32], ws: &[LayerW]) -> (Vec<f32>, Vec<Vec<f32>>) {
         let d = matvec(&w.fdq, &act, HIDDEN, INTER);
         let d = rms(&d, &w.fp, POST_EPS, OFFSET);
         h = h1.iter().zip(&d).map(|(a, b)| a + b).collect();
+        if let Some(scale) = layer_scale_for(l) {
+            h.iter_mut().for_each(|x| *x *= scale);
+        }
 
         if CHECKPOINTS.contains(&l) {
             caps.push(h.clone());
@@ -475,6 +491,7 @@ fn fifty_two_layers_lower_into_one_scheduling_domain() {
                         activation: FfnActivation::Silu,
                         residual_scale: None,
                     },
+                    layer_scale: layer_scale_for(l),
                 },
                 k_cache: &kv[l].0,
                 v_cache: &kv[l].1,

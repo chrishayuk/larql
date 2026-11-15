@@ -90,14 +90,20 @@ impl<'a> LoweredSession<'a> {
                 l.attention.softmax().map(|op| &op.position)
             )));
         }
-        if let Some(l) = plan
-            .layers
-            .iter()
-            .find(|l| l.layer_scale.is_some() && l.ffn.as_ref().and_then(|f| f.hybrid()).is_none())
-        {
+        // A layer scalar rides the dense and hybrid arms of the stack
+        // encoder (after the FFN's residual add, #741); the routed FFN's
+        // served MoE path writes its own residual combine and has no slot
+        // for it, so refuse rather than silently leave the layer unscaled.
+        if let Some(l) = plan.layers.iter().find(|l| {
+            l.layer_scale.is_some()
+                && matches!(
+                    l.ffn,
+                    Some(crate::format::vindex3::opplan::LayerFfn::Routed(_))
+                )
+        }) {
             return Err(VindexError::Parse(format!(
-                "layer {} carries a layer scalar on a non-hybrid FFN, which the stack encoder \
-                 applies only on the hybrid arm today; refusing",
+                "layer {} carries a layer scalar on a routed FFN, whose served combine has no \
+                 layer-scalar slot; refusing",
                 l.layer
             )));
         }

@@ -186,6 +186,7 @@ impl<'a> LoweredSession<'a> {
                         ),
                         residual_scale: plan_layer.residual_scale,
                     },
+                    layer_scale: r.layer_scale,
                 },
                 FfnResident::Routed(routed) => {
                     LayerFfnLowering::Routed(Box::new(RoutedFfnLowering {
