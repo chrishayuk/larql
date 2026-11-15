@@ -582,3 +582,56 @@ fn a_failed_step_commits_nothing_and_invalidates_the_session() {
         }
     }
 }
+
+/// Every refusal of a plan the block route cannot verify, before any
+/// continuation exists and before any worker is asked.
+#[test]
+fn operands_block_verification_cannot_serve_are_refused_at_construction() {
+    let backend = ProductionBackend::new();
+
+    // A residual that leaves through a per-position reduction: the
+    // hyper-connected fixture. (The attention-residual check shares this
+    // condition; no container fixture carries an attention residual.)
+    let work = tempfile::tempdir().unwrap();
+    let hc = larql_vindex::format::vindex3::fixtures_hyper_connection::hyper_connected_container(
+        work.path(),
+    );
+    let hc = Vindex3Runtime::open(&hc, COMPONENT, ProductionBackend::new())
+        .unwrap()
+        .prepare_slice(ExecutionSlice::Full)
+        .unwrap();
+    assert!(hc.operands().carries_hyper_connection());
+    let error = match RoutedBlockSession::new(hc.plan(), hc.operands(), &backend, &row(hc.plan())) {
+        Ok(_) => panic!("a block session was built over a hyper-connected residual"),
+        Err(e) => e.to_string(),
+    };
+    assert!(error.contains("single-stream residual"), "{error}");
+
+    // No output head: a one-layer slice of the routed fixture.
+    let container = container_with(miniature_routed);
+    let headless = Vindex3Runtime::open(container.path(), COMPONENT, ProductionBackend::new())
+        .unwrap()
+        .prepare_slice(ExecutionSlice::LayerRange { start: 0, end: 1 })
+        .unwrap();
+    assert!(!headless.operands().has_output());
+    let error = match RoutedBlockSession::new(
+        headless.plan(),
+        headless.operands(),
+        &backend,
+        &row(headless.plan()),
+    ) {
+        Ok(_) => panic!("a block session was built over operands with no output head"),
+        Err(e) => e.to_string(),
+    };
+    assert!(error.contains("output head"), "{error}");
+
+    // The supported shape still constructs, and nothing above reached a worker.
+    let runtime =
+        Vindex3Runtime::open(container.path(), COMPONENT, ProductionBackend::new()).unwrap();
+    let (ops, probe) = coordinator(container.path(), &runtime, &topologies()[0]);
+    let session =
+        RoutedBlockSession::new(runtime.plan(), &ops, &backend, &row(runtime.plan())).unwrap();
+    assert_eq!(session.position(), 0);
+    assert_eq!(probe.rows_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(probe.single_calls.load(Ordering::SeqCst), 0);
+}
