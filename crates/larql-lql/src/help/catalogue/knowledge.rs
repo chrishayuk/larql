@@ -13,7 +13,7 @@ pub(super) static GROUP: GroupHelp = GroupHelp {
         "tokenizer. The base files are never modified.",
         "Without BEGIN PATCH they start an anonymous recording, which BEGIN PATCH then adopts.",
         "COMPILE refuses knowledge edits and stored-weight ops in one container, and while both are",
-        "pending INFER and TRACE are refused too (HELP WEIGHTS;).",
+        "pending INFER, TRACE and CAPTURE are refused too (HELP WEIGHTS;).",
     ],
 };
 

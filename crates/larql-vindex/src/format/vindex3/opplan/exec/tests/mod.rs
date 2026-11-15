@@ -160,6 +160,7 @@ mod overrides;
 mod parity;
 mod partial_residency;
 mod payload_prefix;
+mod position_exits;
 mod position_logits;
 mod prepare_layer;
 mod recurrence_shape;

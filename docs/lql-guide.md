@@ -464,12 +464,12 @@ Staged: 2 element(s) of 0.mlp.down_proj.weight, row 5, delta 0.0625 (BF16, neare
   [5, 13]: -0.0476074 -> 0.0148926
   op digest 45d6eeb173923883
   2 weight element(s) pending in this session
-  In effect for INFER and TRACE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+  In effect for INFER, TRACE and CAPTURE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
     0.mlp.down_proj.weight [64, 256]  sha256 74c3f8e2d76b0d5b7bf5d6fb008a63b1fc9526b27a8c09cfe8914354b92d12d0
   Nothing on disk has changed: COMPILE CURRENT INTO VINDEX writes a container that stores exactly these bytes. DESCRIBE, WALK, SELECT and DIFF read the stored weights.
   (no patches applied)
   Stored-weight edits: 2 element(s) in 1 op(s), pending COMPILE
-  In effect for INFER and TRACE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+  In effect for INFER, TRACE and CAPTURE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
     0.mlp.down_proj.weight [64, 256]  sha256 74c3f8e2d76b0d5b7bf5d6fb008a63b1fc9526b27a8c09cfe8914354b92d12d0
   Nothing on disk has changed: COMPILE CURRENT INTO VINDEX writes a container that stores exactly these bytes. DESCRIBE, WALK, SELECT and DIFF read the stored weights.
 Compiled: delta.vindex3 (VINDEX3, clean container; weight patch of 2 element(s) of 0.mlp.down_proj.weight)
@@ -503,7 +503,7 @@ Staged: remove direction (64 component(s)) from 1.mlp.down_proj.weight, column(s
   op digest ada59dc5924ba662
   results are BF16 as the profile defines them; no f32 delta is involved
   1 structured op(s) pending COMPILE in this session
-  In effect for INFER and TRACE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+  In effect for INFER, TRACE and CAPTURE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
     1.mlp.down_proj.weight [64, 256]  sha256 f6ffb0885d65d312a7ecfc3e27b5b3be5879912e1f2cb022c693784ca2135408
   …
 Saved: removal.vlp (0 inserts, 1 updates, 0 deletes, 1 weight edit(s) bound to the source container)
@@ -532,7 +532,7 @@ Staged: add rank-1 update to 1.mlp.down_proj.weight, 2 column(s) 8..=9 under f64
   op digest 3ae85f53b8765b65
   results are BF16 as the profile defines them; an element whose terms all have a zero factor keeps its bits
   1 structured op(s) pending COMPILE in this session
-  In effect for INFER and TRACE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+  In effect for INFER, TRACE and CAPTURE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
     1.mlp.down_proj.weight [64, 256]  sha256 5fbf52eff4d7cc89ad8f47887c25d6e9c6285b4cc58b806d86605dc20270fb54
   …
 Compiled: lowrank.vindex3 (VINDEX3, clean container; weight patch of 128 element(s) of 1.mlp.down_proj.weight)
@@ -568,7 +568,7 @@ Staged: remove direction (64 component(s)) from 1.mlp.down_proj.weight, …
 Staged: 2 element(s) of 0.mlp.down_proj.weight, row 5, delta 0.0625 (BF16, nearest-even of the exact sum)
   …
   recorded into patch "edit.vlp" (3 ops pending)
-  In effect for INFER and TRACE in this session: 2 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+  In effect for INFER, TRACE and CAPTURE in this session: 2 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
     1.mlp.down_proj.weight [64, 256]  sha256 0e8aa74721d59ff096a196f37bd8bd058f4b8401258f0d66446ff12487b8627b
     0.mlp.down_proj.weight [64, 256]  sha256 74c3f8e2d76b0d5b7bf5d6fb008a63b1fc9526b27a8c09cfe8914354b92d12d0
   …
@@ -587,7 +587,7 @@ APPLY PATCH "edit.vlp";
 SHOW PATCHES;
 COMPILE CURRENT INTO VINDEX "edited.vindex3";'
 Applied: edit.vlp (3 operations: 0 inserts, 3 updates, 0 deletes; 2 stored-weight edit(s), bound to this container and pending COMPILE; 2 structured weight op(s), bound to this container and pending COMPILE)
-  In effect for INFER and TRACE in this session: 2 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+  In effect for INFER, TRACE and CAPTURE in this session: 2 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
     1.mlp.down_proj.weight [64, 256]  sha256 0e8aa74721d59ff096a196f37bd8bd058f4b8401258f0d66446ff12487b8627b
     0.mlp.down_proj.weight [64, 256]  sha256 74c3f8e2d76b0d5b7bf5d6fb008a63b1fc9526b27a8c09cfe8914354b92d12d0
   …
@@ -658,18 +658,18 @@ REMOVE PATCH "edit.vlp";
 SHOW PATCHES;'
 Staged: 1 element(s) of 0.mlp.down_proj.weight, row 5, delta 0.0625 (BF16, nearest-even of the exact sum)
   …
-  In effect for INFER and TRACE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+  In effect for INFER, TRACE and CAPTURE in this session: 1 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
     0.mlp.down_proj.weight [64, 256]  sha256 d96553fd4081236158e02b744cfbe485545fb0c1ace7655b0ffd6ac798dc2177
   …
 Discarded: 1 stored-weight op(s) staged in this session
-  No stored-weight op is in effect: INFER and TRACE execute the container's stored weights.
+  No stored-weight op is in effect: INFER, TRACE and CAPTURE execute the container's stored weights.
 Applied: edit.vlp (3 operations: …)
-  In effect for INFER and TRACE in this session: 2 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
+  In effect for INFER, TRACE and CAPTURE in this session: 2 tensor(s) execute from patched bytes held in memory, not from the container's stored bytes.
     1.mlp.down_proj.weight [64, 256]  sha256 0e8aa74721d59ff096a196f37bd8bd058f4b8401258f0d66446ff12487b8627b
     0.mlp.down_proj.weight [64, 256]  sha256 74c3f8e2d76b0d5b7bf5d6fb008a63b1fc9526b27a8c09cfe8914354b92d12d0
   …
 Removed patch #1
-  No stored-weight op is in effect: INFER and TRACE execute the container's stored weights.
+  No stored-weight op is in effect: INFER, TRACE and CAPTURE execute the container's stored weights.
   (no patches applied)
 ```
 
@@ -702,7 +702,7 @@ ADD LOW RANK "a_b.json" TO "1.mlp.down_proj.weight" COLUMNS (20, 21) NUMERICS "f
 COMPILE CURRENT INTO VINDEX "twice.vindex3";'
 Staged: add rank-1 update to 1.mlp.down_proj.weight, 2 column(s) 20..=21 under f64-seq-rne1/v1; 128 element(s) would change
   …
-  NOT executable in this session, so INFER and TRACE are refused while it is pending: COMPILE would refuse these ops: the source already carries a weight-patch ledger; patching a patched container is not supported
+  NOT executable in this session, so INFER, TRACE and CAPTURE are refused while it is pending: COMPILE would refuse these ops: the source already carries a weight-patch ledger; patching a patched container is not supported
   Nothing on disk has changed.
 Error: Execution error: COMPILE refused: the source already carries a weight-patch ledger; patching a patched container is not supported
 ```
@@ -791,7 +791,7 @@ error. How a verifier is found is in [the contract protocol](verification/contra
   ```
 
   So nothing in this guide runs `INFER` on an edited session. That a staged op is executed is shown here only
-  by the engine's reply (`In effect for INFER and TRACE in this session`), and is established by the tests
+  by the engine's reply (`In effect for INFER, TRACE and CAPTURE in this session`), and is established by the tests
   named at the top of this section.
 
 `HELP <statement>;` gives each statement's refusals in full, and the spec (§3.5.1 to §3.5.4, §3.9) the
@@ -811,6 +811,7 @@ limits and what is and is not verified.
 | Verification | VERIFY REPRESENTATION, VERIFY OPERATOR, VERIFY PATCH, VERIFY LEDGER (external verifier) |
 | Introspection | SHOW RELATIONS/LAYERS/FEATURES/ENTITIES/MODELS/PATCHES, SHOW COMPONENTS/REPRESENTATIONS/TENSORS/PROVENANCE/AUTHORITY (VINDEX3), STATS |
 | Weight reads (VINDEX3) | EXPORT WEIGHT (one stored tensor, or rows and columns of it, to `.npy` with a `.npy.json` sidecar) |
+| Activation reads (VINDEX3) | CAPTURE (what the session's program computed at a site, layer and positions, to `.npy` with a `.npy.json` sidecar) |
 | Help | HELP, HELP \<topic\> |
 | Pipe | `\|>` chains two statements |
 

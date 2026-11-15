@@ -28,7 +28,9 @@ impl Statement {
             | Statement::CompactMajor { .. }
             | Statement::SavePatch
             // Writes a .npy file and its sidecar.
-            | Statement::ExportWeight { .. } => true,
+            | Statement::ExportWeight { .. }
+            // Writes a .npy file and its sidecar.
+            | Statement::Capture { .. } => true,
             Statement::Diff { into_patch, .. } => into_patch.is_some(),
             Statement::Trace { save, .. } => save.is_some(),
             Statement::Pipe { left, right } => left.writes_artifact() || right.writes_artifact(),

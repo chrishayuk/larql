@@ -211,6 +211,7 @@ impl Session {
             knowledge,
             overlay,
             bos_token,
+            patch_files: Vec::new(),
         };
         self.patch_recording = None;
         self.auto_patch = false;

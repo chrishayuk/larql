@@ -2,6 +2,8 @@
 ///
 /// Every LQL statement parses into one `Statement` variant.
 /// The executor dispatches each variant to the appropriate backend.
+mod capture;
+pub use capture::{CaptureContinuation, CaptureLayers, CapturePositions, CaptureSite};
 
 #[derive(Debug, Clone)]
 pub enum Statement {
@@ -213,6 +215,18 @@ pub enum Statement {
         output: String,
         bits: bool,
     },
+    /// `CAPTURE <site> [AT LAYER <n> | AT LAYERS (<n>, …)] FOR "<prompt>" [CONTINUE "<text>" | CONTINUE
+    /// TOKENS (<id>, …) | GENERATE <n>] [POSITIONS …] TO "<file>.npy"` (VINDEX3): run the session's program
+    /// over the prompt (and continuation), as `INFER` runs it, and write the values it computed at one site to a
+    /// NumPy `.npy` file with a `<file>.npy.json` sidecar.
+    Capture {
+        site: CaptureSite,
+        layers: Option<CaptureLayers>,
+        prompt: String,
+        continuation: Option<CaptureContinuation>,
+        positions: CapturePositions,
+        output: String,
+    },
     /// `SHOW PROVENANCE ["object"]` (VINDEX3): hashes and lineage per
     /// directory entry — payload and segment digests, what an entry was
     /// compiled from, what model the container derives from.
@@ -356,6 +370,7 @@ impl Statement {
             Statement::ShowRepresentations { .. } => "SHOW REPRESENTATIONS",
             Statement::ShowTensors { .. } => "SHOW TENSORS",
             Statement::ExportWeight { .. } => "EXPORT WEIGHT",
+            Statement::Capture { .. } => "CAPTURE",
             Statement::ShowProvenance { .. } => "SHOW PROVENANCE",
             Statement::ShowAuthority => "SHOW AUTHORITY",
             Statement::VerifyRepresentation { .. } => "VERIFY REPRESENTATION",
