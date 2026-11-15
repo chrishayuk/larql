@@ -4,6 +4,9 @@
 use std::path::{Path, PathBuf};
 
 use larql_vindex::format::vindex3::gguf::dense::spm_vocab::ScoreSource;
+use larql_vindex::format::vindex3::gguf::dense::tokenizer::{
+    DERIVED_SCORES_KEY, DERIVED_SCORES_VALUE,
+};
 use larql_vindex::format::vindex3::gguf::dense::{
     export_dense, ContextSource, DenseExport, DenseExportOptions,
 };
@@ -14,6 +17,7 @@ pub(super) struct VindexToGgufArgs<'a> {
     pub output: &'a Path,
     pub text_only: bool,
     pub tokenizer_model: Option<PathBuf>,
+    pub derived_tokenizer_scores: bool,
 }
 
 /// The lines printed after a successful export — every count observed
@@ -54,23 +58,37 @@ pub(super) fn summary(report: &DenseExport) -> Vec<String> {
         (Some(p), ScoreSource::SentencePieceModel) => {
             lines.push(format!("  token scores: from {}", p.display()))
         }
-        _ => lines.push(
-            "  warning: no tokenizer.model — token scores derived from vocabulary order \
-             (order-preserving, not the trainer's values; pass --tokenizer-model for those)"
-                .into(),
-        ),
+        _ => lines.push(format!(
+            "  NOT EXACT: no tokenizer.model — token scores derived from vocabulary order \
+             (order-preserving, not the trainer's values); the file carries \
+             `{DERIVED_SCORES_KEY} = {DERIVED_SCORES_VALUE}`"
+        )),
     }
     lines
+}
+
+/// The last line of a run: whether the file is an exact export.
+pub(super) fn exit_note(report: &DenseExport) -> String {
+    if report.exact() {
+        "exact export".into()
+    } else {
+        format!(
+            "non-exact export: token scores derived (marked in the file as \
+             `{DERIVED_SCORES_KEY}`); pass --tokenizer-model for an exact one"
+        )
+    }
 }
 
 pub(super) fn run(args: VindexToGgufArgs<'_>) -> Result<(), Box<dyn std::error::Error>> {
     let options = DenseExportOptions {
         text_only: args.text_only,
         sentencepiece_model: args.tokenizer_model,
+        derived_tokenizer_scores: args.derived_tokenizer_scores,
     };
     let report = export_dense(args.input, args.output, &options)?;
     for line in summary(&report) {
         eprintln!("{line}");
     }
+    eprintln!("{}", exit_note(&report));
     Ok(())
 }

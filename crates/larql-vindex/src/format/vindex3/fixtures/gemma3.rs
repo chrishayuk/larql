@@ -167,16 +167,77 @@ fn tokenizer_config() -> serde_json::Value {
     })
 }
 
+/// The SentencePiece score the fixture's `tokenizer.model` gives piece
+/// `id` — deliberately not the vocabulary-order rank, so an export that
+/// derived its scores is distinguishable from one that read them.
+pub fn gemma3_fixture_piece_score(id: usize) -> f32 {
+    const SCORE_STEP: f32 = -0.5;
+    id as f32 * SCORE_STEP
+}
+
+/// `SentencePiece.Type` values the fixture's pieces carry.
+const SP_NORMAL: u64 = 1;
+const SP_UNKNOWN: u64 = 2;
+const SP_CONTROL: u64 = 3;
+const SP_BYTE: u64 = 6;
+
+fn proto_varint(mut v: u64, out: &mut Vec<u8>) {
+    const LOW_SEVEN: u64 = 0x7f;
+    const CONTINUE: u8 = 0x80;
+    loop {
+        let b = (v & LOW_SEVEN) as u8;
+        v >>= 7;
+        if v == 0 {
+            out.push(b);
+            return;
+        }
+        out.push(b | CONTINUE);
+    }
+}
+
+fn proto_len(field: u64, body: &[u8], out: &mut Vec<u8>) {
+    proto_varint(field << 3 | 2, out);
+    proto_varint(body.len() as u64, out);
+    out.extend_from_slice(body);
+}
+
+/// A serialised SentencePiece `ModelProto` for the fixture's pieces:
+/// `pieces = 1 { piece = 1, score = 2, type = 3 }`.
+pub fn gemma3_fixture_sentencepiece_model() -> Vec<u8> {
+    let mut out = Vec::new();
+    for (id, text) in GEMMA3_FIXTURE_PIECES.iter().enumerate() {
+        let kind = match *text {
+            "<unk>" => SP_UNKNOWN,
+            "<pad>" | "<eos>" | "<bos>" => SP_CONTROL,
+            t if t.starts_with("<0x") => SP_BYTE,
+            _ => SP_NORMAL,
+        };
+        let mut piece = Vec::new();
+        proto_len(1, text.as_bytes(), &mut piece);
+        proto_varint(2 << 3 | 5, &mut piece);
+        piece.extend_from_slice(&gemma3_fixture_piece_score(id).to_le_bytes());
+        proto_varint(3 << 3, &mut piece);
+        proto_varint(kind, &mut piece);
+        proto_len(1, &piece, &mut out);
+    }
+    out
+}
+
 fn write_json(dir: &Path, name: &str, value: &serde_json::Value) {
     std::fs::write(dir.join(name), serde_json::to_string_pretty(value).unwrap()).unwrap();
 }
 
 /// Write the checkpoint into `dir` (config, BF16 safetensors, tokenizer
-/// files, generation config).
+/// files including a SentencePiece `tokenizer.model`, generation config).
 pub fn gemma3_text_checkpoint(dir: &Path) {
     write_json(dir, "config.json", &config());
     write_json(dir, "tokenizer.json", &tokenizer_json());
     write_json(dir, "tokenizer_config.json", &tokenizer_config());
+    std::fs::write(
+        dir.join("tokenizer.model"),
+        gemma3_fixture_sentencepiece_model(),
+    )
+    .unwrap();
     write_json(
         dir,
         "generation_config.json",

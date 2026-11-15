@@ -96,6 +96,13 @@ enum ConvertCommand {
         /// when the container does not carry one.
         #[arg(long)]
         tokenizer_model: Option<PathBuf>,
+
+        /// With no tokenizer.model available, derive token scores from
+        /// vocabulary order instead of refusing. The file is then NOT an
+        /// exact export, and its metadata says so
+        /// (`larql.export.tokenizer_scores`).
+        #[arg(long)]
+        derived_tokenizer_scores: bool,
     },
 
     /// Show GGUF file metadata and tensor info.
@@ -246,11 +253,13 @@ pub fn run(args: ConvertArgs) -> Result<(), Box<dyn std::error::Error>> {
             output,
             text_only,
             tokenizer_model,
+            derived_tokenizer_scores,
         } => vindex_to_gguf::run(vindex_to_gguf::VindexToGgufArgs {
             input: &input,
             output: &output,
             text_only,
             tokenizer_model,
+            derived_tokenizer_scores,
         }),
         ConvertCommand::GgufInfo { input } => run_gguf_info(&input),
         ConvertCommand::Quantize(cmd) => run_quantize(cmd),

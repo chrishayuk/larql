@@ -22,7 +22,7 @@ fn len_field(field: u64, body: &[u8], out: &mut Vec<u8>) {
 
 /// A `ModelProto` holding `(text, score, type)` pieces, plus a trainer
 /// spec and a stray varint field the reader must skip.
-pub fn encode_model(pieces: &[(&str, f32, u64)]) -> Vec<u8> {
+fn encode_model(pieces: &[(&str, f32, u64)]) -> Vec<u8> {
     let mut out = Vec::new();
     for (text, score, kind) in pieces {
         let mut p = Vec::new();

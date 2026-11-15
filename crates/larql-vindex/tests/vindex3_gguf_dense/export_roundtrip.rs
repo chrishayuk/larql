@@ -7,10 +7,12 @@ use larql_models::quant::half::bf16_to_f32;
 use larql_vindex::format::vindex3::encode::segment::read_segment_header;
 use larql_vindex::format::vindex3::fixtures::*;
 use larql_vindex::format::vindex3::gguf::dense::spm_vocab::ScoreSource;
+use larql_vindex::format::vindex3::gguf::dense::tokenizer::{
+    DERIVED_SCORES_KEY, DERIVED_SCORES_VALUE,
+};
 use larql_vindex::format::vindex3::gguf::dense::{export_dense, ContextSource, DenseExportOptions};
 
 use super::common::{meta, strings, tensor_bytes, Fixture};
-use super::sentencepiece::encode_model;
 
 const TYPE_F32: u32 = 0;
 const TYPE_BF16: u32 = 30;
@@ -225,11 +227,18 @@ fn the_tokenizer_arrays_reach_the_file() {
             _ => panic!(),
         })
         .collect();
+    // Added tokens at -1000; every other piece at its SentencePiece score.
     assert_eq!(scores[0], -1000.0);
-    assert_eq!(scores[4], 0.0);
-    assert_eq!((scores[7], scores[8], scores[15]), (-0.0, -1.0, -5.0));
+    for id in [4, 7, 8, 15] {
+        assert_eq!(scores[id], gemma3_fixture_piece_score(id), "score of {id}");
+    }
     assert_eq!(scores[GEMMA3_FIXTURE_VOCAB - 1], -10000.0);
-    assert_eq!(report.score_source, ScoreSource::DerivedFromVocabularyOrder);
+    assert_eq!(report.score_source, ScoreSource::SentencePieceModel);
+    assert!(report.exact());
+    assert!(
+        !f.metadata.contains_key(DERIVED_SCORES_KEY),
+        "an exact export is unmarked"
+    );
     assert_eq!(
         report.vocab_padded,
         GEMMA3_FIXTURE_VOCAB - GEMMA3_FIXTURE_PIECES.len()
@@ -264,50 +273,87 @@ fn the_tokenizer_arrays_reach_the_file() {
     );
 }
 
-#[test]
-fn a_sentencepiece_model_supplies_the_scores() {
-    let fx = Fixture::new();
-    let pieces: Vec<(&str, f32, u64)> = GEMMA3_FIXTURE_PIECES
-        .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            (
-                *p,
-                -(i as f32) * 0.5,
-                if p.starts_with("<0x") { 6 } else { 1 },
-            )
-        })
-        .collect();
-    let model = fx.out("tokenizer.model");
-    std::fs::write(&model, encode_model(&pieces)).unwrap();
-    let out = fx.out("model.gguf");
-    let report = export_dense(
-        &fx.container,
-        &out,
-        &DenseExportOptions {
-            sentencepiece_model: Some(model.clone()),
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    assert_eq!(report.score_source, ScoreSource::SentencePieceModel);
-    assert_eq!(report.sentencepiece_model.as_deref(), Some(model.as_path()));
-    let f = GgufFile::open(&out).unwrap();
+fn scores_of(out: &std::path::Path) -> Vec<f32> {
+    let f = GgufFile::open(out).unwrap();
     let GgufValue::Array(scores) = meta(&f, "tokenizer.ggml.scores") else {
         panic!()
     };
-    assert_eq!(scores[8], GgufValue::F32(-4.0));
-    assert_eq!(scores[15], GgufValue::F32(-7.5));
+    scores
+        .iter()
+        .map(|s| match s {
+            GgufValue::F32(v) => *v,
+            _ => panic!(),
+        })
+        .collect()
+}
 
-    // A model the container carries wins over none at all.
-    std::fs::copy(&model, fx.container.join("tokenizer.model")).unwrap();
-    let carried = export_dense(
-        &fx.container,
-        &fx.out("carried.gguf"),
-        &DenseExportOptions::default(),
-    )
-    .unwrap();
-    assert_eq!(carried.score_source, ScoreSource::SentencePieceModel);
+/// The fixture container without its `tokenizer.model`.
+fn without_tokenizer_model() -> Fixture {
+    let fx = Fixture::new();
+    std::fs::remove_file(fx.container.join("tokenizer.model")).unwrap();
+    fx
+}
+
+#[test]
+fn a_given_tokenizer_model_stands_in_for_a_missing_one() {
+    let fx = without_tokenizer_model();
+    let model = fx.out("tokenizer.model");
+    std::fs::write(&model, gemma3_fixture_sentencepiece_model()).unwrap();
+    let out = fx.out("model.gguf");
+    let options = DenseExportOptions {
+        sentencepiece_model: Some(model.clone()),
+        ..Default::default()
+    };
+    let report = export_dense(&fx.container, &out, &options).unwrap();
+    assert_eq!(report.score_source, ScoreSource::SentencePieceModel);
+    assert_eq!(report.sentencepiece_model.as_deref(), Some(model.as_path()));
+    assert_eq!(scores_of(&out)[8], gemma3_fixture_piece_score(8));
+}
+
+#[test]
+fn no_tokenizer_model_refuses_by_default() {
+    let fx = without_tokenizer_model();
+    let out = fx.out("model.gguf");
+    let err = export_dense(&fx.container, &out, &DenseExportOptions::default())
+        .unwrap_err()
+        .to_string();
+    for needle in [
+        "tokenizer.model",
+        "19,225 of 262,208",
+        "--derived-tokenizer-scores",
+    ] {
+        assert!(err.contains(needle), "expected `{needle}` in: {err}");
+    }
+    assert!(!out.exists());
+}
+
+#[test]
+fn derived_scores_are_opt_in_and_mark_the_file_non_exact() {
+    let fx = without_tokenizer_model();
+    let out = fx.out("model.gguf");
+    let options = DenseExportOptions {
+        derived_tokenizer_scores: true,
+        ..Default::default()
+    };
+    let report = export_dense(&fx.container, &out, &options).unwrap();
+    assert_eq!(report.score_source, ScoreSource::DerivedFromVocabularyOrder);
+    assert!(!report.exact());
+    let scores = scores_of(&out);
+    assert_eq!(
+        (scores[4], scores[7], scores[8], scores[15]),
+        (0.0, -0.0, -1.0, -5.0)
+    );
+    let f = GgufFile::open(&out).unwrap();
+    assert_eq!(
+        meta(&f, DERIVED_SCORES_KEY).as_str(),
+        Some(DERIVED_SCORES_VALUE)
+    );
+    assert_eq!(report.verify.metadata_keys, report.metadata_keys);
+
+    // The opt-in changes nothing when the real scores are available.
+    let exact = Fixture::new();
+    let report = export_dense(&exact.container, &exact.out("m.gguf"), &options).unwrap();
+    assert!(report.exact());
 }
 
 #[test]

@@ -49,6 +49,10 @@ pub struct DenseExportOptions {
     /// A `tokenizer.model` to read piece scores from when the container
     /// does not carry one.
     pub sentencepiece_model: Option<PathBuf>,
+    /// Accept token scores derived from vocabulary order when no
+    /// `tokenizer.model` is available. The file is then not exact and is
+    /// marked so in its metadata; without this the export refuses.
+    pub derived_tokenizer_scores: bool,
 }
 
 /// Where the context length came from.
@@ -77,6 +81,14 @@ pub struct DenseExport {
     pub vocab_tokens: usize,
     pub vocab_padded: usize,
     pub verify: VerifyReport,
+}
+
+impl DenseExport {
+    /// Whether every byte follows from the container and its declared
+    /// authorities — false when token scores were derived.
+    pub fn exact(&self) -> bool {
+        self.score_source == ScoreSource::SentencePieceModel
+    }
 }
 
 fn refuse(msg: impl Into<String>) -> VindexError {
@@ -234,6 +246,7 @@ pub fn export_dense(
         target,
         head.vocab_size,
         options.sentencepiece_model.as_deref(),
+        options.derived_tokenizer_scores,
     )?;
     let generation_config = read_json(&root.join(GENERATION_CONFIG_JSON))?;
 
