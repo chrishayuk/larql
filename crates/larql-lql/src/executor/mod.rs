@@ -326,6 +326,16 @@ impl Session {
             Statement::ShowRepresentations { object } => {
                 self.exec_show_representations(object.as_deref())
             }
+            Statement::ShowTensors { filter } => self.exec_show_tensors(filter.as_deref()),
+            Statement::ExportWeight {
+                tensor,
+                rows,
+                columns,
+                output,
+                bits,
+            } => {
+                self.exec_export_weight(tensor, rows.as_deref(), columns.as_deref(), output, *bits)
+            }
             Statement::ShowProvenance { object } => self.exec_show_provenance(object.as_deref()),
             Statement::ShowAuthority => self.exec_show_authority(),
             Statement::ShowCompactStatus => self.exec_show_compact_status(),

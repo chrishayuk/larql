@@ -21,9 +21,12 @@ use larql_vindex::format::vindex3::opplan::LayerAttention;
 use crate::error::LqlError;
 use crate::executor::{Backend, Session};
 
+mod export_weight;
 mod low_rank;
+mod npy;
 mod overrides;
 mod session;
+mod tensors;
 mod weights;
 pub(crate) use overrides::*;
 pub(crate) use session::*;

@@ -8,9 +8,11 @@ pub(super) static GROUP: GroupHelp = GroupHelp {
     aliases: &["INTROSPECTION", "BROWSE"],
     title: "Inspect",
     intro: &[
-        "Read-only statements. STATS, SHOW COMPONENTS / REPRESENTATIONS / PROVENANCE / AUTHORITY /",
-        "LAYERS / MODELS and DIFF answer from what the container declares and need no tokenizer.",
-        "SHOW RELATIONS / FEATURES / ENTITIES, DESCRIBE and SELECT decode token ids and need one.",
+        "Read-only statements. STATS, SHOW COMPONENTS / REPRESENTATIONS / TENSORS / PROVENANCE /",
+        "AUTHORITY / LAYERS / MODELS and DIFF answer from what the container declares and need no",
+        "tokenizer. SHOW RELATIONS / FEATURES / ENTITIES, DESCRIBE and SELECT decode token ids and",
+        "need one. EXPORT WEIGHT changes nothing in the session; it writes one stored tensor to a",
+        ".npy file.",
     ],
 };
 
@@ -65,6 +67,76 @@ pub(super) static SHOW_REPRESENTATIONS: StatementHelp = StatementHelp {
     operands: &[],
     refusals: &["The session is bound to something other than a VINDEX3 container."],
     related: &["SHOW PROVENANCE", "SHOW COMPONENTS"],
+};
+
+pub(super) static SHOW_TENSORS: StatementHelp = StatementHelp {
+    name: "SHOW TENSORS",
+    aliases: &["TENSORS", "TENSOR NAMES"],
+    group: HelpGroup::Inspect,
+    syntax: &["SHOW TENSORS [\"<filter>\"];"],
+    does: &[
+        "Lists every tensor of every representation, canonical and derived, by its qualified name",
+        "<representation>::<tensor>, with its stored dtype and shape. The qualified name always names",
+        "exactly one tensor. EXPORT WEIGHT accepts it, and so do the weight edits when the",
+        "representation is canonical.",
+        "The Bare column says what the bare name (the part after \"::\") finds: \"yes\" when it finds",
+        "this tensor, \"ambiguous\" when more than one canonical representation holds it (the token",
+        "embedding and a norm gain both named \"weight\", say), and \"no (derived)\" for a derived",
+        "representation, which only its qualified name reaches.",
+        "The optional string keeps representations whose id or object contains it.",
+    ],
+    examples: &["SHOW TENSORS;", "SHOW TENSORS \"embedding\";"],
+    needs: &[Need::Vindex3],
+    effect: &["Read-only. It reads the representation directory and the segments' tensor tables, no weights."],
+    operands: &[],
+    refusals: &["The session is bound to something other than a VINDEX3 container."],
+    related: &["SHOW REPRESENTATIONS", "EXPORT WEIGHT", "UPDATE WEIGHTS"],
+};
+
+pub(super) static EXPORT_WEIGHT: StatementHelp = StatementHelp {
+    name: "EXPORT WEIGHT",
+    aliases: &["NPY"],
+    group: HelpGroup::Inspect,
+    syntax: &[
+        "EXPORT WEIGHT \"<tensor>\" [ROWS (<i>, ...)] [COLUMNS (<j>, ...)] TO \"<file>.npy\" [AS BITS];",
+    ],
+    does: &[
+        "Writes the stored values of one tensor to a NumPy .npy file (format 1.0, little-endian),",
+        "and a sidecar <file>.npy.json that says where the numbers came from.",
+        "The tensor is named as SHOW TENSORS lists it: a bare name held by one canonical",
+        "representation, or a qualified <representation>::<tensor>, canonical or derived.",
+        "BF16 and F16 values are widened exactly to float32 (<f4); F32 is written as it is.",
+        "AS BITS writes the stored element bits instead: <u2 for BF16 and F16, <u4 for F32.",
+        "ROWS selects along the first axis and COLUMNS along the last, each in the order given;",
+        "a 1-D tensor such as a norm gain has rows and no columns.",
+        "The sidecar records the statement, the container path, the SHA-256 of its index.json, the",
+        "model, the representation, the bare tensor name, the stored and exported dtypes, the full",
+        "shape, the selected rows and columns (null when not selected), the exported shape, the",
+        "SHA-256 of the .npy file, the LARQL version, and \"reads\": \"stored\".",
+    ],
+    examples: &[
+        "EXPORT WEIGHT \"0.mlp.down_proj.weight\" TO \"down.npy\";",
+        "EXPORT WEIGHT \"0.mlp.down_proj.weight\" ROWS (5, 2) COLUMNS (12, 13) TO \"down_part.npy\";",
+        "EXPORT WEIGHT \"0.input_layernorm.weight\" TO \"gain.npy\" AS BITS;",
+        "EXPORT WEIGHT \"target.embedding@BF16::weight\" ROWS (100) TO \"token_100.npy\";",
+    ],
+    needs: &[Need::Vindex3],
+    effect: &[
+        "Writes <file>.npy and <file>.npy.json and changes nothing in the session.",
+        "It reads the container's stored bytes. An edit staged in the session or carried by an",
+        "applied patch is NOT in the export: export from the container COMPILE CURRENT INTO VINDEX",
+        "writes to read edited weights.",
+    ],
+    operands: &[],
+    refusals: &[
+        "The session is bound to something other than a VINDEX3 container.",
+        "A name no representation holds, or a bare name held by more than one canonical representation: the refusal names the qualified form to use.",
+        "A tensor stored in a packed quantised encoding (Q8_0, ...): it has no element-wise values.",
+        "A row or column outside the tensor, listed twice, or COLUMNS on a 1-D tensor.",
+        "An output that does not end in .npy, or an output or sidecar that already exists: nothing is overwritten.",
+        "After a failed statement in a batch (HELP BATCH;).",
+    ],
+    related: &["SHOW TENSORS", "SHOW REPRESENTATIONS", "COMPILE", "BATCH"],
 };
 
 pub(super) static SHOW_PROVENANCE: StatementHelp = StatementHelp {

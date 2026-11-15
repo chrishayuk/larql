@@ -192,6 +192,27 @@ pub enum Statement {
     ShowRepresentations {
         object: Option<String>,
     },
+    /// `SHOW TENSORS ["filter"]` (VINDEX3): every tensor of every
+    /// representation, canonical and derived, by its qualified name
+    /// `<representation>::<tensor>`, with its dtype and shape and whether
+    /// its bare name finds it. The optional string keeps representations
+    /// whose id or object contains it.
+    ShowTensors {
+        filter: Option<String>,
+    },
+    /// `EXPORT WEIGHT "<tensor>" [ROWS (<i>, …)] [COLUMNS (<j>, …)] TO "<file>.npy" [AS BITS]`
+    /// (VINDEX3): write the stored values of one tensor, or the rows and
+    /// columns selected in the order given, to a NumPy `.npy` file with a
+    /// `<file>.npy.json` sidecar. Values are widened exactly to f32; `AS
+    /// BITS` writes the stored element bits. It reads the container's stored
+    /// bytes, never a staged or applied edit.
+    ExportWeight {
+        tensor: String,
+        rows: Option<Vec<usize>>,
+        columns: Option<Vec<usize>>,
+        output: String,
+        bits: bool,
+    },
     /// `SHOW PROVENANCE ["object"]` (VINDEX3): hashes and lineage per
     /// directory entry — payload and segment digests, what an entry was
     /// compiled from, what model the container derives from.
@@ -333,6 +354,8 @@ impl Statement {
             Statement::ShowModels => "SHOW MODELS",
             Statement::ShowComponents => "SHOW COMPONENTS",
             Statement::ShowRepresentations { .. } => "SHOW REPRESENTATIONS",
+            Statement::ShowTensors { .. } => "SHOW TENSORS",
+            Statement::ExportWeight { .. } => "EXPORT WEIGHT",
             Statement::ShowProvenance { .. } => "SHOW PROVENANCE",
             Statement::ShowAuthority => "SHOW AUTHORITY",
             Statement::VerifyRepresentation { .. } => "VERIFY REPRESENTATION",

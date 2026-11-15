@@ -24,6 +24,8 @@ pub fn statement(topic: StatementTopic) -> &'static StatementHelp {
         StatementTopic::Stats => &inspect::STATS,
         StatementTopic::ShowComponents => &inspect::SHOW_COMPONENTS,
         StatementTopic::ShowRepresentations => &inspect::SHOW_REPRESENTATIONS,
+        StatementTopic::ShowTensors => &inspect::SHOW_TENSORS,
+        StatementTopic::ExportWeight => &inspect::EXPORT_WEIGHT,
         StatementTopic::ShowProvenance => &inspect::SHOW_PROVENANCE,
         StatementTopic::ShowAuthority => &inspect::SHOW_AUTHORITY,
         StatementTopic::ShowLayers => &inspect::SHOW_LAYERS,

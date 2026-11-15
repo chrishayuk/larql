@@ -108,6 +108,8 @@ LQL is a query language for neural network weights treated as a graph database. 
 | `ADD LOW RANK` | Stage a low-rank update of chosen columns (§3.5.3) |
 | `DISCARD WEIGHT EDITS` | Drop the stored-weight ops staged in the session (§3.5.4) |
 | `VERIFY REPRESENTATION / OPERATOR / PATCH / LEDGER` | Ask an external verifier about a container (§3.9) |
+| `SHOW TENSORS ["<filter>"]` | List every tensor of every representation by its qualified name `<representation>::<tensor>`, with dtype, shape and whether its bare name is ambiguous |
+| `EXPORT WEIGHT "<tensor>" [ROWS (…)] [COLUMNS (…)] TO "<file>.npy" [AS BITS]` | Write one stored tensor (or the rows and columns given, in order) to NumPy `.npy` 1.0: exact f32 values, or the stored bits with `AS BITS`; a `<file>.npy.json` sidecar records the container's `index_sha256`, the representation, dtypes, shapes, selection and the file's SHA-256. Reads the stored bytes, never a staged or applied edit; never overwrites |
 
 ### 2.9 Help
 
