@@ -674,10 +674,16 @@ class Pausing(unittest.TestCase):
 
 
 class Admission(unittest.TestCase):
+    def test_the_protocol_is_frozen_revision_1(self):
+        self.assertEqual(b2.PROTOCOL, "BLOCK-TIME-2 revision 1")
+
     def test_a_draft_protocol_admits_no_run_and_starts_nothing(self):
         import contextlib
         import io
         import block_time_2 as driver
+        frozen_name = b2.PROTOCOL
+        b2.PROTOCOL = frozen_name + " (draft)"
+        self.addCleanup(setattr, b2, "PROTOCOL", frozen_name)
 
         def must_not_run(*args, **kwargs):
             raise AssertionError("the driver started work for a run it must refuse")

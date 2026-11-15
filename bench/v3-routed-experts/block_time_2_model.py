@@ -13,7 +13,7 @@ import statistics
 
 import block_time_model as bt
 
-PROTOCOL = "BLOCK-TIME-2 revision 1 (draft)"
+PROTOCOL = "BLOCK-TIME-2 revision 1"
 SCHEMA = "larql.v3.block-time-2.v1"
 
 ARMS = tuple(bt.ARMS)

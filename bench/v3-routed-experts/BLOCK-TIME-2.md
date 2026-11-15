@@ -1,9 +1,10 @@
 # BLOCK-TIME-2: the RTT differential slope, in bracketed pairs
 
-Status: **DRAFT, revision 1. Not frozen, not approved for a qualifying or
-admissible run.** Nothing below has been measured. Once frozen, a change to
-this document, `block_time_2_model.py` or `block_time_2.py` is a new
-revision, not an edit.
+Status: **approved and frozen on 2026-11-15, revision 1.** A change to this
+document, `block_time_2_model.py` or `block_time_2.py` is a new revision,
+not an edit. No admissible run has been made. One declared functional
+diagnostic was run before freezing; it exercised the driver and does not
+count, and its timings are not evidence.
 
 ## Why this exists
 
@@ -312,19 +313,20 @@ is about 16 minutes; four of each, about **65 minutes**, plus warm-up and
 worker start, **about 70 to 75 minutes**. The quiet window to request is
 90 minutes.
 
-## Before freezing
+## Freezing
 
 - Independent review of this document, `block_time_2_model.py`,
-  `block_time_2.py` and `host_telemetry.py`, with their tests.
+  `block_time_2.py` and `host_telemetry.py`, with their tests: two rounds,
+  the second approving with minor changes, all of which were made.
 - A declared functional diagnostic was run
   ([`20261115-01-diagnostic`](link-results/block-time-2/README.md)); it does
   not count, and its pair 0, which held a 5-second stop, led to rules 4
   and 5.
-- On freezing: hashes of this document and the contract it depends on
+- Hashes of this document and the contract it depends on
   (`block_time_2_model.py`, `block_time_2.py`, `block_time_model.py`,
   `link_block_frames_model.py`, `link_model.py`, `profile_exact.py`,
-  `block_frames.json`) added to `frozen-protocols.json` under
-  "BLOCK-TIME-2 revision 1". The driver is frozen too, because the stall
+  `block_frames.json`) are recorded in `frozen-protocols.json` under
+  "BLOCK-TIME-2 revision 1", and checked in CI. The driver is frozen too, because the stall
   watch, the order in which stalls are attached before pairs are judged,
   and the decision whether a run counts are in it. Telemetry is
   implementation; every receipt records its hash.

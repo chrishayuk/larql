@@ -1,8 +1,9 @@
 # BLOCK-TIME-2: runs
 
-Runs of [`block_time_2.py`](../../block_time_2.py) under the
-[BLOCK-TIME-2](../../BLOCK-TIME-2.md) draft. **No admissible run has been
-made, and the protocol is not frozen.**
+Runs of [`block_time_2.py`](../../block_time_2.py) under
+[BLOCK-TIME-2](../../BLOCK-TIME-2.md). **No admissible run has been made.**
+The diagnostic below ran on the draft; the protocol was frozen as revision 1
+on 2026-11-15, after it and with rules it led to.
 
 | Run | Kind | Outcome |
 |---|---|---|

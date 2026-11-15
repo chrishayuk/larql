@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""BLOCK-TIME-2 driver (BLOCK-TIME-2.md, DRAFT). Nothing runs on import.
+"""BLOCK-TIME-2 driver (BLOCK-TIME-2.md, revision 1, frozen). Nothing runs on import.
 
   --diagnostic LABEL   a development run; declared before it starts, never counted
   --admissible         the one run the protocol admits; needs two passing

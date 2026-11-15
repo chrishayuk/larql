@@ -14,19 +14,30 @@ import json
 from pathlib import Path
 import sys
 
+import block_time_2_model as b2
 import block_time_model as bt
 import link_block_frames_model as bm
 
 RECORD = "frozen-protocols.json"
 FROZEN = {
     bm.ADDENDUM: {
+        "frozen_on": "2026-11-14",
         "document": "LINK-2-block-frames-revision-2.md",
         "contract": ["link_block_frames_model.py", "link_pair_model.py", "link_model.py", "block_frames.json"],
     },
     bt.PROTOCOL: {
+        "frozen_on": "2026-11-14",
         "document": "BLOCK-TIME-1.md",
         "contract": ["block_time_model.py", "link_block_frames_model.py", "link_model.py", "profile_exact.py",
                      "block_frames.json"],
+    },
+    # The driver is in the contract here: the stall watch, the order in which
+    # stalls are attached before pairs are judged, and whether a run counts.
+    b2.PROTOCOL: {
+        "frozen_on": "2026-11-15",
+        "document": "BLOCK-TIME-2.md",
+        "contract": ["block_time_2_model.py", "block_time_2.py", "block_time_model.py", "link_block_frames_model.py",
+                     "link_model.py", "profile_exact.py", "block_frames.json"],
     },
 }
 
@@ -36,7 +47,7 @@ def sha(name):
 
 
 def current():
-    return {protocol: {"document": files["document"],
+    return {protocol: {"frozen_on": files["frozen_on"], "document": files["document"],
                        "sha256": {name: sha(name) for name in [files["document"], *files["contract"]]}}
             for protocol, files in FROZEN.items()}
 
@@ -58,9 +69,9 @@ def changed():
 def main():
     if sys.argv[1:] == ["--write"]:
         Path(__file__).with_name(RECORD).write_text(json.dumps({
-            "frozen_on": "2026-11-14",
-            "note": "A change to any file below is a new protocol revision, not an edit. Drivers and "
-                    "trial binaries are not frozen; receipts record the hashes of those that ran.",
+            "note": "A change to any file below is a new protocol revision, not an edit. Drivers are "
+                    "frozen only where listed; trial binaries never are. Receipts record the hashes "
+                    "of everything that ran.",
             "protocols": current()}, indent=2) + "\n")
         return
     if sys.argv[1:] != ["--check"]:
