@@ -1,0 +1,2114 @@
+{
+  "schema": "larql.v3.verify-remote.v1",
+  "protocol": "VERIFY-REMOTE-1 revision 1 (draft)",
+  "kind": "diagnostic",
+  "label": "VERIFY-REMOTE-1 functional diagnostic 1 (user-authorised 2026-11-15; non-exclusive host; timings unqualified, never counted)",
+  "counts": false,
+  "continue_unsettled": true,
+  "model": "/Users/christopherhay/chris-models/gpt-oss-20b.vindex3",
+  "topology": "one",
+  "provenance": {
+    "revision": "d2625a221d6c7feb8b97e6bfde03fd79e9b3b362",
+    "uncommitted": [
+      "?? bench/v3-routed-experts/link-results/verify-remote-1/"
+    ],
+    "source_sha256": {
+      "crates/larql-cli/examples/v3_verify_remote.rs": "9171ae04e6137ba4a8255377e30e075300669514a485ac3f9692c33a06e11aa1",
+      "crates/larql-cli/examples/support/timing.rs": "364211c3e6f4a32ca86aeb49b884f6c3e14de82372c8ee49b12ea555affb710f",
+      "crates/larql-cli/examples/support/verify.rs": "59c81c587a4483bace0c3f5f37aa0c555f977b0a281dabd64c034bf229e13a11",
+      "crates/larql-inference/src/vindex3/speculate.rs": "84542150e46cd8bb223ab40a350e72f9ba7d43faf61da98513000a8bf93d0e0a",
+      "crates/larql-inference/src/speculation/prompt_lookup.rs": "852b098c0ed5060c5614c597b238d9cb963712ddc972324fb1e1b3df72c94306",
+      "crates/larql-inference/src/speculation/greedy.rs": "e74160e5252c649e8ec5a2688c7f45ee77efbb3a431096bfa057fe9d67349b63",
+      "crates/larql-inference/src/vindex3/routed_block.rs": "df5a51525a68e6fbd6dcf609b2825ee4ef6dbcd0e60e28096d2fa2c6735a69ad",
+      "crates/larql-server/examples/v3_link_shaper.rs": "187ad206271b6403865e622e96fe721e06b22ac0d3d012189b6ab86bea8af5bf"
+    },
+    "environment": {}
+  },
+  "trial_environment": {
+    "LARQL_CPU_WORKERS": "8",
+    "LARQL_KV_ENGINE": "",
+    "RAYON_NUM_THREADS": "8",
+    "TOKIO_WORKER_THREADS": "2",
+    "VECLIB_MAXIMUM_THREADS": "1"
+  },
+  "settings": {
+    "LARQL_CPU_WORKERS": "8",
+    "RAYON_NUM_THREADS": "8",
+    "VECLIB_MAXIMUM_THREADS": "1",
+    "TOKIO_WORKER_THREADS": "2",
+    "LARQL_KV_ENGINE": ""
+  },
+  "link_qos": "default",
+  "workloads": {
+    "json_edit": {
+      "kind": "copy-heavy",
+      "path": "/Users/christopherhay/chris-source/larql/.claude/worktrees/v3-block-timing/bench/v3-routed-experts/verify-remote/workloads/json_edit.json",
+      "sha256": "1263aacc295556b799dd435788e1a1112f5b95946a3ef668d13b6d0d2814df3b"
+    },
+    "code_docstring": {
+      "kind": "copy-heavy",
+      "path": "/Users/christopherhay/chris-source/larql/.claude/worktrees/v3-block-timing/bench/v3-routed-experts/verify-remote/workloads/code_docstring.json",
+      "sha256": "76f0f1f0802312c72b74ea4499dc9a57244893482f3cefcfb5017195ca72152a"
+    },
+    "prose_free": {
+      "kind": "low-copy",
+      "path": "/Users/christopherhay/chris-source/larql/.claude/worktrees/v3-block-timing/bench/v3-routed-experts/verify-remote/workloads/prose_free.json",
+      "sha256": "f51cdca5fb9d7c2e05843b022a4cfa2d461a3372055b79d89c3cdb13025a0ef4"
+    },
+    "explain": {
+      "kind": "low-copy",
+      "path": "/Users/christopherhay/chris-source/larql/.claude/worktrees/v3-block-timing/bench/v3-routed-experts/verify-remote/workloads/explain.json",
+      "sha256": "cccde328994374eda22a938b0c1f9dc1c79b5e1ebbaef990563109692fe2dd41"
+    }
+  },
+  "generate": 64,
+  "stop_ids": [
+    200002,
+    199999,
+    200012
+  ],
+  "prefill_width": 8,
+  "bracket": {
+    "workload": "prose_free",
+    "generate": 16,
+    "rtt_ms": 0.0
+  },
+  "shuffle_seed": 20261116,
+  "units": [
+    {
+      "repeat": 0,
+      "workload": "explain",
+      "rtt_ms": 5.0,
+      "arms": [
+        "verify-2",
+        "sequential",
+        "verify-8",
+        "verify-4"
+      ]
+    },
+    {
+      "repeat": 0,
+      "workload": "prose_free",
+      "rtt_ms": 5.0,
+      "arms": [
+        "sequential",
+        "verify-2",
+        "verify-4",
+        "verify-8"
+      ]
+    },
+    {
+      "repeat": 0,
+      "workload": "json_edit",
+      "rtt_ms": 20.0,
+      "arms": [
+        "verify-2",
+        "sequential",
+        "verify-8",
+        "verify-4"
+      ]
+    },
+    {
+      "repeat": 0,
+      "workload": "json_edit",
+      "rtt_ms": 5.0,
+      "arms": [
+        "sequential",
+        "verify-8",
+        "verify-4",
+        "verify-2"
+      ]
+    },
+    {
+      "repeat": 0,
+      "workload": "explain",
+      "rtt_ms": 0.0,
+      "arms": [
+        "verify-4",
+        "sequential",
+        "verify-2",
+        "verify-8"
+      ]
+    },
+    {
+      "repeat": 0,
+      "workload": "json_edit",
+      "rtt_ms": 0.0,
+      "arms": [
+        "verify-2",
+        "verify-4",
+        "sequential",
+        "verify-8"
+      ]
+    },
+    {
+      "repeat": 0,
+      "workload": "code_docstring",
+      "rtt_ms": 5.0,
+      "arms": [
+        "verify-8",
+        "sequential",
+        "verify-4",
+        "verify-2"
+      ]
+    },
+    {
+      "repeat": 0,
+      "workload": "prose_free",
+      "rtt_ms": 20.0,
+      "arms": [
+        "verify-4",
+        "verify-2",
+        "verify-8",
+        "sequential"
+      ]
+    },
+    {
+      "repeat": 0,
+      "workload": "code_docstring",
+      "rtt_ms": 20.0,
+      "arms": [
+        "verify-2",
+        "sequential",
+        "verify-4",
+        "verify-8"
+      ]
+    },
+    {
+      "repeat": 0,
+      "workload": "prose_free",
+      "rtt_ms": 0.0,
+      "arms": [
+        "verify-8",
+        "sequential",
+        "verify-4",
+        "verify-2"
+      ]
+    },
+    {
+      "repeat": 0,
+      "workload": "explain",
+      "rtt_ms": 20.0,
+      "arms": [
+        "verify-8",
+        "sequential",
+        "verify-4",
+        "verify-2"
+      ]
+    },
+    {
+      "repeat": 0,
+      "workload": "code_docstring",
+      "rtt_ms": 0.0,
+      "arms": [
+        "verify-2",
+        "verify-4",
+        "sequential",
+        "verify-8"
+      ]
+    },
+    {
+      "repeat": 1,
+      "workload": "explain",
+      "rtt_ms": 5.0,
+      "arms": [
+        "sequential",
+        "verify-8",
+        "verify-2",
+        "verify-4"
+      ]
+    },
+    {
+      "repeat": 1,
+      "workload": "json_edit",
+      "rtt_ms": 20.0,
+      "arms": [
+        "sequential",
+        "verify-4",
+        "verify-8",
+        "verify-2"
+      ]
+    },
+    {
+      "repeat": 1,
+      "workload": "code_docstring",
+      "rtt_ms": 5.0,
+      "arms": [
+        "verify-4",
+        "verify-8",
+        "verify-2",
+        "sequential"
+      ]
+    },
+    {
+      "repeat": 1,
+      "workload": "prose_free",
+      "rtt_ms": 0.0,
+      "arms": [
+        "sequential",
+        "verify-8",
+        "verify-2",
+        "verify-4"
+      ]
+    },
+    {
+      "repeat": 1,
+      "workload": "json_edit",
+      "rtt_ms": 0.0,
+      "arms": [
+        "verify-4",
+        "sequential",
+        "verify-8",
+        "verify-2"
+      ]
+    },
+    {
+      "repeat": 1,
+      "workload": "code_docstring",
+      "rtt_ms": 20.0,
+      "arms": [
+        "verify-2",
+        "verify-4",
+        "verify-8",
+        "sequential"
+      ]
+    },
+    {
+      "repeat": 1,
+      "workload": "prose_free",
+      "rtt_ms": 20.0,
+      "arms": [
+        "verify-2",
+        "sequential",
+        "verify-4",
+        "verify-8"
+      ]
+    },
+    {
+      "repeat": 1,
+      "workload": "explain",
+      "rtt_ms": 20.0,
+      "arms": [
+        "verify-2",
+        "verify-4",
+        "verify-8",
+        "sequential"
+      ]
+    },
+    {
+      "repeat": 1,
+      "workload": "prose_free",
+      "rtt_ms": 5.0,
+      "arms": [
+        "sequential",
+        "verify-4",
+        "verify-8",
+        "verify-2"
+      ]
+    },
+    {
+      "repeat": 1,
+      "workload": "code_docstring",
+      "rtt_ms": 0.0,
+      "arms": [
+        "verify-4",
+        "sequential",
+        "verify-8",
+        "verify-2"
+      ]
+    },
+    {
+      "repeat": 1,
+      "workload": "json_edit",
+      "rtt_ms": 5.0,
+      "arms": [
+        "sequential",
+        "verify-2",
+        "verify-4",
+        "verify-8"
+      ]
+    },
+    {
+      "repeat": 1,
+      "workload": "explain",
+      "rtt_ms": 0.0,
+      "arms": [
+        "verify-4",
+        "sequential",
+        "verify-2",
+        "verify-8"
+      ]
+    }
+  ],
+  "schedule": [
+    {
+      "label": "trial-000",
+      "unit": 0,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-001",
+      "unit": 0,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-002",
+      "unit": 0,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-003",
+      "unit": 0,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-004",
+      "unit": 0,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-005",
+      "unit": 0,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-006",
+      "unit": 1,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-007",
+      "unit": 1,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-008",
+      "unit": 1,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-009",
+      "unit": 1,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-010",
+      "unit": 1,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-011",
+      "unit": 1,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-012",
+      "unit": 2,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-013",
+      "unit": 2,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-014",
+      "unit": 2,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-015",
+      "unit": 2,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-016",
+      "unit": 2,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-017",
+      "unit": 2,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-018",
+      "unit": 3,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-019",
+      "unit": 3,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-020",
+      "unit": 3,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-021",
+      "unit": 3,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-022",
+      "unit": 3,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-023",
+      "unit": 3,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-024",
+      "unit": 4,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-025",
+      "unit": 4,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-026",
+      "unit": 4,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-027",
+      "unit": 4,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-028",
+      "unit": 4,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-029",
+      "unit": 4,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-030",
+      "unit": 5,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-031",
+      "unit": 5,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-032",
+      "unit": 5,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-033",
+      "unit": 5,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-034",
+      "unit": 5,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-035",
+      "unit": 5,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-036",
+      "unit": 6,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-037",
+      "unit": 6,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-038",
+      "unit": 6,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-039",
+      "unit": 6,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-040",
+      "unit": 6,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-041",
+      "unit": 6,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-042",
+      "unit": 7,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-043",
+      "unit": 7,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-044",
+      "unit": 7,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-045",
+      "unit": 7,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-046",
+      "unit": 7,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-047",
+      "unit": 7,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-048",
+      "unit": 8,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-049",
+      "unit": 8,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-050",
+      "unit": 8,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-051",
+      "unit": 8,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-052",
+      "unit": 8,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-053",
+      "unit": 8,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-054",
+      "unit": 9,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-055",
+      "unit": 9,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-056",
+      "unit": 9,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-057",
+      "unit": 9,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-058",
+      "unit": 9,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-059",
+      "unit": 9,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-060",
+      "unit": 10,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-061",
+      "unit": 10,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-062",
+      "unit": 10,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-063",
+      "unit": 10,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-064",
+      "unit": 10,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-065",
+      "unit": 10,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-066",
+      "unit": 11,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-067",
+      "unit": 11,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-068",
+      "unit": 11,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-069",
+      "unit": 11,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-070",
+      "unit": 11,
+      "repeat": 0,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-071",
+      "unit": 11,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-072",
+      "unit": 12,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-073",
+      "unit": 12,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-074",
+      "unit": 12,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-075",
+      "unit": 12,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-076",
+      "unit": 12,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-077",
+      "unit": 12,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-078",
+      "unit": 13,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-079",
+      "unit": 13,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-080",
+      "unit": 13,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-081",
+      "unit": 13,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-082",
+      "unit": 13,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-083",
+      "unit": 13,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-084",
+      "unit": 14,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-085",
+      "unit": 14,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-086",
+      "unit": 14,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-087",
+      "unit": 14,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-088",
+      "unit": 14,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-089",
+      "unit": 14,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-090",
+      "unit": 15,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-091",
+      "unit": 15,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-092",
+      "unit": 15,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-093",
+      "unit": 15,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-094",
+      "unit": 15,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-095",
+      "unit": 15,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-096",
+      "unit": 16,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-097",
+      "unit": 16,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-098",
+      "unit": 16,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-099",
+      "unit": 16,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-100",
+      "unit": 16,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-101",
+      "unit": 16,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-102",
+      "unit": 17,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-103",
+      "unit": 17,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-104",
+      "unit": 17,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-105",
+      "unit": 17,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-106",
+      "unit": 17,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-107",
+      "unit": 17,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-108",
+      "unit": 18,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-109",
+      "unit": 18,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-110",
+      "unit": 18,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-111",
+      "unit": 18,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-112",
+      "unit": 18,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-113",
+      "unit": 18,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-114",
+      "unit": 19,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-115",
+      "unit": 19,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-116",
+      "unit": 19,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-117",
+      "unit": 19,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-118",
+      "unit": 19,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-119",
+      "unit": 19,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-120",
+      "unit": 20,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-121",
+      "unit": 20,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-122",
+      "unit": 20,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-123",
+      "unit": 20,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-124",
+      "unit": 20,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "prose_free",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-125",
+      "unit": 20,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-126",
+      "unit": 21,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-127",
+      "unit": 21,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-128",
+      "unit": 21,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-129",
+      "unit": 21,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-130",
+      "unit": 21,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "code_docstring",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-131",
+      "unit": 21,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-132",
+      "unit": 22,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-133",
+      "unit": 22,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-134",
+      "unit": 22,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-135",
+      "unit": 22,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-136",
+      "unit": 22,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 5.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-137",
+      "unit": 22,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-138",
+      "unit": 23,
+      "role": "bracket",
+      "bracket": "before",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-139",
+      "unit": 23,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-140",
+      "unit": 23,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-141",
+      "unit": 23,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-142",
+      "unit": 23,
+      "repeat": 1,
+      "role": "arm",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "explain",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-143",
+      "unit": 23,
+      "role": "bracket",
+      "bracket": "after",
+      "arm": "sequential",
+      "workload": "prose_free",
+      "generate": 16,
+      "rtt_ms": 0.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "trial-144",
+      "unit": null,
+      "role": "control",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "middle"
+    },
+    {
+      "label": "trial-145",
+      "unit": null,
+      "role": "control",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "middle"
+    },
+    {
+      "label": "trial-146",
+      "unit": null,
+      "role": "control",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 0.0,
+      "corrupt": "middle"
+    }
+  ],
+  "thresholds": {
+    "gate": 0.01,
+    "effect": 0.01
+  },
+  "relay_gate": "total relay lateness over the trial at most the gate share of its timed generation",
+  "frames_qualification": [],
+  "binary_sha256": {
+    "v3_verify_remote": "e1e4f614ca563edd5b25a13b443e44fd0930a736f975639dc1ac1d4ae4f0d9c5",
+    "larql-server": "7ee4cb240e17d6b225fcf9df486a2894f2cacb7a9f353121627f34f801d453b3",
+    "v3_link_shaper": "7b1097f814216208141e09dd9a8a4f53c598743568140c528510e4d092e5479e"
+  },
+  "harness_sha256": {
+    "verify_remote.py": "ade913c787c3dcd98f697823a067ff3949ff341bba06f7b3401a5d46e7231701",
+    "verify_remote_model.py": "2fa80329f342ff1c41e08bbe9a50212043f7b5a0719db9b314f83dcdabb3d086",
+    "block_time_2.py": "ec50dc3a8b1419964c65863914539e4b04a88740acfa6fc709da26e149c3784a",
+    "block_time_2_model.py": "a3f5c0ff004aeebe62a8c0091653080f38ea034017abf471903a9bff293b547a",
+    "host_telemetry.py": "8625f56c302a5bd8613e41a16884b0188cd586ed4e8fda0e11414868f7b8f8b8",
+    "block_time.py": "752395a6eae5c13815768b53bc40515bdb27a53d1125a43f88e0687e0cbf3388",
+    "block_time_model.py": "c5215c10319d51bdae5a7374874d889d74a39c7ab03655ff56f6415cd20b01fa",
+    "link_model.py": "f8c52bbbc3da6b0291ab15efec2d4ff0ed15daf54ad4b1eb4c69acf9542816fb",
+    "link_sweep.py": "4818cbcf9bea20b0c70567735a2eb598193b891e1ec26385807fbd36139efe9e",
+    "link_block_frames_model.py": "95930043d0607721c133f7ecf906a9434ef7e3b6aaf933577fae0a4e044fb28d",
+    "profile_exact.py": "c84996b1395fc255d0c3e27e494b203ba74443ab4975bd8f2a939c719a4b264b"
+  },
+  "metadata_sha256": {
+    "index.json": "17523831d6f365cda8e52bafa9f437b2cf14b2d7efa3d0a8abd3e512902d4440",
+    "system_graph.json": "82db1eb1a4490e24ae1086fada201100b81ceddfcf71e51ba63572efe2a6ae78"
+  },
+  "host_before": {
+    "load_average": [
+      8.6962890625,
+      11.1767578125,
+      9.85595703125
+    ],
+    "busy_processes": [],
+    "utc": "2026-11-15T23:37:38Z"
+  },
+  "peer_handshake": null,
+  "telemetry": {
+    "process_interval_s": 5.0,
+    "state_interval_s": 30.0,
+    "gates_anything": false
+  },
+  "clock": "monotonic wall time inside each trial process, from after prefill to the last generated id",
+  "pause": {
+    "file": "PAUSE",
+    "where": "between units and before each control only (recorded as before_pair = unit or label)",
+    "poll_s": 5.0
+  },
+  "stall_watch": {
+    "tick_s": 0.1,
+    "gap_s": 0.5,
+    "sees": "the driver process only",
+    "effect": "a trial overlapping a stall voids its unit"
+  },
+  "started_utc": "2026-11-15T23:37:38Z"
+}
