@@ -189,9 +189,14 @@ Errors in µs (± judged half-width), run 1 / run 2:
 | 8 | −2.0 (±3.3) / −2.0 (±2.8) | −89.8 (±2.2) / −94.0 (±3.3) | −75.3 (±3.4) / −81.0 (±3.5) |
 
 **Against the certified build's runs:**
-- Most points are within about 10 µs of them.
-- Width 8 at 20 ms reads −75 / −81 µs here, against −43 / −47 there.
-  That is still within tolerance, which is 1,000 µs at 20 ms.
+- About three quarters of the run pairs are within about 10 µs of them.
+- The largest shifts:
+  - width 8 at 20 ms: −75 / −81 µs here, against −43 / −47 there;
+  - width 4 at 5 ms: −42.1 against −9.5 (run 2);
+  - width 4 at 20 ms: −21.3 against +3.8 (run 2);
+  - width 2 at 20 ms: +36.2 against +54.6 (run 2).
+- All of them are far inside tolerance, which is 250 µs at 5 ms and
+  1,000 µs at 20 ms.
 - The cause is not identified: the mark's added loop work, the day, or the
   host. The relay's other work per chunk is unchanged.
 
