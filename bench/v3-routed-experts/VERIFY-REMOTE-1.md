@@ -247,8 +247,10 @@ quiet-machine and handshake rules apply unchanged.
   proposals is never read as a limit of the remote architecture.
 - **Validity**: a unit is void if its brackets differ by more than 1%, or
   if any of its trials fails gate 2, gate 3, the relay gate or the stall
-  rule. **Relay gate**: the relay's total lateness over a trial, prefill
-  included, is at most 1% of that trial's timed generation.
+  rule. **Relay gate** (revision 1): the relay's total lateness over a
+  trial, prefill included, is at most 1% of that trial's timed generation.
+  Revision 2 proposes counting generation only (see "Revision 2: relay
+  gate by phase").
 - **Pausing** (`PAUSE`/`PAUSED`, BLOCK-TIME-2's) happens only before a
   unit's opening bracket, before warm-up, and before each diagnostic
   control.
@@ -359,6 +361,91 @@ reusing the existing trial binary, with its own manifest kind and tests in
 the bench suite: the schedule shape and seed, the drift computation, and
 the selection rule at, above and below 7 of 8.
 
+## Revision 2: relay gate by phase (proposed)
+
+**Why.** The relay records lateness per connection, totalled when the
+connection closes. Prefill and generation share one connection, so
+revision 1's gate puts untimed prefill lateness over a denominator of
+timed generation. In diagnostic 01, 24 of the 25 relay failures were on
+the two long-prompt workloads at 5 and 20 ms. The records cannot say how
+much of that lateness fell in generation.
+
+**Proposed rule.** Only the relay's lateness during **timed generation**,
+both directions summed, is compared with 1% of that trial's timed
+generation wall time. The threshold is unchanged, and every other trial
+of the protocol uses the same rule.
+
+**Mechanism: a generation-boundary snapshot in the relay** (preferred). It
+keeps one connection and one network path for prefill and generation.
+- **The mark.** The relay gains an optional control listener. A connection
+  there that sends `mark` makes every open connection append a snapshot of
+  its tallies (bytes, chunks, late sum, late max) and the length of its
+  queue. The control connection answers only once every open connection
+  has written its snapshot.
+- **Polling cost.** Each connection loop already busy-polls, so it sees
+  the mark within one iteration. The added work per iteration is one
+  atomic load.
+- **When the trial marks.** The trial binary sends the mark after prefill
+  has committed and before the clock starts, and waits for the answer. At
+  that point no exchange is in flight, so every queue should be empty.
+- **Generation lateness** is the closing tally minus the snapshot.
+- **Defects.** A trial is void by name if its mark is missing, duplicated
+  or unanswered, or if any queue is non-empty at the mark: then the
+  boundary was not clean.
+
+**Cost.** This changes the frozen relay binary (`7b1097f8…`). Its
+qualifications are tied to that hash, so before any admissible run they
+must be rerun on the new binary, on a quiet host, under the frozen rules:
+- LINK-2 revision 3: two qualifying receipts;
+- the block-frame qualification.
+
+The control listener is off unless asked for, and the shaping code does
+not change. Requalification is still required: the binary differs, and
+"the shaping code did not change" is a claim, not a measurement.
+
+**Alternative: a fresh connection for generation.** Considered, and not
+preferred.
+- **How.** The trial binary would reconnect after prefill, so generation
+  runs on its own relay connection with its own record. The relay binary
+  and its qualifications are unchanged.
+- **Why not preferred.** The first generation exchanges would run on a
+  new TCP connection, with a new relay thread and new socket buffers.
+  That is inside the clock, and it differs from the current trial, where
+  prefill has already warmed the connection.
+- **If it were chosen anyway,** it would need its own functional
+  qualification: ids exact, one record per phase, and no first-exchange
+  penalty larger than the relay gate's resolution.
+
+**Routing prefill directly** to the worker, bypassing the relay, is
+rejected: prefill and generation would then run on different paths.
+
+**Tests, before any model run:**
+- **Relay (Rust).**
+  - Lateness forced before the mark appears in the snapshot and not after
+    it.
+  - Lateness after the mark appears only after it.
+  - A mark with data queued records the non-empty queue.
+  - Without a control listener, the relay's records are byte-identical to
+    today's.
+- **Trial binary (Rust).** The mark is sent exactly once, after prefill
+  and before the clock starts, and the trial refuses to start the clock
+  without an answer.
+- **Gate (Python, bench suite).**
+  - Arbitrarily large prefill lateness with generation lateness under 1%
+    passes, so prefill cannot affect the verdict.
+  - Generation lateness just over 1% fails, and exactly 1% passes.
+  - A missing, duplicated or unanswered mark, or a non-empty queue at the
+    mark, voids the trial by name.
+  - Revision 1's whole-trial figure is still reported, as a diagnostic.
+
+**Qualification of the mechanism, before freeze.** The relay
+requalification above, plus a short declared functional check on the real
+model:
+- one trial per arm on `json_edit` at 20 ms;
+- the snapshot shows an empty queue at every mark;
+- the generation lateness plus the snapshot equals the closing total;
+- the ids are exact.
+
 ## Event-ledger invariants
 
 What `SpeculativeRun::reconcile` (#857) checks on every trial. A trial that
@@ -441,6 +528,8 @@ re-checked per trial:
    [diagnostic 01](link-results/verify-remote-1/README.md), gates 1 to 3
    working end to end).
 4a. Revision 2's bracket diagnostic, with a length selected by its rule.
+4b. Revision 2's relay snapshot built and tested, the relay requalified on
+   its new binary, and the mechanism's functional check passed.
 5. Independent review of this protocol and the implementation, then a
    freeze with hashes in `frozen-protocols.json`.
 6. A quiet window agreed with the WSP-002 session, which has priority.
