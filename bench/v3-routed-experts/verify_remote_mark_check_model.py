@@ -34,6 +34,11 @@ DIRECTIONS = {"request": "request_bytes", "response": "response_bytes"}
 OVERHEAD_BYTES = {"request": {vr.SINGLE_ROW: 182.0, vr.MULTI_ROW: 184.0},
                   "response": {vr.SINGLE_ROW: 272.5, vr.MULTI_ROW: 374.0}}
 # Under half the smallest frame (a single-row request, 11,576 bytes).
+# The request constants are exact; the response ones are not (header digits
+# vary, about +0.65 B per single-row exchange in run -03), so the residual
+# grows with the exchange count. Fine for this check (at most 1,512
+# generation exchanges); a longer generation would need a per-exchange
+# tolerance or exact header lengths.
 RESIDUAL_TOLERANCE_BYTES = 5_000
 
 
