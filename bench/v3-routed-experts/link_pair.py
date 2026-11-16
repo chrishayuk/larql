@@ -23,8 +23,42 @@ from link_sweep import RELAY, REQUEST_BYTES, RESPONSE_BYTES, ECHO_HEADER
 from profile_exact import save, sha
 
 PROBE = "target/release/examples/v3_link_pair"
-# The relay build LINK-2 certifies. A different binary is a different instrument.
+# The relay build LINK-2 certifies. A different binary is a different
+# instrument, certified only by its own receipts (LINK-2 revision 3 and the
+# block-frame addendum, two passing qualifying runs each, recorded for its
+# hash). Every admissible run requires this build.
+#   7b1097f814216208: certified 2026-11-14/15 (link-results/link-2,
+#     link-results/link-2-block-frames); used by BLOCK-TIME-1 and -2 and
+#     VERIFY-REMOTE-1 diagnostic 01.
 FROZEN_RELAY_SHA256_PREFIX = "7b1097f814216208"
+# A build under requalification: the qualification harnesses may run it so
+# its receipts can bind to it, and VERIFY-REMOTE-1 diagnostics may run it.
+# Nothing admissible accepts it. If its receipts pass, a reviewed change
+# makes it the certified build above.
+#   b4068220a544782c: VERIFY-REMOTE-1 revision 2's relay with the
+#     generation-boundary mark (#865), named 2026-11-16.
+CANDIDATE_RELAY_SHA256_PREFIX = "b4068220a544782c"
+
+
+def relay_build(relay_sha256):
+    """`certified`, `candidate`, or None for any other build."""
+    if relay_sha256.startswith(FROZEN_RELAY_SHA256_PREFIX):
+        return "certified"
+    if relay_sha256.startswith(CANDIDATE_RELAY_SHA256_PREFIX):
+        return "candidate"
+    return None
+
+
+LINK2_RUNS_REQUIRED = 2
+
+
+def check_link2_qualification(receipts, relay_sha256):
+    """Two distinct passing LINK-2 revision 3 qualifying receipts for this relay build."""
+    for receipt in receipts:
+        pm.check_qualifying_receipt(receipt, relay_sha256)
+    started = {receipt.get("host_before", {}).get("utc") for receipt in receipts}
+    if len(receipts) < LINK2_RUNS_REQUIRED or len(started) < LINK2_RUNS_REQUIRED:
+        raise ValueError(f"the relay needs {LINK2_RUNS_REQUIRED} distinct passing LINK-2 qualifying runs")
 # Processes whose presence makes a qualifying attempt meaningless.
 BUSY_EXECUTABLES = ("rustc", "cargo", "larql", "larql-server")
 POINT_TIMEOUT_SECONDS = 900
@@ -104,8 +138,8 @@ def main():
     for binary in (RELAY, PROBE):
         if not (root / binary).exists():
             parser.error(f"build first: {binary}")
-    if not sha(root / RELAY).startswith(FROZEN_RELAY_SHA256_PREFIX):
-        parser.error("the relay binary is not the frozen build LINK-2 certifies")
+    if relay_build(sha(root / RELAY)) is None:
+        parser.error("the relay binary is neither the certified build nor the named candidate")
     if args.qualifying and busy_processes():
         parser.error("a compiler or model process is running; a qualifying attempt needs a quiet machine")
     out = args.out.resolve()

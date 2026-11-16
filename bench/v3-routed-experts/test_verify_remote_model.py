@@ -613,7 +613,8 @@ class Execute(unittest.TestCase):
             driver.ht.spotlight_starts = lambda start, end: {"per_minute": {}}
             driver.b1.provenance = lambda root, sources: {}
             driver.lp.host_state = lambda: {"load_average": [0, 0, 0], "busy_processes": []}
-            args = argparse.Namespace(frames_qualification=[], peer_handshake=None, diagnostic="unit test",
+            args = argparse.Namespace(frames_qualification=[], link2_qualification=[], peer_handshake=None,
+                                      diagnostic="unit test",
                                       continue_unsettled=False, port=0)
             report = driver.execute(args, Path(driver.__file__).resolve().parents[2], model, out, kind)
         finally:
@@ -779,6 +780,61 @@ class RelayGate(unittest.TestCase):
                                        "chunks": 1, "late_sum_ns": late, "late_max_ns": late})
         gate = self.check(relay)
         self.assertEqual(gate["generation_late_sum_ns"], 400 + 600)
+
+
+class RelayQualification(unittest.TestCase):
+    """The admissible run needs two distinct passing LINK-2 qualifying receipts for the relay it runs."""
+    RELAY = "b" * 64
+
+    def receipt(self, started, relay=None, **changes):
+        import link_pair_model as pm
+        points = [{"point": p, "passes": True} for p in pm.frozen_points()]
+        receipt = {"schema": pm.SCHEMA, "protocol": pm.REVISION, "kind": "qualifying",
+                   "counts_toward_qualification": True, "frozen": pm.frozen_parameters(),
+                   "binary_sha256": {"v3_link_shaper": relay or self.RELAY}, "run_passes": True,
+                   "points": points, "host_before": {"utc": started}}
+        receipt.update(changes)
+        return receipt
+
+    def test_two_distinct_passing_receipts_for_this_relay_qualify(self):
+        import link_pair as lp
+        lp.check_link2_qualification([self.receipt("t1"), self.receipt("t2")], self.RELAY)
+
+    def test_one_receipt_or_the_same_run_twice_does_not(self):
+        import link_pair as lp
+        for receipts in ([self.receipt("t1")], [self.receipt("t1"), self.receipt("t1")]):
+            with self.assertRaises(ValueError):
+                lp.check_link2_qualification(receipts, self.RELAY)
+
+    def test_receipts_for_another_relay_build_do_not(self):
+        import link_pair as lp
+        receipts = [self.receipt("t1", relay="7" * 64), self.receipt("t2", relay="7" * 64)]
+        with self.assertRaisesRegex(ValueError, "different relay build"):
+            lp.check_link2_qualification(receipts, self.RELAY)
+
+    def test_a_diagnostic_does_not(self):
+        import link_pair as lp
+        receipts = [self.receipt("t1"), self.receipt("t2", kind="diagnostic")]
+        with self.assertRaises(ValueError):
+            lp.check_link2_qualification(receipts, self.RELAY)
+
+
+class RelayBuild(unittest.TestCase):
+    """Admissible runs take only the certified relay build; the candidate is for qualification and diagnostics."""
+
+    def test_the_certified_build_the_candidate_and_anything_else(self):
+        import link_pair as lp
+        self.assertEqual(lp.relay_build(lp.FROZEN_RELAY_SHA256_PREFIX + "0" * 48), "certified")
+        self.assertEqual(lp.relay_build(lp.CANDIDATE_RELAY_SHA256_PREFIX + "0" * 48), "candidate")
+        self.assertIsNone(lp.relay_build("f" * 64))
+        self.assertNotEqual(lp.FROZEN_RELAY_SHA256_PREFIX, lp.CANDIDATE_RELAY_SHA256_PREFIX)
+
+    def test_the_frozen_block_time_harnesses_still_require_the_certified_build(self):
+        # They gate on the certified prefix only, so the candidate cannot run there at all.
+        for name in ("block_time.py", "block_time_2.py"):
+            text = (Path(__file__).with_name(name)).read_text()
+            self.assertIn("startswith(lp.FROZEN_RELAY_SHA256_PREFIX)", text)
+            self.assertNotIn("CANDIDATE_RELAY", text)
 
 
 PINNED_UNIT_ORDER_SHA256 = "f3fe7765dfc0bc4977d33f95ed41af3ae9a24eab5daaba59790dafb4169fee0f"

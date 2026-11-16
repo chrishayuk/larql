@@ -200,8 +200,10 @@ def take_references(root, model, out, env, worker_urls, references, observations
 
 def execute(args, root, model, out, kind):
     receipts = [json.loads(path.read_text()) for path in args.frames_qualification]
+    link2 = [json.loads(path.read_text()) for path in args.link2_qualification]
     if kind == "admissible":
         bm.check_qualification(receipts, sha(root / RELAY))
+        lp.check_link2_qualification(link2, sha(root / RELAY))
     env = dict(os.environ, **b1.SETTINGS)
     order = vr.schedule(controls=kind == "diagnostic")
     handshake = args.peer_handshake.read_text() if args.peer_handshake else None
@@ -224,6 +226,7 @@ def execute(args, root, model, out, kind):
         "relay_gate": "relay lateness after the generation-boundary mark at most the gate share of the "
                       "timed generation; a mark defect voids the trial; the whole-trial figure is a diagnostic",
         "frames_qualification": [{"path": str(path), "sha256": sha(path)} for path in args.frames_qualification],
+        "link2_qualification": [{"path": str(path), "sha256": sha(path)} for path in args.link2_qualification],
         "binary_sha256": {name: sha(root / path) for name, path in
                           (("v3_verify_remote", TRIAL), ("larql-server", b1.SERVER), ("v3_link_shaper", RELAY))},
         "harness_sha256": {name: sha(Path(__file__).with_name(name)) for name in HARNESS},
@@ -314,6 +317,8 @@ def main(argv=None):
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--frames-qualification", type=Path, action="append", default=[],
                         help="Passing block-frame qualifying receipt; --admissible needs two distinct ones")
+    parser.add_argument("--link2-qualification", type=Path, action="append", default=[],
+                        help="Passing LINK-2 revision 3 qualifying receipt; --admissible needs two distinct ones")
     parser.add_argument("--peer-handshake", type=Path, help="Saved peer-session quiet acknowledgements")
     parser.add_argument("--port", type=int, default=19581)
     parser.add_argument("--continue-unsettled", action="store_true",
@@ -327,8 +332,10 @@ def main(argv=None):
     for binary in (TRIAL, b1.SERVER, RELAY):
         if not (root / binary).exists():
             parser.error(f"build first: {binary}")
-    if not sha(root / RELAY).startswith(lp.FROZEN_RELAY_SHA256_PREFIX):
-        parser.error("the relay binary is not the frozen build LINK-2 certifies")
+    build = lp.relay_build(sha(root / RELAY))
+    if build is None or (args.admissible and build != "certified"):
+        parser.error("the admissible run needs the certified relay build; a diagnostic may also run the "
+                     "named candidate")
     if os.environ.get(LINK_QOS_ENV, "default") != "default":
         parser.error("the relay was qualified at the default scheduling class only")
     if args.admissible:
@@ -339,6 +346,8 @@ def main(argv=None):
         try:
             bm.check_qualification([json.loads(p.read_text()) for p in args.frames_qualification],
                                    sha(root / RELAY))
+            lp.check_link2_qualification([json.loads(p.read_text()) for p in args.link2_qualification],
+                                      sha(root / RELAY))
         except ValueError as error:
             parser.error(str(error))
     out = args.out.resolve()
