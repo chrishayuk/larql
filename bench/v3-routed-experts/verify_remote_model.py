@@ -299,6 +299,8 @@ def mark_defects(marks, trial_mark, stats):
         return [f"the relay recorded {len(summaries)} marks"]
     summary = summaries[0]
     epoch = summary["mark"]
+    if "accepted_before" not in summary:
+        return ["the relay's mark summary does not say which connections came before it"]
     defects = []
     if trial_mark["answer"].split(" ")[:2] != [summary["answer"], str(epoch)]:
         defects.append(f"the trial's answer {trial_mark['answer']!r} is not the relay's "
@@ -324,12 +326,14 @@ def mark_defects(marks, trial_mark, stats):
 
 def generation_lateness(stats, marks):
     """Relay lateness after the mark: closing minus snapshot per marked
-    connection; whole tallies of connections opened after it; nothing from
-    connections that closed before it. Assumes `mark_defects` found none."""
+    connection; whole tallies of connections admitted after it (ids at or
+    above `accepted_before`); nothing from connections admitted before it
+    and closed before it (lower ids with no snapshot). The relay admits a
+    connection on accept, under the same lock a mark starts under, so the
+    split is exact. Assumes `mark_defects` found none."""
     summary = next(m for m in marks if m.get("summary"))
     snapshots = {m["connection"]: m for m in marks
                  if not m.get("summary") and m.get("mark") == summary["mark"]}
-    marked = sorted(snapshots)
     late_sum = chunks = 0
     for record in stats:
         connection = record["connection"]
@@ -337,7 +341,7 @@ def generation_lateness(stats, marks):
             before = snapshots[connection][record["direction"]]
             late_sum += record["late_sum_ns"] - before["late_sum_ns"]
             chunks += record["chunks"] - before["chunks"]
-        elif not marked or connection > marked[-1]:
+        elif connection >= summary["accepted_before"]:
             late_sum += record["late_sum_ns"]
             chunks += record["chunks"]
     return {"late_sum_ns": late_sum, "chunks": chunks}

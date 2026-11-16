@@ -97,21 +97,18 @@ fn main() -> Result<(), String> {
             relay::control(stream, &control_marks);
         }
     });
-    for (connection, client) in listener.incoming().enumerate() {
+    for client in listener.incoming() {
         let Ok(client) = client else { continue };
+        // Admitted on accept, so a mark either watches it or counts it after.
+        let (watched, seen) = marks.admit();
         let (upstream, stats, marks) = (args[1].clone(), args[4].clone(), marks.clone());
         std::thread::spawn(move || {
             let Ok(class) = qos::apply() else {
+                marks.unwatch(&watched);
                 return;
             };
             relay::serve(
-                client,
-                &upstream,
-                link,
-                &stats,
-                connection as u64,
-                class,
-                &marks,
+                client, &upstream, link, &stats, class, &marks, watched, seen,
             );
         });
     }

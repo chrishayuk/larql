@@ -26,7 +26,8 @@ from profile_exact import save, sha
 
 
 PROBE_SOURCES = ("crates/larql-server/examples/v3_link_pair.rs", "crates/larql-server/examples/v3_link_shaper.rs",
-                 "crates/larql-server/examples/support/polling.rs", "crates/larql-server/examples/support/qos.rs")
+                 "crates/larql-server/examples/support/polling.rs", "crates/larql-server/examples/support/qos.rs",
+                 "crates/larql-server/examples/support/relay.rs")
 
 
 def measure(root, out, index, point):

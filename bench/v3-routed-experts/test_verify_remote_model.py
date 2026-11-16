@@ -119,7 +119,8 @@ def fake_relay(prefill_late_ns=0, generation_late_ns=0, answer="ok", reasons=(),
         stats.append({"connection": 0, "direction": direction, "qos": "default", "delay_us": 0,
                       "rate_bits_per_s": "inf", "bytes": 1000 * (before + after), "chunks": before + after,
                       "late_sum_ns": prefill + generation, "late_max_ns": max(prefill, generation)})
-    summary = {"mark": 1, "summary": True, "connections": [0], "answer": answer, "reasons": list(reasons)}
+    summary = {"mark": 1, "summary": True, "connections": [0], "accepted_before": 1, "answer": answer,
+               "reasons": list(reasons)}
     return {"stats": stats, "marks": [snapshot, summary]}
 
 
@@ -749,6 +750,11 @@ class RelayGate(unittest.TestCase):
         trial = dict(self.trial, relay_mark=dict(self.trial["relay_mark"], answer="ok 7"))
         self.assert_void(fake_relay(), "is not the relay's", trial)
 
+    def test_a_summary_that_does_not_name_the_boundary_connections_is_void(self):
+        relay = fake_relay()
+        del relay["marks"][1]["accepted_before"]
+        self.assert_void(relay, "which connections came before it")
+
     def test_a_missing_snapshot_is_void(self):
         relay = fake_relay()
         relay["marks"] = relay["marks"][1:]
@@ -761,7 +767,13 @@ class RelayGate(unittest.TestCase):
 
     def test_a_connection_opened_after_the_mark_counts_whole_and_one_closed_before_not_at_all(self):
         relay = fake_relay(generation_late_ns=400)
-        for connection, late in ((-1, 10 ** 12), (5, 300)):
+        relay["marks"][1]["accepted_before"] = 2
+        relay["marks"][1]["connections"] = [1]
+        relay["marks"][0]["connection"] = 1
+        for record in relay["stats"]:
+            record["connection"] = 1
+        # Connection 0 closed before the mark; connection 2 opened after it.
+        for connection, late in ((0, 10 ** 12), (2, 300)):
             for direction in ("request", "response"):
                 relay["stats"].append({"connection": connection, "direction": direction, "bytes": 1,
                                        "chunks": 1, "late_sum_ns": late, "late_max_ns": late})

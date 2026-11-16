@@ -22,8 +22,9 @@ const RESPONSE_BYTES: usize = 100_000;
 const CLASS: &str = "default";
 const STATS_WAIT: Duration = Duration::from_secs(10);
 const STATS_POLL: Duration = Duration::from_millis(10);
-/// Long enough that a relay spinning on loopback has moved every byte it can.
-const SETTLE: Duration = Duration::from_millis(100);
+/// Long enough that a relay spinning on loopback has moved every byte it
+/// can, with margin for a loaded CI runner.
+const SETTLE: Duration = Duration::from_millis(300);
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -84,19 +85,14 @@ fn relay(upstream: String, delay: Duration, timeout: Duration) -> Relay {
     });
     let (stats_path, serve_marks) = (stats.display().to_string(), marks.clone());
     std::thread::spawn(move || {
-        for (connection, client) in listener.incoming().enumerate() {
+        for client in listener.incoming() {
             let Ok(client) = client else { continue };
+            let (watched, seen) = serve_marks.admit();
             let (upstream, stats, marks) =
                 (upstream.clone(), stats_path.clone(), serve_marks.clone());
             std::thread::spawn(move || {
                 relay::serve(
-                    client,
-                    &upstream,
-                    link,
-                    &stats,
-                    connection as u64,
-                    CLASS,
-                    &marks,
+                    client, &upstream, link, &stats, CLASS, &marks, watched, seen,
                 )
             });
         }
@@ -186,6 +182,7 @@ fn a_clean_mark_splits_the_tallies_exactly_at_the_boundary() {
     assert_eq!(marks[1]["summary"], true);
     assert_eq!(marks[1]["answer"], OK);
     assert_eq!(marks[1]["connections"], serde_json::json!([0]));
+    assert_eq!(marks[1]["accepted_before"], 1);
 
     // Bytes partition exactly: three exchanges before, two after.
     for (direction, size) in [("request", REQUEST_BYTES), ("response", RESPONSE_BYTES)] {
@@ -209,6 +206,23 @@ fn an_unmarked_relay_records_exactly_what_it_always_did() {
     exchange(&mut client);
     drop(client);
     let stats = records(&relay.stats, 2);
+    std::thread::sleep(SETTLE);
+    let text = std::fs::read_to_string(&relay.stats).unwrap();
+    assert_eq!(text.lines().count(), 2, "{text}");
+    // Each line is exactly what the relay wrote before the mark existed.
+    for (line, record) in text.lines().zip(&stats) {
+        let expected = format!(
+            "{{\"connection\":0,\"direction\":\"{}\",\"qos\":\"{CLASS}\",\"delay_us\":1000,\
+             \"rate_bits_per_s\":\"inf\",\"bytes\":{},\"chunks\":{},\"late_sum_ns\":{},\
+             \"late_max_ns\":{}}}",
+            record["direction"].as_str().unwrap(),
+            record["bytes"],
+            record["chunks"],
+            record["late_sum_ns"],
+            record["late_max_ns"],
+        );
+        assert_eq!(line, expected);
+    }
     for record in &stats {
         let keys: Vec<&String> = record.as_object().unwrap().keys().collect();
         assert_eq!(
@@ -226,12 +240,6 @@ fn an_unmarked_relay_records_exactly_what_it_always_did() {
             ]
         );
     }
-    let text = std::fs::read_to_string(&relay.stats).unwrap();
-    assert!(text
-        .lines()
-        .next()
-        .unwrap()
-        .starts_with("{\"connection\":0,\"direction\":"));
     assert!(!marks_path(&relay).exists());
 }
 
@@ -313,11 +321,12 @@ fn a_connection_that_never_snapshots_is_refused_by_timeout() {
         Duration::ZERO,
         Duration::from_millis(50),
     );
-    // Registered as open, but no loop serves it, so it never snapshots.
-    let _stuck = relay.marks.watch(9);
+    // Admitted, but no loop serves it, so it never snapshots.
+    let (stuck, _) = relay.marks.admit();
+    assert_eq!(stuck.connection, 0);
     let answer = mark(&relay.control);
     assert!(answer.starts_with(&format!("{REFUSED} 1")), "{answer}");
-    assert!(answer.contains("connection 9 gave no snapshot"), "{answer}");
+    assert!(answer.contains("connection 0 gave no snapshot"), "{answer}");
 }
 
 #[test]
@@ -333,4 +342,51 @@ fn an_unknown_control_command_is_refused() {
     BufReader::new(stream).read_line(&mut answer).unwrap();
     assert_eq!(answer.trim(), format!("{REFUSED} 0 unknown command"));
     assert!(!marks_path(&relay).exists());
+}
+
+#[test]
+fn a_chunk_read_after_its_snapshot_but_before_the_answer_is_refused() {
+    let relay = relay(
+        upstream(Duration::ZERO),
+        Duration::ZERO,
+        Duration::from_millis(800),
+    );
+    let mut client = TcpStream::connect(&relay.address).unwrap();
+    exchange(&mut client);
+    std::thread::sleep(SETTLE);
+    // A connection that never snapshots holds the mark open until its
+    // timeout; meanwhile the live connection, already snapshotted, carries a
+    // request across the boundary.
+    let (_stuck, _) = relay.marks.admit();
+    let control = relay.control.clone();
+    let marking = std::thread::spawn(move || mark(&control));
+    std::thread::sleep(Duration::from_millis(200));
+    exchange(&mut client);
+    let answer = marking.join().unwrap();
+    assert!(answer.starts_with(&format!("{REFUSED} 1")), "{answer}");
+    assert!(
+        answer.contains("connection 0: ") && answer.contains("chunks read after its snapshot"),
+        "{answer}"
+    );
+}
+
+#[test]
+fn a_connection_admitted_after_a_mark_is_not_watched_by_it() {
+    let relay = relay(
+        upstream(Duration::ZERO),
+        Duration::ZERO,
+        Duration::from_secs(1),
+    );
+    let mut first = TcpStream::connect(&relay.address).unwrap();
+    exchange(&mut first);
+    std::thread::sleep(SETTLE);
+    assert_eq!(mark(&relay.control), format!("{OK} 1"));
+    let mut second = TcpStream::connect(&relay.address).unwrap();
+    exchange(&mut second);
+    drop((first, second));
+    let marks = records(&marks_path(&relay), 2);
+    assert_eq!(marks[1]["connections"], serde_json::json!([0]));
+    assert_eq!(marks[1]["accepted_before"], 1);
+    let stats = records(&relay.stats, 4);
+    assert!(stats.iter().any(|r| r["connection"] == 1));
 }

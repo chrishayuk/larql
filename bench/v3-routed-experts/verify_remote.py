@@ -49,7 +49,8 @@ TRIAL_SOURCES = ("crates/larql-cli/examples/v3_verify_remote.rs",
                  "crates/larql-inference/src/speculation/greedy.rs",
                  "crates/larql-inference/src/vindex3/routed_block.rs",
                  "crates/larql-server/examples/v3_link_shaper.rs",
-                 "crates/larql-server/examples/support/relay.rs")
+                 "crates/larql-server/examples/support/relay.rs",
+                 "crates/larql-server/examples/support/qos.rs")
 WORKLOADS_DIR = Path(__file__).with_name("verify-remote") / "workloads"
 HARNESS = ("verify_remote.py", "verify_remote_model.py", "block_time_2.py", "block_time_2_model.py",
            "host_telemetry.py", "block_time.py", "block_time_model.py", "link_model.py", "link_sweep.py",

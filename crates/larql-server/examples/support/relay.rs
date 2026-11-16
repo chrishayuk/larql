@@ -216,11 +216,19 @@ pub struct Watched {
     snapshot: Mutex<Option<Snapshot>>,
 }
 
+/// Connections admitted so far, and those still open.
+struct Admitted {
+    open: Vec<Arc<Watched>>,
+    /// The next connection's id: every connection admitted before a mark has
+    /// an id below the mark's `accepted_before`, every later one at or above.
+    next: u64,
+}
+
 /// The mark's shared state: the epoch every connection loop watches, the
-/// connections open now, and where mark records go.
+/// connections admitted and open, and where mark records go.
 pub struct Marks {
     epoch: AtomicU64,
-    open: Mutex<Vec<Arc<Watched>>>,
+    admitted: Mutex<Admitted>,
     pub path: String,
     pub timeout: Duration,
 }
@@ -229,36 +237,50 @@ impl Marks {
     pub fn new(path: String, timeout: Duration) -> Arc<Self> {
         Arc::new(Self {
             epoch: AtomicU64::new(0),
-            open: Mutex::new(Vec::new()),
+            admitted: Mutex::new(Admitted {
+                open: Vec::new(),
+                next: 0,
+            }),
             path,
             timeout,
         })
     }
 
-    pub fn watch(&self, connection: u64) -> Arc<Watched> {
+    /// Admit a connection the moment it is accepted: give it the next id and
+    /// watch it. Returns the epoch it starts from. Under the same lock as a
+    /// mark's start, so a connection is either watched by a mark (and will
+    /// snapshot for it) or admitted after it (and counted wholly after it).
+    pub fn admit(&self) -> (Arc<Watched>, u64) {
+        let mut admitted = self.admitted.lock().unwrap();
         let watched = Arc::new(Watched {
-            connection,
+            connection: admitted.next,
             open: AtomicBool::new(true),
             accepted: AtomicU64::new(0),
             snapshot: Mutex::new(None),
         });
-        self.open.lock().unwrap().push(watched.clone());
-        watched
+        admitted.next += 1;
+        admitted.open.push(watched.clone());
+        (watched, self.epoch.load(Ordering::Acquire))
     }
 
-    fn unwatch(&self, watched: &Arc<Watched>) {
+    /// Stop watching a connection that has closed or never started.
+    pub fn unwatch(&self, watched: &Arc<Watched>) {
         watched.open.store(false, Ordering::Release);
-        self.open
+        self.admitted
             .lock()
             .unwrap()
+            .open
             .retain(|w| !Arc::ptr_eq(w, watched));
     }
 
     /// Run one mark: snapshot every open connection, judge the boundary,
     /// record it, and return the answer line (without its newline).
     pub fn mark(&self) -> String {
-        let watched: Vec<Arc<Watched>> = self.open.lock().unwrap().clone();
-        let epoch = self.epoch.fetch_add(1, Ordering::AcqRel) + 1;
+        let (watched, accepted_before, epoch) = {
+            let admitted = self.admitted.lock().unwrap();
+            let epoch = self.epoch.fetch_add(1, Ordering::AcqRel) + 1;
+            (admitted.open.clone(), admitted.next, epoch)
+        };
         let deadline = Instant::now() + self.timeout;
         let mut reasons = Vec::new();
         if watched.is_empty() {
@@ -330,8 +352,8 @@ impl Marks {
             .map(|r| format!("\"{}\"", r.replace('"', "'")))
             .collect();
         lines += &format!(
-            "{{\"mark\":{epoch},\"summary\":true,\"connections\":[{}],\"answer\":\"{}\",\
-             \"reasons\":[{}]}}\n",
+            "{{\"mark\":{epoch},\"summary\":true,\"connections\":[{}],\
+             \"accepted_before\":{accepted_before},\"answer\":\"{}\",\"reasons\":[{}]}}\n",
             connections.join(","),
             if reasons.is_empty() { OK } else { REFUSED },
             quoted.join(","),
@@ -385,31 +407,44 @@ fn record(path: &str, connection: u64, direction: &str, link: Link, tally: &Tall
     }
 }
 
-/// Relay one client connection to `upstream` until both directions close,
-/// then append its two closing records to `stats`.
+/// Relay one admitted client connection to `upstream` until both
+/// directions close, then append its two closing records to `stats`. It
+/// stops being watched on every exit, so a mark never waits for it.
+#[allow(clippy::too_many_arguments)]
 pub fn serve(
     client: TcpStream,
     upstream: &str,
     link: Link,
     stats: &str,
-    connection: u64,
     class: &str,
     marks: &Marks,
+    watched: Arc<Watched>,
+    seen: u64,
 ) {
-    let Ok(server) = TcpStream::connect(upstream) else {
-        return;
-    };
-    let (Ok(client_peer), Ok(server_peer)) = (client.try_clone(), server.try_clone()) else {
-        return;
-    };
+    let tallies = relay(client, upstream, link, marks, &watched, seen);
+    marks.unwatch(&watched);
+    if let Some((request, response)) = tallies {
+        record(stats, watched.connection, REQUEST, link, &request, class);
+        record(stats, watched.connection, RESPONSE, link, &response, class);
+    }
+}
+
+fn relay(
+    client: TcpStream,
+    upstream: &str,
+    link: Link,
+    marks: &Marks,
+    watched: &Watched,
+    mut seen: u64,
+) -> Option<(Tally, Tally)> {
+    let server = TcpStream::connect(upstream).ok()?;
+    let (client_peer, server_peer) = (client.try_clone().ok()?, server.try_clone().ok()?);
     // No Nagle batching on either hop, and no blocking call anywhere below.
     for socket in [&client, &server] {
         if socket.set_nodelay(true).is_err() || socket.set_nonblocking(true).is_err() {
-            return;
+            return None;
         }
     }
-    let watched = marks.watch(connection);
-    let mut seen = marks.epoch.load(Ordering::Acquire);
     let mut last_delivered = "none";
     let mut request = Direction::new(client, server);
     let mut response = Direction::new(server_peer, client_peer);
@@ -447,7 +482,5 @@ pub fn serve(
         }
         std::hint::spin_loop();
     }
-    marks.unwatch(&watched);
-    record(stats, connection, REQUEST, link, &request.tally, class);
-    record(stats, connection, RESPONSE, link, &response.tally, class);
+    Some((request.tally, response.tally))
 }
