@@ -1,0 +1,11 @@
+ axis   0.2 ms          inf b/s  expected     200.0 us  error     3.2  ±   0.9  tol    50.0  pass
+ axis   1.0 ms          inf b/s  expected    1000.0 us  error    22.7  ±   1.4  tol    50.0  pass
+ axis   5.0 ms          inf b/s  expected    5000.0 us  error    34.0  ±   4.3  tol   250.0  pass
+ axis  20.0 ms          inf b/s  expected   20000.0 us  error    51.7  ±   8.2  tol  1000.0  pass
+ axis   0.0 ms 1000000000.0 b/s  expected     461.8 us  error    -1.1  ±   0.7  tol    50.0  pass
+ axis   0.0 ms  100000000.0 b/s  expected    4617.6 us  error    14.8  ±   2.9  tol   230.9  pass
+joint   1.0 ms  100000000.0 b/s  expected    5617.6 us  error    14.9  ±   2.7  tol   280.9  pass
+joint   5.0 ms 1000000000.0 b/s  expected    5461.8 us  error    13.0  ±   3.6  tol   273.1  pass
+joint  20.0 ms  100000000.0 b/s  expected   24617.6 us  error    32.5  ±   3.3  tol  1230.9  pass
+ null   0.0 ms          inf b/s  expected       0.0 us  error    -0.4  ±   1.7  tol    25.0  pass
+run passes

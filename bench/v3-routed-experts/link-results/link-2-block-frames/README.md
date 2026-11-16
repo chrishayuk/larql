@@ -20,6 +20,8 @@ under revision 2.
 |---|---|---|---|
 | [`20261115-01-qualifying-1`](20261115-01-qualifying-1/calibration.json) | 2 | Qualifying | **Passes**: 12 of 12 points |
 | [`20261115-02-qualifying-2`](20261115-02-qualifying-2/calibration.json) | 2 | Qualifying | **Passes**: 12 of 12 points |
+| [`20261116-01-candidate-qualifying-1`](20261116-01-candidate-qualifying-1/calibration.json) | 2 | Qualifying, **candidate relay `b4068220…`** | **Passes**: 12 of 12 points |
+| [`20261116-02-candidate-qualifying-2`](20261116-02-candidate-qualifying-2/calibration.json) | 2 | Qualifying, candidate relay | **Passes**: 12 of 12 points |
 | [`20261114-01-diagnostic`](20261114-01-diagnostic/calibration.json) | 1 | Declared diagnostic; does not count | **Fails**: 15 of 16 points pass; width 8 at 1 ms reads −53.7 µs against a 50 µs tolerance |
 | [`20261114-02-chunk-trace`](20261114-02-chunk-trace/) | 1 | Mechanism investigation with a tracing copy of the relay; qualifies nothing | Locates the shortfall: see below |
 
@@ -164,3 +166,34 @@ a quiet machine. The receive side was not timestamped byte by byte; what
 happens there is the "outside the relay" residual.
 
 Raw traces are stored gzipped beside each point.
+
+## The candidate relay `b4068220…` (2026-11-16)
+
+This requalifies VERIFY-REMOTE-1 revision 2's relay, which adds the
+generation-boundary mark (#865, named the candidate in #868), under the
+unchanged frozen addendum revision 2.
+
+**Both qualifying runs pass 12 of 12 points.**
+- Run 1: 11:00:10 to 11:07:14 UTC. Run 2: 11:07:14 to 11:14:19 UTC.
+- Main at `56ba34fd`, clean tree. The same quiet window as LINK-2's
+  candidate runs.
+- `check_qualification` accepts the two receipts for `b4068220…`.
+
+Errors in µs (± judged half-width), run 1 / run 2:
+
+| Width | Null | 5 ms | 20 ms |
+|---|---|---|---|
+| 1 | −1.3 (±6.6) / +0.1 (±1.3) | +32.3 (±4.2) / +34.6 (±8.8) | +54.4 (±4.2) / +57.1 (±3.0) |
+| 2 | −0.4 (±1.7) / −0.4 (±2.2) | +19.4 (±7.9) / +17.0 (±6.2) | +28.9 (±8.2) / +36.2 (±3.4) |
+| 4 | −1.1 (±1.8) / −0.3 (±1.9) | −25.1 (±3.7) / −42.1 (±2.7) | −16.2 (±5.0) / −21.3 (±5.1) |
+| 8 | −2.0 (±3.3) / −2.0 (±2.8) | −89.8 (±2.2) / −94.0 (±3.3) | −75.3 (±3.4) / −81.0 (±3.5) |
+
+**Against the certified build's runs:**
+- Most points are within about 10 µs of them.
+- Width 8 at 20 ms reads −75 / −81 µs here, against −43 / −47 there.
+  That is still within tolerance, which is 1,000 µs at 20 ms.
+- The cause is not identified: the mark's added loop work, the day, or the
+  host. The relay's other work per chunk is unchanged.
+
+Qualifying certifies nothing until a reviewed change makes `b4068220…`
+the certified build.
