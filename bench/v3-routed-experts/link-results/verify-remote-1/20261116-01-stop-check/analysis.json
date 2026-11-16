@@ -1,0 +1,84 @@
+{
+  "kind": "stop-check",
+  "counts": false,
+  "complete": true,
+  "stopped": null,
+  "reference_stop": "natural",
+  "reference": {
+    "stop": "natural",
+    "ids": [
+      976,
+      4853,
+      19705,
+      68347,
+      65613,
+      1072,
+      290,
+      29082,
+      6446,
+      13,
+      200002
+    ],
+    "final_position": 85,
+    "failures": []
+  },
+  "arms": [
+    {
+      "arm": "verify-2",
+      "ids": 11,
+      "final_position": 85,
+      "stop_delivery": {
+        "source": "target-correction",
+        "block": 4,
+        "proposed": 1,
+        "accepted": 1,
+        "whole_proposal_accepted": true
+      },
+      "failures": []
+    },
+    {
+      "arm": "verify-4",
+      "ids": 11,
+      "final_position": 85,
+      "stop_delivery": {
+        "source": "target-correction",
+        "block": 2,
+        "proposed": 1,
+        "accepted": 1,
+        "whole_proposal_accepted": true
+      },
+      "failures": []
+    },
+    {
+      "arm": "verify-8",
+      "ids": 11,
+      "final_position": 85,
+      "stop_delivery": {
+        "source": "target-correction",
+        "block": 1,
+        "proposed": 1,
+        "accepted": 1,
+        "whole_proposal_accepted": true
+      },
+      "failures": []
+    }
+  ],
+  "passes": true,
+  "synthetic_stop": false,
+  "relay_marks": {
+    "stop-reference": [],
+    "stop-verify-2": [],
+    "stop-verify-4": [],
+    "stop-verify-8": []
+  },
+  "host_after": {
+    "load_average": [
+      3.0380859375,
+      3.251953125,
+      3.54541015625
+    ],
+    "busy_processes": [],
+    "utc": "2026-11-16T09:49:19Z"
+  },
+  "ended_utc": "2026-11-16T09:49:19Z"
+}
