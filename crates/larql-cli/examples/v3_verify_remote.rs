@@ -30,13 +30,20 @@
 //! One worker only (`--shards` takes exactly one url), so every exchange
 //! recorded is with the configured worker.
 //!
+//! `--relay-mark <control address>` marks the relay's generation boundary
+//! (VERIFY-REMOTE-1 revision 2): after prefill has committed and before the
+//! clock starts, the trial sends one `mark` and waits for the answer, which
+//! it records with the number of exchanges completed. No generation exchange
+//! is sent before the answer or the end of the wait. `--relay-mark none`
+//! runs without a relay.
+//!
 //! Protocol: `bench/v3-routed-experts/VERIFY-REMOTE-1.md`.
 //!
 //! ```text
 //! v3_verify_remote --model <container> --shards <url> \
 //!     --workload <workload.json> --arm sequential|verify-2|verify-4|verify-8 \
 //!     --generate <n> --stop <id[,id]> --corrupt none|first|middle|last \
-//!     --profile yes|no --out <trial.json>
+//!     --profile yes|no --relay-mark <host:port>|none --out <trial.json>
 //! ```
 mod support;
 
@@ -80,6 +87,8 @@ struct Args {
     stop: Vec<u32>,
     corrupt: Corrupt,
     profile: bool,
+    /// The relay's control address; `None` runs without a relay.
+    relay_mark: Option<String>,
     out: PathBuf,
 }
 
@@ -117,6 +126,7 @@ fn parse_args() -> Result<Args, BoxErr> {
         model: take("--model")?.into(),
         shards: take("--shards")?.split(',').map(str::to_string).collect(),
         workload: take("--workload")?.into(),
+        relay_mark: Some(take("--relay-mark")?).filter(|m| m != support::mark::NONE),
         generate: take("--generate")?.parse()?,
         out: take("--out")?.into(),
         arm,
@@ -194,6 +204,13 @@ fn main() -> Result<(), BoxErr> {
     let generation_unit = target.units.len();
     let (generation_exchange, generation_record) = target.counts();
 
+    // The generation boundary: prefill has committed and its every exchange
+    // has returned (the transport is synchronous). Nothing is sent until the
+    // relay answers or the wait ends.
+    let relay_mark = args.relay_mark.as_deref().map(|control| {
+        support::mark::mark(control, support::mark::ANSWER_TIMEOUT, generation_exchange)
+    });
+
     // The clock covers generation only: proposing, every verify block and
     // single step, commits, argmax and the loop itself. The first id is
     // prefill's and was produced untimed.
@@ -251,7 +268,7 @@ fn main() -> Result<(), BoxErr> {
     };
     let records = recorder.records.lock().unwrap();
     let trial = serde_json::json!({
-        "schema": "larql.v3.verify-remote-trial.v1",
+        "schema": "larql.v3.verify-remote-trial.v2",
         "arm": args.arm,
         "width": args.width,
         "corrupt": args.corrupt.name(),
@@ -276,6 +293,7 @@ fn main() -> Result<(), BoxErr> {
                   prefill and writing excluded",
         "wall_ns": wall_ns,
         "final_position": target.position(),
+        "relay_mark": relay_mark.as_ref().map(support::mark::Outcome::json),
         "generation_from": {
             "unit": generation_unit,
             "exchange": generation_exchange,
