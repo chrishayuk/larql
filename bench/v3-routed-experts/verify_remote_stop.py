@@ -78,12 +78,16 @@ def execute(args, root, model, out):
     report = {"kind": "stop-check", "counts": False, "complete": complete, "stopped": stop}
     if reference_entry["label"] in trials:
         report["reference_stop"] = sm.reference_stop(trials[reference_entry["label"]])
+    report["passes"] = False
     if complete:
-        report.update(sm.reading(trials[reference_entry["label"]],
-                                 [(e["arm"], trials[e["label"]]) for e in arm_entries]))
-        report["relay_marks"] = {o["label"]: (o["relay"] or {}).get("mark_defects") for o in observations}
-    else:
-        report["passes"] = False
+        try:
+            report.update(sm.reading(trials[reference_entry["label"]],
+                                     [(e["arm"], trials[e["label"]]) for e in arm_entries]))
+            report["relay_marks"] = {o["label"]: (o["relay"] or {}).get("mark_defects")
+                                     for o in observations}
+        except Exception as error:  # the records stay; the reading's failure is recorded
+            report.update(passes=False, reading_error=f"{type(error).__name__}: {error}")
+            (out / "failure.txt").write_text(traceback.format_exc())
     report.update(host_after=lp.host_state(), ended_utc=ht.utc_now())
     save(out / "analysis.json", report)
     save(out / "verification.json",

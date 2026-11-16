@@ -50,12 +50,21 @@ class Requirements(unittest.TestCase):
             self.assertEqual(arm["final_position"], PROMPT + len(stopping_ids()) - 1)
             self.assertIn(arm["stop_delivery"]["source"], ("target-correction", "single-step"))
 
-    def test_the_stop_delivery_names_its_block_and_whether_the_proposal_was_whole(self):
-        trial = fake_trial("verify-8", ids=stopping_ids(), generate=vr.GENERATE, accept=2)
-        delivery = sm.stop_delivery(trial)
-        if delivery["source"] == "target-correction":
-            block = trial["ledger"]["blocks"][delivery["block"]]
-            self.assertEqual(delivery["whole_proposal_accepted"], block["accepted"] == block["proposed"])
+    def test_a_stop_by_correction_names_its_block_and_whether_the_proposal_was_whole(self):
+        # As the real prompt does: a block proposes the sentence's last
+        # token (cut before the stop), accepts it, and corrects with the stop.
+        blocks = [{"proposed": 7, "accepted": 7}, {"proposed": 1, "accepted": 1}]
+        events = [{"id": 1, "source": "prefill", "block": None, "emitted": True},
+                  {"id": 2, "source": "accepted-proposal", "block": 1, "emitted": True},
+                  {"id": STOP, "source": "target-correction", "block": 1, "emitted": True}]
+        trial = {"ledger": {"events": events, "blocks": blocks}}
+        self.assertEqual(sm.stop_delivery(trial), {"source": "target-correction", "block": 1, "proposed": 1,
+                                                   "accepted": 1, "whole_proposal_accepted": True})
+        blocks[1] = {"proposed": 3, "accepted": 1}
+        self.assertFalse(sm.stop_delivery(trial)["whole_proposal_accepted"])
+        events[-1] = {"id": STOP, "source": "single-step", "block": None, "emitted": True}
+        self.assertEqual(sm.stop_delivery(trial), {"source": "single-step"})
+        self.assertEqual(sm.stop_delivery({"ledger": None}), {"source": "single-step"})
 
     def test_different_ids_fail(self):
         ids = stopping_ids()
@@ -109,7 +118,7 @@ class Requirements(unittest.TestCase):
 
 
 class Execute(unittest.TestCase):
-    def run_execute(self, reference_ids_=None):
+    def run_execute(self, reference_ids_=None, arm_ids=None):
         import argparse
         import contextlib
         import tempfile
@@ -126,7 +135,8 @@ class Execute(unittest.TestCase):
         ids = stopping_ids() if reference_ids_ is None else reference_ids_
 
         def timed_trial(root, model_, out_, env, entry, urls):
-            return fake_trial(entry["arm"], ids=list(ids), generate=entry["generate"]), fake_relay(), {
+            mine = ids if arm_ids is None or entry["arm"] == vr.SEQUENTIAL else arm_ids
+            return fake_trial(entry["arm"], ids=list(mine), generate=entry["generate"]), fake_relay(), {
                 "started_utc": "x", "ended_utc": "y", "started_monotonic": 0.0, "ended_monotonic": 1.0}
 
         saved = (driver.timed_trial, driver.sha, stop_driver.workers, stop_driver.sha, driver.b1.provenance,
@@ -150,6 +160,14 @@ class Execute(unittest.TestCase):
         self.assertTrue(report["passes"])
         self.assertEqual(report["reference_stop"], sm.NATURAL)
         self.assertTrue(all(d == [] for d in report["relay_marks"].values()))
+
+    def test_an_arm_whose_ids_differ_stops_the_check_by_gate_1(self):
+        ids = stopping_ids()
+        ids[3] += 1
+        report = self.run_execute(arm_ids=ids)
+        self.assertFalse(report["complete"])
+        self.assertFalse(report["passes"])
+        self.assertIn("ids differ from the sequential reference at position 3", report["stopped"])
 
     def test_a_reference_without_a_natural_stop_stops_the_check(self):
         report = self.run_execute(reference_ids_=reference_ids(vr.GENERATE))
