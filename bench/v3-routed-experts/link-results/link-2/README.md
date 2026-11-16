@@ -12,6 +12,8 @@ under revision 2 are listed for the record and can never count.
 | [`20261114-01-revision-3-validation-diagnostic`](20261114-01-revision-3-validation-diagnostic/calibration.json) | Revision 3 diagnostic, declared before it started, to validate the implementation; peers not asked to be quiet (load average about 1.8) | No | Run passes: 10 of 10 points |
 | [`20261114-02-qualifying-1`](20261114-02-qualifying-1/calibration.json) | Revision 3 **qualifying** run 1; peers confirmed quiet | **Yes** | **Run passes: 10 of 10 points.** Largest error 44.3 µs (20 ms point, tolerance 1,000); null 0.0 µs; largest judged half-width 23% of its limit |
 | [`20261114-03-qualifying-2`](20261114-03-qualifying-2/calibration.json) | Revision 3 **qualifying** run 2; peers confirmed quiet | **Yes** | **Run passes: 10 of 10 points.** Largest error 38.7 µs; null −0.9 µs; largest judged half-width 30% of its limit |
+| [`20261116-01-candidate-qualifying-1`](20261116-01-candidate-qualifying-1/calibration.json) | Revision 3 **qualifying** run 1 on the **candidate relay `b4068220…`**; peers confirmed quiet | **Yes, for `b4068220…` only** | **Run passes: 10 of 10 points.** Largest error 51.1 µs (20 ms, tolerance 1,000); null 0.0 µs; largest judged half-width 12% of its limit |
+| [`20261116-02-candidate-qualifying-2`](20261116-02-candidate-qualifying-2/calibration.json) | Revision 3 **qualifying** run 2 on the candidate relay; peers confirmed quiet | **Yes, for `b4068220…` only** | **Run passes: 10 of 10 points.** Largest error 51.7 µs; null −0.4 µs; largest judged half-width 13% of its limit |
 
 ## Finding before qualification: the autocorrelation gate
 
@@ -71,3 +73,40 @@ correlation on a quiet machine is not known.
 - The 1 ms point read about +16 µs in both qualifying runs and in the
   validation diagnostic. It is inside the 50 µs tolerance, but it is a
   consistent offset, not noise, and its cause is not identified.
+
+## The candidate relay `b4068220…` (2026-11-16)
+
+VERIFY-REMOTE-1 revision 2 added a generation-boundary mark to the relay
+(#865). That made a new binary, named the requalification candidate in
+`link_pair.CANDIDATE_RELAY_SHA256_PREFIX` (#868).
+
+**Both qualifying runs under the unchanged frozen revision 3 rules pass.**
+- Run 1: 10:50:51 to 10:55:30 UTC. Run 2: 10:55:30 to 11:00:10 UTC.
+- Main at `56ba34fd`, clean tree. LINK-2 receipts record no revision; the
+  block-frame receipts made right after them in the same window do.
+- The two other sessions confirmed quiet beforehand. One held its
+  correctness run with `SIGSTOP` for the window and resumed it at
+  11:14:41.
+- No compiler or model process was running at the start of either run.
+- Both receipts satisfy `check_qualifying_receipt` for `b4068220…`.
+
+**Compared with the certified build's receipts** (error in µs, run 1 /
+run 2):
+
+| Point | `7b1097f8…` (11-14) | `b4068220…` (11-16) |
+|---|---|---|
+| axis 1 ms | +16.1 / +16.9 | +21.6 / +22.7 |
+| axis 5 ms | +34.0 / +36.0 | +30.4 / +34.0 |
+| axis 20 ms | +44.3 / +38.7 | +51.1 / +51.7 |
+| join 20 ms | +42.6 / +20.0 | +31.2 / +32.5 |
+| null | +0.0 / −0.9 | +0.0 / −0.4 |
+
+The candidate reads a few microseconds later at most points, well inside
+every tolerance. Its loop does one more atomic load per iteration, and
+the runs were on a different day, so these records cannot say which
+explains it.
+
+**Pinning and qualifying certify nothing on their own.**
+`FROZEN_RELAY_SHA256_PREFIX` still names `7b1097f8…`, and only a separate
+reviewed change makes the candidate the certified build. The block-frame
+requalification passed as well (see `../link-2-block-frames/`).

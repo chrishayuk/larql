@@ -1,0 +1,955 @@
+{
+  "schema": "larql.v3.link-block-frames.v1",
+  "protocol": "LINK-2 block-frame addendum revision 2",
+  "rules": "LINK-2 revision 3",
+  "kind": "qualifying",
+  "label": null,
+  "counts_toward_qualification": true,
+  "frozen": {
+    "warmup": 20,
+    "block": 10,
+    "pairs": 200,
+    "bootstrap_block": 20,
+    "bootstrap_resamples": 2000,
+    "bootstrap_seed": 20261114,
+    "half_width_factor": 2.0,
+    "tolerance_relative": 0.05,
+    "tolerance_absolute_ns": 50000,
+    "precision_share": 0.5,
+    "null_bound_ns": 25000
+  },
+  "geometry": {
+    "1": [
+      11588,
+      46156
+    ],
+    "2": [
+      23132,
+      92268
+    ],
+    "4": [
+      46220,
+      184492
+    ],
+    "8": [
+      92396,
+      368940
+    ]
+  },
+  "binary_sha256": {
+    "v3_link_shaper": "b4068220a544782cdd069770e6d97f54bbc82e23f1acb62f02a72c63bb284dff",
+    "v3_link_pair": "8281da40cb3fca0cdb40180a5eee8b98d25415db2bc45c7fdbc8860e68ecdce7"
+  },
+  "provenance": {
+    "revision": "56ba34fd9ffefdf5356043498d144bfca6ece382",
+    "uncommitted": [
+      "?? bench/v3-routed-experts/link-results/link-2-block-frames/20261116-01-candidate-qualifying-1.log",
+      "?? bench/v3-routed-experts/link-results/link-2-block-frames/20261116-01-candidate-qualifying-1/",
+      "?? bench/v3-routed-experts/link-results/link-2/20261116-01-candidate-qualifying-1.log",
+      "?? bench/v3-routed-experts/link-results/link-2/20261116-01-candidate-qualifying-1/",
+      "?? bench/v3-routed-experts/link-results/link-2/20261116-02-candidate-qualifying-2.log",
+      "?? bench/v3-routed-experts/link-results/link-2/20261116-02-candidate-qualifying-2/"
+    ],
+    "source_sha256": {
+      "crates/larql-server/examples/v3_link_pair.rs": "430028246b6374e195e71d67cd35dc6f13c29934c36cdd45c4f4777c7d8d78ec",
+      "crates/larql-server/examples/v3_link_shaper.rs": "55586ebc4ad6e5f572fc0f94f24cd687dafb7786d66641325c376d12603a4082",
+      "crates/larql-server/examples/support/polling.rs": "7b639cf405f73c830d6012d7abf243277daefddd8f91fde21cb124d38ab56b29",
+      "crates/larql-server/examples/support/qos.rs": "021df116e175c8d4fcabd629779a7bef39e661ce53f49aa20ae7da4c5226cc8f",
+      "crates/larql-server/examples/support/relay.rs": "adc68f4c74a65f3b9aeb80220026aed14925717e3d117f746015e0399d1db76a"
+    },
+    "environment": {}
+  },
+  "harness_sha256": {
+    "link_block_frames.py": "ec2172a6262388400e4dbf80bda68e79ecfbf3d8dae0345330fbf10955bb7a4c",
+    "link_block_frames_model.py": "95930043d0607721c133f7ecf906a9434ef7e3b6aaf933577fae0a4e044fb28d",
+    "link_pair_model.py": "c31c662c54055d927b551d844d6b6fa79004cd669d31a9a32441ba0d6d7d91e3",
+    "link_model.py": "f8c52bbbc3da6b0291ab15efec2d4ff0ed15daf54ad4b1eb4c69acf9542816fb",
+    "block_frames.json": "41cc5f87e3e8cadb32d67a745bc909b316902514fa81b72b6dded04d72af3cbf"
+  },
+  "host_before": {
+    "load_average": [
+      6.39599609375,
+      5.66455078125,
+      5.4853515625
+    ],
+    "busy_processes": [],
+    "utc": "2026-11-16T11:00:10Z"
+  },
+  "host_after": {
+    "load_average": [
+      6.03857421875,
+      6.18017578125,
+      5.7900390625
+    ],
+    "busy_processes": [],
+    "utc": "2026-11-16T11:07:14Z"
+  },
+  "points": [
+    {
+      "point": {
+        "kind": "null",
+        "rtt_ms": 0.0,
+        "rate_bits_per_s": "inf",
+        "width": 1
+      },
+      "expected_ns": 0.0,
+      "estimate_ns": -1250.5,
+      "error_ns": -1250.5,
+      "tolerance_ns": 25000,
+      "interval_ns": [
+        -7103.5,
+        -489.5
+      ],
+      "interval_half_width_ns": 3307.0,
+      "judged_half_width_ns": 6614.0,
+      "independent_bootstrap_interval_ns": [
+        -1958.5,
+        -781.75
+      ],
+      "autocorrelation": {
+        "1": 0.7724517070446908,
+        "2": 0.5659892235721019,
+        "3": 0.38891057986936867,
+        "4": 0.23704790583212793,
+        "5": 0.06541028157404172,
+        "6": -0.027388319195924864,
+        "7": -0.01659554405804318,
+        "8": -0.02762443896266148,
+        "9": -0.07195482595040174,
+        "10": -0.02271404964658165,
+        "11": 0.019406063749875642,
+        "12": 0.05012630534892163,
+        "13": 0.06102838763767715,
+        "14": 0.06595727289370361,
+        "15": 0.03142554631397358,
+        "16": -0.039297107608166945,
+        "17": -0.08227324944140738,
+        "18": -0.1314740581094973,
+        "19": -0.17841690864077211,
+        "20": -0.18877483857011798,
+        "21": -0.1784133635072351,
+        "22": -0.19102816246486165,
+        "23": -0.17882678625956883,
+        "24": -0.08615763426231163,
+        "25": 0.00527979821647915,
+        "26": 0.02203725874215981,
+        "27": 0.06747367226543409,
+        "28": 0.14204367328614736,
+        "29": 0.1800962608846609,
+        "30": 0.14952497352921015
+      },
+      "autocorrelation_note": "reported only; not a pass/fail gate, and no value of it establishes that the pairs are independent",
+      "paired_spread_ns": 6798.152590483222,
+      "repaired_spread_ns": 15032.48951325075,
+      "pairing_removed_common_mode": true,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 346.1450248756219,
+        "late_max_ns": 12333,
+        "chunks": 16080
+      },
+      "shaped_relay": {
+        "late_mean_ns": 348.1325870646766,
+        "late_max_ns": 5958,
+        "chunks": 16080
+      },
+      "raw": "point-00.json"
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 5.0,
+        "rate_bits_per_s": "inf",
+        "width": 1
+      },
+      "expected_ns": 5000000.0,
+      "estimate_ns": 5032312.75,
+      "error_ns": 32312.75,
+      "tolerance_ns": 250000.0,
+      "interval_ns": [
+        5030625.5,
+        5034812.0
+      ],
+      "interval_half_width_ns": 2093.25,
+      "judged_half_width_ns": 4186.5,
+      "independent_bootstrap_interval_ns": [
+        5031292.0,
+        5033812.5
+      ],
+      "autocorrelation": {
+        "1": 0.4115378268053951,
+        "2": 0.1400276658979668,
+        "3": 0.07644044103619131,
+        "4": 0.06138890670317176,
+        "5": 0.07942934637777746,
+        "6": 0.029369091778328547,
+        "7": -0.07613427781437493,
+        "8": -0.030326390618217323,
+        "9": -0.07442940562341699,
+        "10": -0.05630333980132337,
+        "11": 0.019887108332050485,
+        "12": -0.016421784089033987,
+        "13": -0.0008925730539532248,
+        "14": -0.06209922690706582,
+        "15": -0.05505061189012814,
+        "16": 0.003681526715539996,
+        "17": 0.015470040919784586,
+        "18": -0.08091017539162507,
+        "19": -0.005869823119999004,
+        "20": -0.09180206404485522,
+        "21": 0.016109118140504964,
+        "22": 0.11957998052860387,
+        "23": 0.14455141141325376,
+        "24": 0.10859284456335351,
+        "25": 0.005606132804614662,
+        "26": -0.04004917512037607,
+        "27": 0.058190529100809754,
+        "28": -0.031278151238106414,
+        "29": 0.02742490084183979,
+        "30": 0.0023344241688767827
+      },
+      "autocorrelation_note": "reported only; not a pass/fail gate, and no value of it establishes that the pairs are independent",
+      "paired_spread_ns": 7244.044724882208,
+      "repaired_spread_ns": 7681.652738902856,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 289.35055970149256,
+        "late_max_ns": 6500,
+        "chunks": 16080
+      },
+      "shaped_relay": {
+        "late_mean_ns": 1926.0019278606965,
+        "late_max_ns": 24292,
+        "chunks": 16080
+      },
+      "raw": "point-01.json"
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 20.0,
+        "rate_bits_per_s": "inf",
+        "width": 1
+      },
+      "expected_ns": 20000000.0,
+      "estimate_ns": 20054426.75,
+      "error_ns": 54426.75,
+      "tolerance_ns": 1000000.0,
+      "interval_ns": [
+        20052823.0,
+        20057042.0
+      ],
+      "interval_half_width_ns": 2109.5,
+      "judged_half_width_ns": 4219.0,
+      "independent_bootstrap_interval_ns": [
+        20053000.0,
+        20057010.75
+      ],
+      "autocorrelation": {
+        "1": 0.3913551601559068,
+        "2": 0.1881348189054818,
+        "3": 0.13499229151292694,
+        "4": 0.05061240039730442,
+        "5": -0.021340936979442098,
+        "6": -0.019893074634610135,
+        "7": -0.015703351619807848,
+        "8": -0.16047494977751825,
+        "9": -0.0618469231237095,
+        "10": -0.007089815990231848,
+        "11": -0.011214281982469088,
+        "12": -0.0015079170385857944,
+        "13": -0.03433896452262252,
+        "14": -0.029218203629780823,
+        "15": 0.05815325685942622,
+        "16": 0.04980683061661253,
+        "17": 0.00030315490724848806,
+        "18": -0.057251404160118,
+        "19": -0.012680777807721309,
+        "20": -0.06708643904911672,
+        "21": -0.017377811204597048,
+        "22": -0.025091202288077263,
+        "23": -0.01607358261051033,
+        "24": 0.004653426636611239,
+        "25": 0.09438104685267264,
+        "26": 0.07184196465495336,
+        "27": -0.034416659890920624,
+        "28": -0.06314901494486722,
+        "29": -0.05261294048975761,
+        "30": -0.01348565317499341
+      },
+      "autocorrelation_note": "reported only; not a pass/fail gate, and no value of it establishes that the pairs are independent",
+      "paired_spread_ns": 10827.79861060756,
+      "repaired_spread_ns": 11321.871404470861,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 311.3560945273632,
+        "late_max_ns": 5917,
+        "chunks": 16080
+      },
+      "shaped_relay": {
+        "late_mean_ns": 2035.7571517412935,
+        "late_max_ns": 38458,
+        "chunks": 16080
+      },
+      "raw": "point-02.json"
+    },
+    {
+      "point": {
+        "kind": "null",
+        "rtt_ms": 0.0,
+        "rate_bits_per_s": "inf",
+        "width": 2
+      },
+      "expected_ns": 0.0,
+      "estimate_ns": -385.75,
+      "error_ns": -385.75,
+      "tolerance_ns": 25000,
+      "interval_ns": [
+        -1458.0,
+        271.5
+      ],
+      "interval_half_width_ns": 864.75,
+      "judged_half_width_ns": 1729.5,
+      "independent_bootstrap_interval_ns": [
+        -875.0,
+        166.75
+      ],
+      "autocorrelation": {
+        "1": 0.748259747811692,
+        "2": 0.5330610558921517,
+        "3": 0.3578758494996187,
+        "4": 0.21402865096496398,
+        "5": 0.1355195392127481,
+        "6": 0.10268225702548277,
+        "7": 0.1270657296100769,
+        "8": 0.1637740296681463,
+        "9": 0.1266634056071292,
+        "10": 0.1541796097560043,
+        "11": 0.12876365014588856,
+        "12": 0.09946250156198723,
+        "13": 0.05702664566998422,
+        "14": 0.0162501555773546,
+        "15": -0.030654348944192077,
+        "16": -0.03037573077962821,
+        "17": -0.022393057706223532,
+        "18": 0.03003105134601939,
+        "19": 0.10794101814201976,
+        "20": 0.1664779811133008,
+        "21": 0.15125909995125905,
+        "22": 0.1351121541946238,
+        "23": 0.12767900064693763,
+        "24": 0.1274785011355163,
+        "25": 0.12908209315195257,
+        "26": 0.11784964311076844,
+        "27": 0.13642124052174753,
+        "28": 0.12119804374400836,
+        "29": 0.12723358062425305,
+        "30": 0.15213254210232252
+      },
+      "autocorrelation_note": "reported only; not a pass/fail gate, and no value of it establishes that the pairs are independent",
+      "paired_spread_ns": 13984.50026875983,
+      "repaired_spread_ns": 21014.29537135242,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 419.969092039801,
+        "late_max_ns": 12625,
+        "chunks": 32160
+      },
+      "shaped_relay": {
+        "late_mean_ns": 430.16871890547264,
+        "late_max_ns": 9666,
+        "chunks": 32160
+      },
+      "raw": "point-03.json"
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 5.0,
+        "rate_bits_per_s": "inf",
+        "width": 2
+      },
+      "expected_ns": 5000000.0,
+      "estimate_ns": 5019396.0,
+      "error_ns": 19396.0,
+      "tolerance_ns": 250000.0,
+      "interval_ns": [
+        5016854.0,
+        5024791.5
+      ],
+      "interval_half_width_ns": 3968.75,
+      "judged_half_width_ns": 7937.5,
+      "independent_bootstrap_interval_ns": [
+        5018020.5,
+        5022562.5
+      ],
+      "autocorrelation": {
+        "1": 0.43689562576457214,
+        "2": 0.2273122914242353,
+        "3": 0.2041928844163978,
+        "4": 0.17444242441883948,
+        "5": 0.15018125568774748,
+        "6": 0.12455688295126545,
+        "7": 0.008167265135318782,
+        "8": -0.020221103914449527,
+        "9": 0.062081377198252956,
+        "10": -0.08638196389205009,
+        "11": -0.12826578144220713,
+        "12": 0.02550769973190798,
+        "13": -0.043526359533422515,
+        "14": -0.01604821759793017,
+        "15": 0.0075701050092275785,
+        "16": -0.030295419746393396,
+        "17": -0.01836100296650219,
+        "18": 0.08306377552611288,
+        "19": 0.09879040142410975,
+        "20": 0.03886135492935669,
+        "21": 0.05007920737915057,
+        "22": -0.011224017602939604,
+        "23": 0.058609381816320305,
+        "24": 0.06446429541808765,
+        "25": 0.06168242660507999,
+        "26": 0.02609065393025215,
+        "27": 0.025806148869653697,
+        "28": 0.04108101159821469,
+        "29": -0.027895452995907257,
+        "30": -0.04249678624163942
+      },
+      "autocorrelation_note": "reported only; not a pass/fail gate, and no value of it establishes that the pairs are independent",
+      "paired_spread_ns": 11374.698635118866,
+      "repaired_spread_ns": 12750.860913670693,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 347.3922574626866,
+        "late_max_ns": 6250,
+        "chunks": 32160
+      },
+      "shaped_relay": {
+        "late_mean_ns": 953.5571206467662,
+        "late_max_ns": 25292,
+        "chunks": 32160
+      },
+      "raw": "point-04.json"
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 20.0,
+        "rate_bits_per_s": "inf",
+        "width": 2
+      },
+      "expected_ns": 20000000.0,
+      "estimate_ns": 20028947.75,
+      "error_ns": 28947.75,
+      "tolerance_ns": 1000000.0,
+      "interval_ns": [
+        20023645.75,
+        20031864.25
+      ],
+      "interval_half_width_ns": 4109.25,
+      "judged_half_width_ns": 8218.5,
+      "independent_bootstrap_interval_ns": [
+        20026812.5,
+        20030886.0
+      ],
+      "autocorrelation": {
+        "1": 0.5485880303066699,
+        "2": 0.42275041639274163,
+        "3": 0.3385644741664078,
+        "4": 0.22434533416689653,
+        "5": 0.20138132941967088,
+        "6": 0.11665363754673501,
+        "7": 0.10743127405475404,
+        "8": 0.11593345469551843,
+        "9": 0.06238388867547257,
+        "10": 0.14282215355511999,
+        "11": 0.11483450290278499,
+        "12": 0.08651159991175772,
+        "13": 0.10476563630890005,
+        "14": 0.07842759735314364,
+        "15": 0.06478981031351744,
+        "16": -0.00797678281532103,
+        "17": 0.026295999575082735,
+        "18": 0.027456528532023322,
+        "19": -0.00914130857455327,
+        "20": -0.027058403855652342,
+        "21": -0.015336565782390264,
+        "22": 0.008423800888880267,
+        "23": -0.009058657943111687,
+        "24": -0.05950979872527504,
+        "25": -0.03812346682549433,
+        "26": -0.10526416225194724,
+        "27": -0.20181684307324838,
+        "28": -0.2143792931086282,
+        "29": -0.22329591780376548,
+        "30": -0.25067666141582323
+      },
+      "autocorrelation_note": "reported only; not a pass/fail gate, and no value of it establishes that the pairs are independent",
+      "paired_spread_ns": 11004.277913427293,
+      "repaired_spread_ns": 13198.575739106995,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 350.13896144278607,
+        "late_max_ns": 5500,
+        "chunks": 32160
+      },
+      "shaped_relay": {
+        "late_mean_ns": 1759.7575248756218,
+        "late_max_ns": 26792,
+        "chunks": 32160
+      },
+      "raw": "point-05.json"
+    },
+    {
+      "point": {
+        "kind": "null",
+        "rtt_ms": 0.0,
+        "rate_bits_per_s": "inf",
+        "width": 4
+      },
+      "expected_ns": 0.0,
+      "estimate_ns": -1073.0,
+      "error_ns": -1073.0,
+      "tolerance_ns": 25000,
+      "interval_ns": [
+        -2000.5,
+        -166.75
+      ],
+      "interval_half_width_ns": 916.875,
+      "judged_half_width_ns": 1833.75,
+      "independent_bootstrap_interval_ns": [
+        -1896.5,
+        -427.25
+      ],
+      "autocorrelation": {
+        "1": 0.6548385495078305,
+        "2": 0.3202097384062611,
+        "3": 0.12224358260410519,
+        "4": -0.019723339615360238,
+        "5": -0.10069721283087901,
+        "6": -0.14773157032163464,
+        "7": -0.2537945963054351,
+        "8": -0.3400469554907324,
+        "9": -0.35147762114055925,
+        "10": -0.28438306400386065,
+        "11": -0.1508053791450649,
+        "12": 0.013698958242148075,
+        "13": 0.10781120777203461,
+        "14": 0.13610327998433353,
+        "15": 0.17068565425288115,
+        "16": 0.14037212273491145,
+        "17": 0.08436034174088974,
+        "18": 0.06862081912191847,
+        "19": 0.020456020905649415,
+        "20": -0.07436393479066838,
+        "21": -0.12686053257786284,
+        "22": -0.1473958603608504,
+        "23": -0.09135755644330032,
+        "24": -0.07212239926657259,
+        "25": -0.052427065587519465,
+        "26": -0.033811630685979345,
+        "27": 0.040023548659309835,
+        "28": 0.16941639068677694,
+        "29": 0.2358127134840881,
+        "30": 0.2060611574192774
+      },
+      "autocorrelation_note": "reported only; not a pass/fail gate, and no value of it establishes that the pairs are independent",
+      "paired_spread_ns": 25000.034389623223,
+      "repaired_spread_ns": 31230.11790131193,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 442.8267495854063,
+        "late_max_ns": 4750,
+        "chunks": 60300
+      },
+      "shaped_relay": {
+        "late_mean_ns": 455.9500829187396,
+        "late_max_ns": 10667,
+        "chunks": 60300
+      },
+      "raw": "point-06.json"
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 5.0,
+        "rate_bits_per_s": "inf",
+        "width": 4
+      },
+      "expected_ns": 5000000.0,
+      "estimate_ns": 4974896.25,
+      "error_ns": -25103.75,
+      "tolerance_ns": 250000.0,
+      "interval_ns": [
+        4972625.0,
+        4976364.5
+      ],
+      "interval_half_width_ns": 1869.75,
+      "judged_half_width_ns": 3739.5,
+      "independent_bootstrap_interval_ns": [
+        4973385.75,
+        4976260.25
+      ],
+      "autocorrelation": {
+        "1": 0.3513311202974789,
+        "2": 0.1721079804558849,
+        "3": 0.10486668906149321,
+        "4": 0.14701547019156933,
+        "5": 0.08703520103929518,
+        "6": -0.02349439878587726,
+        "7": -0.03828714535187918,
+        "8": 0.08143485918881689,
+        "9": -8.635015178463258e-05,
+        "10": -0.06030816507390896,
+        "11": -0.09663285855286431,
+        "12": -0.15110746129333666,
+        "13": -0.05526947332587322,
+        "14": -0.07086864415239999,
+        "15": -0.05467641121890197,
+        "16": -0.08623127158814957,
+        "17": -0.04820746189649036,
+        "18": 0.09662427289452043,
+        "19": 0.05790246563219704,
+        "20": -0.01079716476738727,
+        "21": -0.05380051045223921,
+        "22": 0.1078420744742075,
+        "23": 0.04314155667075216,
+        "24": 0.07762617870702512,
+        "25": 0.015070705928612623,
+        "26": 0.07817541554422561,
+        "27": 0.06597533531964314,
+        "28": 0.10303609805343002,
+        "29": 0.03740371447173996,
+        "30": -0.019569514833766226
+      },
+      "autocorrelation_note": "reported only; not a pass/fail gate, and no value of it establishes that the pairs are independent",
+      "paired_spread_ns": 7906.11016938442,
+      "repaired_spread_ns": 8698.055874472395,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 353.0913432835821,
+        "late_max_ns": 4625,
+        "chunks": 60300
+      },
+      "shaped_relay": {
+        "late_mean_ns": 1307.6330182421227,
+        "late_max_ns": 23458,
+        "chunks": 60300
+      },
+      "raw": "point-07.json"
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 20.0,
+        "rate_bits_per_s": "inf",
+        "width": 4
+      },
+      "expected_ns": 20000000.0,
+      "estimate_ns": 19983791.25,
+      "error_ns": -16208.75,
+      "tolerance_ns": 1000000.0,
+      "interval_ns": [
+        19980541.75,
+        19985541.5
+      ],
+      "interval_half_width_ns": 2499.875,
+      "judged_half_width_ns": 4999.75,
+      "independent_bootstrap_interval_ns": [
+        19981531.0,
+        19985187.75
+      ],
+      "autocorrelation": {
+        "1": 0.3991732223820909,
+        "2": 0.17548382472381915,
+        "3": 0.051175935792840764,
+        "4": -0.015608400688632012,
+        "5": 0.011121769513944875,
+        "6": -0.036056141471876454,
+        "7": -0.05756787389718631,
+        "8": 0.01339485833301324,
+        "9": 0.036866068157892486,
+        "10": 0.0896154267190714,
+        "11": -0.05492634464981733,
+        "12": -0.0635596514134765,
+        "13": -0.09489115141223782,
+        "14": -0.18981533378871399,
+        "15": -0.07138807755356202,
+        "16": -0.05112030257987852,
+        "17": 0.0479911173676752,
+        "18": 0.0458183857467497,
+        "19": 0.028953896358467016,
+        "20": -0.0352430085611621,
+        "21": -0.0983767218752925,
+        "22": -0.08273904778969274,
+        "23": -0.11013419503079777,
+        "24": -0.07765110623621903,
+        "25": -0.00495256732656303,
+        "26": -0.062170418686794036,
+        "27": -0.03815587877801097,
+        "28": -0.0925678834064573,
+        "29": -0.05369729715984724,
+        "30": 0.03121505671805737
+      },
+      "autocorrelation_note": "reported only; not a pass/fail gate, and no value of it establishes that the pairs are independent",
+      "paired_spread_ns": 10712.626375450607,
+      "repaired_spread_ns": 11642.160888018168,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 370.21444444444444,
+        "late_max_ns": 6583,
+        "chunks": 60300
+      },
+      "shaped_relay": {
+        "late_mean_ns": 1456.1717247097845,
+        "late_max_ns": 37750,
+        "chunks": 60300
+      },
+      "raw": "point-08.json"
+    },
+    {
+      "point": {
+        "kind": "null",
+        "rtt_ms": 0.0,
+        "rate_bits_per_s": "inf",
+        "width": 8
+      },
+      "expected_ns": 0.0,
+      "estimate_ns": -1979.25,
+      "error_ns": -1979.25,
+      "tolerance_ns": 25000,
+      "interval_ns": [
+        -3854.0,
+        -520.5
+      ],
+      "interval_half_width_ns": 1666.75,
+      "judged_half_width_ns": 3333.5,
+      "independent_bootstrap_interval_ns": [
+        -3271.0,
+        -864.5
+      ],
+      "autocorrelation": {
+        "1": 0.38466866865256527,
+        "2": 0.1462397392127074,
+        "3": 0.0599137961399644,
+        "4": 0.1821127824393934,
+        "5": 0.15277393045337273,
+        "6": 0.17355799985465686,
+        "7": 0.06431103585231912,
+        "8": 0.04386631954484717,
+        "9": 0.03219536020345894,
+        "10": 0.07348120327232416,
+        "11": 0.054748107068128236,
+        "12": 0.08152515246256661,
+        "13": 0.08007544980669087,
+        "14": 0.015759699048391612,
+        "15": 0.04458449150074072,
+        "16": -0.023780373322176657,
+        "17": -0.007539156341814198,
+        "18": 0.06849325847837892,
+        "19": 0.01964935431240404,
+        "20": -0.03653263994815063,
+        "21": 0.004355637797011134,
+        "22": -0.05304492542280402,
+        "23": 0.027940990127268077,
+        "24": 0.023741103455181312,
+        "25": -0.040383543436931686,
+        "26": -0.12158278289710006,
+        "27": -0.03555116302391446,
+        "28": -0.04872768941576166,
+        "29": -0.05915672078807124,
+        "30": -0.10979965731569019
+      },
+      "autocorrelation_note": "reported only; not a pass/fail gate, and no value of it establishes that the pairs are independent",
+      "paired_spread_ns": 41095.35423685505,
+      "repaired_spread_ns": 50804.04561299818,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 467.31335563561504,
+        "late_max_ns": 9625,
+        "chunks": 116580
+      },
+      "shaped_relay": {
+        "late_mean_ns": 457.9015868931206,
+        "late_max_ns": 9250,
+        "chunks": 116580
+      },
+      "raw": "point-09.json"
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 5.0,
+        "rate_bits_per_s": "inf",
+        "width": 8
+      },
+      "expected_ns": 5000000.0,
+      "estimate_ns": 4910155.75,
+      "error_ns": -89844.25,
+      "tolerance_ns": 250000.0,
+      "interval_ns": [
+        4908823.25,
+        4911052.5
+      ],
+      "interval_half_width_ns": 1114.625,
+      "judged_half_width_ns": 2229.25,
+      "independent_bootstrap_interval_ns": [
+        4908813.0,
+        4911260.5
+      ],
+      "autocorrelation": {
+        "1": 0.05549262868909969,
+        "2": -0.06118419392077085,
+        "3": -0.06027199647593224,
+        "4": -0.032022413094714076,
+        "5": 0.13183012169233368,
+        "6": 0.006869951479211913,
+        "7": 0.016421059088505517,
+        "8": -0.016246169999667496,
+        "9": -0.01857544358938468,
+        "10": -0.04833882332373851,
+        "11": -0.11226141645531852,
+        "12": -0.03790299406642753,
+        "13": 0.008968830550686292,
+        "14": 0.05205168305605476,
+        "15": -0.04285094223833729,
+        "16": 0.025285344131342383,
+        "17": -0.07099835345398035,
+        "18": 0.037293979420256924,
+        "19": 0.02771780099651891,
+        "20": -0.010773534298535415,
+        "21": -0.036828676437309575,
+        "22": -0.06270040320118107,
+        "23": 0.0741019088520841,
+        "24": -0.008028395740996166,
+        "25": 0.061160443278200104,
+        "26": 0.026807234408962412,
+        "27": 0.0061566047255648,
+        "28": -0.03155131007309425,
+        "29": -0.012392362485770074,
+        "30": 0.02864079986911161
+      },
+      "autocorrelation_note": "reported only; not a pass/fail gate, and no value of it establishes that the pairs are independent",
+      "paired_spread_ns": 7215.157025210453,
+      "repaired_spread_ns": 8085.180209552768,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 376.64624292331445,
+        "late_max_ns": 6083,
+        "chunks": 116580
+      },
+      "shaped_relay": {
+        "late_mean_ns": 2523.5657059529935,
+        "late_max_ns": 66625,
+        "chunks": 116580
+      },
+      "raw": "point-10.json"
+    },
+    {
+      "point": {
+        "kind": "axis",
+        "rtt_ms": 20.0,
+        "rate_bits_per_s": "inf",
+        "width": 8
+      },
+      "expected_ns": 20000000.0,
+      "estimate_ns": 19924666.75,
+      "error_ns": -75333.25,
+      "tolerance_ns": 1000000.0,
+      "interval_ns": [
+        19923062.0,
+        19926437.5
+      ],
+      "interval_half_width_ns": 1687.75,
+      "judged_half_width_ns": 3375.5,
+      "independent_bootstrap_interval_ns": [
+        19923156.75,
+        19926218.5
+      ],
+      "autocorrelation": {
+        "1": 0.3288027699815591,
+        "2": -0.002968304424231063,
+        "3": -0.06923049843590301,
+        "4": -0.001785321172993011,
+        "5": 0.014042773089590305,
+        "6": 0.01551148495799884,
+        "7": 0.09603636411712962,
+        "8": 0.04294821606541458,
+        "9": -0.04819627561152161,
+        "10": -0.10483031903052191,
+        "11": 0.013729601538005915,
+        "12": 0.07193700185540279,
+        "13": -0.028129318842513806,
+        "14": -0.047494759515423146,
+        "15": -0.046767134810655114,
+        "16": -0.13970749418177097,
+        "17": -0.03441048138922458,
+        "18": -0.03988157409686313,
+        "19": 0.022076054562796613,
+        "20": 0.05461428616020141,
+        "21": 0.06040641630730666,
+        "22": 0.047327470198533034,
+        "23": 0.05032565841992086,
+        "24": 0.002135015920064054,
+        "25": -0.10182149853717126,
+        "26": -0.057387681295417055,
+        "27": -0.03014584300165058,
+        "28": 0.06884544548035493,
+        "29": 0.11187839701093674,
+        "30": 0.03568569855781781
+      },
+      "autocorrelation_note": "reported only; not a pass/fail gate, and no value of it establishes that the pairs are independent",
+      "paired_spread_ns": 11024.810367202468,
+      "repaired_spread_ns": 12811.950803654961,
+      "pairing_removed_common_mode": false,
+      "accurate": true,
+      "precise": true,
+      "passes": true,
+      "baseline_relay": {
+        "late_mean_ns": 360.04401269514494,
+        "late_max_ns": 7167,
+        "chunks": 116580
+      },
+      "shaped_relay": {
+        "late_mean_ns": 1572.416117687425,
+        "late_max_ns": 91792,
+        "chunks": 116580
+      },
+      "raw": "point-11.json"
+    }
+  ],
+  "run_passes": true,
+  "scope": "the cost the relay adds under this paired probe at these frame sizes and unlimited rate; not the timing of inference endpoints"
+}
