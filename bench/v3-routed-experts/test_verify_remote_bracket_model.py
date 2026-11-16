@@ -12,20 +12,21 @@ from test_verify_remote_model import BASE_NS, fake_relay, fake_trial, reference_
 PINNED_BRACKET_ORDERS_SHA256 = "817e21c467e249a7f57f09547c65d186e4ceed96ab0bf975552526d851a7a0d5"
 
 
-def obs(entry, per_position_ns, defects=()):
+def obs(entry, per_position_ns, defects=(), proposed=0):
     """An observation of `entry` whose time per timed id is `per_position_ns`."""
-    return dict(entry, summary={"per_position_ns": per_position_ns}, ledger_defects=list(defects),
-                frame_defects=[], relay=None, suspensions=[])
+    return dict(entry, summary={"per_position_ns": per_position_ns, "proposed": proposed},
+                ledger_defects=list(defects), frame_defects=[], relay=None, suspensions=[])
 
 
-def study(drift_by_candidate, filler_spread=0.0, defective_unit=None):
+def study(drift_by_candidate, filler_spread=0.0, defective=None):
     """Observations for the whole schedule. `drift_by_candidate[length](unit)` is the
-    closing bracket's relative change; the filler's four times spread by `filler_spread`."""
+    closing bracket's relative change; the filler's four times spread by `filler_spread`.
+    `defective(entry)` gives a trial's gate defects."""
     out = []
     filler_index = Counter()
     for entry in bs.schedule():
         unit = entry["unit"]
-        defects = ["a frame defect"] if unit == defective_unit and entry["role"] == bs.ROLE_FILLER else []
+        defects = defective(entry) if defective else []
         if entry["role"] == vr.ROLE_BRACKET:
             base = 200e6 * entry["candidate"] / 16
             change = drift_by_candidate[entry["candidate"]](unit) if entry["bracket"] == "after" else 0.0
@@ -111,17 +112,59 @@ class Selection(unittest.TestCase):
         self.assertEqual([c["candidate"] for c in selection["candidates"]], list(bs.CANDIDATES))
         self.assertTrue(all(len(c["drifts"]) == bs.STAND_INS for c in selection["candidates"]))
 
-    def test_a_unit_lost_to_a_defect_is_not_a_drift_within_the_gate(self):
+    def test_a_bracket_defect_uncounts_only_that_candidate_in_that_unit(self):
         by = {16: lambda unit: 0.02 if unit == 0 else 0.0, 32: constant(0.0), 64: constant(0.0)}
-        readings = bs.unit_readings(study(by, defective_unit=5))
-        self.assertFalse(readings[5]["counted"])
-        self.assertIn("a frame defect", readings[5]["reasons"][0])
+
+        def defective(entry):
+            return ["a frame defect"] if entry["unit"] == 5 and entry.get("candidate") == 16 else []
+
+        readings = bs.unit_readings(study(by, defective=defective))
+        self.assertFalse(readings[5]["candidates"]["16"]["counted"])
+        self.assertIn("a frame defect", readings[5]["candidates"]["16"]["reasons"][0])
+        self.assertTrue(readings[5]["candidates"]["32"]["counted"])
         selection = bs.select(readings)
         reading = {c["candidate"]: c for c in selection["candidates"]}
-        self.assertEqual(reading[16]["within_gate"], 6)
+        # Unit 0 over the gate and unit 5 uncounted: 6 of 8, which never qualifies.
+        self.assertEqual((reading[16]["within_gate"], reading[16]["counted_units"]), (6, 7))
+        self.assertEqual(list(reading[16]["uncounted"]), ["5"])
         self.assertFalse(reading[16]["qualifies"])
-        self.assertEqual(reading[32]["within_gate"], 7)
+        self.assertEqual(reading[32]["within_gate"], 8)
         self.assertEqual(selection["selected"], 32)
+
+    def test_a_filler_defect_does_not_void_the_brackets_but_hides_the_spread(self):
+        by = {length: constant(0.0) for length in bs.CANDIDATES}
+
+        def defective(entry):
+            return ["a frame defect"] if entry["unit"] == 2 and entry["role"] == bs.ROLE_FILLER else []
+
+        readings = bs.unit_readings(study(by, defective=defective))
+        self.assertTrue(all(c["counted"] for c in readings[2]["candidates"].values()))
+        self.assertIsNone(readings[2]["filler_spread"])
+        self.assertFalse(readings[2]["disturbed"])
+        self.assertEqual(bs.select(readings)["selected"], 16)
+
+    def test_a_stall_or_late_relay_in_the_filler_is_a_disturbance_the_bracket_must_see(self):
+        by = {16: constant(0.0), 32: constant(0.03), 64: constant(0.0)}
+        for reason in ("driver suspended 3.0 s during the trial", "relay behind schedule in generation"):
+            def defective(entry, reason=reason):
+                return [reason] if entry["unit"] == 4 and entry["role"] == bs.ROLE_FILLER else []
+            observations = study(by, defective=defective)
+            for o in observations:  # trial_defects reads stalls and relay, not ledger text
+                if o["unit"] == 4 and o["role"] == bs.ROLE_FILLER:
+                    o["ledger_defects"] = []
+                    if reason.startswith("driver"):
+                        o["suspensions"] = [{"seconds": 3.0}]
+                    else:
+                        o["relay"] = {"relay_on_schedule": False, "mark_defects": []}
+            readings = bs.unit_readings(observations)
+            self.assertTrue(readings[4]["disturbed"], reason)
+            reading = {c["candidate"]: c for c in bs.select(readings)["candidates"]}
+            self.assertEqual(reading[16]["missed_disturbances"], [4])
+            self.assertEqual(reading[32]["missed_disturbances"], [])
+
+    def test_a_filler_that_proposed_anything_is_not_identical_work(self):
+        fillers = [{"summary": {"per_position_ns": 100, "proposed": p}} for p in (0, 0, 3, 0)]
+        self.assertIsNone(bs.filler_spread(fillers))
 
     def test_missed_disturbances_are_counted_beside_the_rule_not_in_it(self):
         by = {length: constant(0.0) for length in bs.CANDIDATES}
@@ -215,7 +258,7 @@ class Execute(unittest.TestCase):
         self.assertTrue(report["complete"], report.get("stopped"))
         self.assertEqual(report["observed"], len(bs.schedule()))
         self.assertEqual(report["selection"]["selected"], 16)
-        self.assertTrue(all(u["counted"] for u in report["units"]))
+        self.assertTrue(all(c["counted"] for u in report["units"] for c in u["candidates"].values()))
         self.assertFalse(manifest["counts"])
         self.assertFalse(manifest["measures_arm_speed"])
         self.assertEqual(manifest["peer_handshake"], "quiet agreed")

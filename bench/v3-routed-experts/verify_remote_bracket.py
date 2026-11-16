@@ -158,6 +158,8 @@ def main(argv=None):
         parser.error("the relay binary is not the pinned build")
     if os.environ.get(LINK_QOS_ENV, "default") != "default":
         parser.error("the relay was qualified at the default scheduling class only")
+    if not args.peer_handshake.exists() or not args.peer_handshake.read_text().strip():
+        parser.error("the peer handshake file is missing or empty")
     busy = lp.busy_processes()
     if busy:
         parser.error(f"the study needs a quiet machine; running: {busy}")

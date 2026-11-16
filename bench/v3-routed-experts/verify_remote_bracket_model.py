@@ -11,7 +11,12 @@ brackets in the same order. Drift is the protocol's bracket drift
 drifts are at most 1%; the bracket is the shortest qualifying length; if
 none qualifies, none is selected. Missed disturbances (a filler whose four
 identical-work trials spread by more than 1% while the brackets agree) are
-counted per candidate and reported beside the selection, not added to it.
+counted per candidate and reported beside the selection, not added to it;
+a stall or late relay during the filler also marks the unit disturbed.
+
+A candidate's drift in a unit counts unless one of its own two brackets is
+defective; a defect elsewhere in the unit does not void it, and an
+uncounted drift is never within the gate.
 """
 import random
 import statistics
@@ -82,19 +87,33 @@ def first_labels():
 
 
 def filler_spread(fillers):
-    """Spread of the filler's time per timed id: (max - min) / mean, over its four trials."""
+    """Spread of the filler's time per timed id: (max - min) / mean, over its four trials.
+
+    `None` unless all four ran and did the same sequential work: a verify
+    arm that proposed anything on `explain` did different work, and its
+    time would mix arm speed into the measure of disturbance.
+    """
     times = [f["summary"]["per_position_ns"] for f in fillers]
     if len(times) != len(FILLER_ARMS) or any(t is None for t in times):
+        return None
+    if any(f["summary"].get("proposed", 0) for f in fillers):
         return None
     return (max(times) - min(times)) / statistics.fmean(times)
 
 
-def unit_readings(observations):
-    """Per stand-in unit: each candidate's drift, the filler spread, and defects by name.
+# Filler defects that are themselves evidence of a disturbance inside the
+# unit, as opposed to a record that cannot be read.
+DISTURBANCE_MARKS = ("driver suspended", "relay behind schedule")
 
-    A unit with a defective trial (gates 2 and 3, a relay mark defect or a
-    late relay, a stall) is reported with its reasons, and its drifts are
-    still shown but not counted.
+
+def unit_readings(observations):
+    """Per stand-in unit: each candidate's drift and whether it counts, and the filler.
+
+    A candidate's drift counts unless one of its own two brackets has a
+    defect (gates 2 and 3, a relay mark defect or late relay, a stall); a
+    defect elsewhere in the unit does not void it. The filler's readable
+    defects make its spread unavailable; a stall or late relay in it marks
+    the unit disturbed, as does a spread over the gate.
     """
     units = {}
     for observation in observations:
@@ -102,32 +121,40 @@ def unit_readings(observations):
             units.setdefault(observation["unit"], []).append(observation)
     readings = []
     for unit, members in sorted(units.items()):
-        reasons = [f"{m['label']}: {r}" for m in members for r in vr.trial_defects(m)]
-        drifts = {}
+        candidates = {}
         for length in CANDIDATES:
             sides = {m["bracket"]: m for m in members
                      if m["role"] == vr.ROLE_BRACKET and m.get("candidate") == length}
+            reasons = [f"{m['label']}: {r}" for m in sides.values() for r in vr.trial_defects(m)]
+            drift = None
             if set(sides) == {"before", "after"}:
-                drifts[length] = vr.bracket_drift(sides["before"], sides["after"])
+                drift = vr.bracket_drift(sides["before"], sides["after"])
             else:
-                reasons.append(f"candidate {length}: incomplete")
+                reasons.append("incomplete")
+            candidates[str(length)] = {"drift": drift, "counted": not reasons, "reasons": reasons}
         fillers = [m for m in members if m["role"] == ROLE_FILLER]
-        spread = filler_spread(fillers)
+        filler_reasons = [f"{m['label']}: {r}" for m in fillers for r in vr.trial_defects(m)]
+        unreadable = any(not any(mark in r for mark in DISTURBANCE_MARKS) for r in filler_reasons)
+        spread = None if unreadable else filler_spread(fillers)
         if spread is None:
-            reasons.append("incomplete filler")
-        readings.append({"unit": unit, "drifts": {str(k): v for k, v in drifts.items()},
-                         "filler_spread": spread, "counted": not reasons, "reasons": reasons})
+            filler_reasons.append("filler incomplete, or not identical sequential work")
+        disturbed = any(mark in r for r in filler_reasons for mark in DISTURBANCE_MARKS) \
+            or (spread is not None and spread > GATE)
+        readings.append({"unit": unit, "candidates": candidates, "filler_spread": spread,
+                         "filler_reasons": filler_reasons, "disturbed": disturbed})
     return readings
 
 
 def candidate_reading(readings, length):
-    counted = [r for r in readings if r["counted"]]
-    drifts = [r["drifts"][str(length)] for r in counted]
+    """One candidate across the stand-in units: its counted drifts against the rule."""
+    own = [(r, r["candidates"][str(length)]) for r in readings if str(length) in r["candidates"]]
+    counted = [(r, c) for r, c in own if c["counted"]]
+    drifts = [c["drift"] for _, c in counted]
     within = sum(d <= GATE for d in drifts)
-    missed = [r["unit"] for r in counted
-              if r["filler_spread"] > GATE and r["drifts"][str(length)] <= GATE]
+    missed = [r["unit"] for r, c in counted if r["disturbed"] and c["drift"] <= GATE]
     return {
         "candidate": length, "counted_units": len(counted), "drifts": drifts,
+        "uncounted": {str(r["unit"]): c["reasons"] for r, c in own if not c["counted"]},
         "within_gate": within, "median": statistics.median(drifts) if drifts else None,
         "max": max(drifts) if drifts else None,
         "qualifies": within >= QUALIFYING_WITHIN,
