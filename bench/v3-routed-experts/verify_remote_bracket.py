@@ -77,6 +77,7 @@ def execute(args, root, model, out):
         "stop_ids": list(vr.STOP_IDS), "schedule": order, "gate": bs.GATE,
         "binary_sha256": {name: sha(root / path) for name, path in
                           (("v3_verify_remote", driver.TRIAL), ("larql-server", b1.SERVER), ("v3_link_shaper", RELAY))},
+        "relay_build": lp.relay_build(sha(root / RELAY)),
         "harness_sha256": {name: sha(Path(__file__).with_name(name)) for name in HARNESS},
         "metadata_sha256": {name: sha(model / name) for name in ("index.json", "system_graph.json")},
         "host_before": lp.host_state(), "peer_handshake": handshake,
@@ -154,8 +155,8 @@ def main(argv=None):
     for binary in (driver.TRIAL, b1.SERVER, RELAY):
         if not (root / binary).exists():
             parser.error(f"build first: {binary}")
-    if not sha(root / RELAY).startswith(lp.FROZEN_RELAY_SHA256_PREFIX):
-        parser.error("the relay binary is not the pinned build")
+    if lp.relay_build(sha(root / RELAY)) is None:
+        parser.error("the relay binary is neither the certified build nor the named candidate")
     if os.environ.get(LINK_QOS_ENV, "default") != "default":
         parser.error("the relay was qualified at the default scheduling class only")
     if not args.peer_handshake.exists() or not args.peer_handshake.read_text().strip():

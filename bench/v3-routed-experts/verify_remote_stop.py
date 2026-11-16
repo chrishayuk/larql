@@ -45,7 +45,7 @@ def execute(args, root, model, out):
         "schedule": [reference_entry] + arm_entries,
         "binary_sha256": {name: sha(root / p) for name, p in
                           (("v3_verify_remote", driver.TRIAL), ("larql-server", b1.SERVER), ("v3_link_shaper", RELAY))},
-        "relay_is_pinned_build": relay_sha.startswith(lp.FROZEN_RELAY_SHA256_PREFIX),
+        "relay_build": lp.relay_build(relay_sha),
         "harness_sha256": {name: sha(Path(__file__).with_name(name)) for name in HARNESS},
         "metadata_sha256": {name: sha(model / name) for name in ("index.json", "system_graph.json")},
         "host_before": lp.host_state(), "started_utc": ht.utc_now(),

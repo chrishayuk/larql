@@ -34,7 +34,6 @@ import block_time_2 as d2
 import host_telemetry as ht
 import link_block_frames_model as bm
 import link_pair as lp
-import link_pair_model as pm
 import verify_remote_model as vr
 import link_model as lm
 from link_sweep import LINK_QOS_ENV, RELAY, RELAY_READY, RELAY_START_SECONDS, read_relay_stats
@@ -199,24 +198,12 @@ def take_references(root, model, out, env, worker_urls, references, observations
         save(out / "references.json", {"ids": references})
 
 
-LINK2_RUNS_REQUIRED = 2
-
-
-def check_link2_qualification(receipts, relay_sha256):
-    """Two distinct passing LINK-2 revision 3 qualifying receipts for this relay build."""
-    for receipt in receipts:
-        pm.check_qualifying_receipt(receipt, relay_sha256)
-    started = {receipt.get("host_before", {}).get("utc") for receipt in receipts}
-    if len(receipts) < LINK2_RUNS_REQUIRED or len(started) < LINK2_RUNS_REQUIRED:
-        raise ValueError(f"the relay needs {LINK2_RUNS_REQUIRED} distinct passing LINK-2 qualifying runs")
-
-
 def execute(args, root, model, out, kind):
     receipts = [json.loads(path.read_text()) for path in args.frames_qualification]
     link2 = [json.loads(path.read_text()) for path in args.link2_qualification]
     if kind == "admissible":
         bm.check_qualification(receipts, sha(root / RELAY))
-        check_link2_qualification(link2, sha(root / RELAY))
+        lp.check_link2_qualification(link2, sha(root / RELAY))
     env = dict(os.environ, **b1.SETTINGS)
     order = vr.schedule(controls=kind == "diagnostic")
     handshake = args.peer_handshake.read_text() if args.peer_handshake else None
@@ -345,8 +332,10 @@ def main(argv=None):
     for binary in (TRIAL, b1.SERVER, RELAY):
         if not (root / binary).exists():
             parser.error(f"build first: {binary}")
-    if not sha(root / RELAY).startswith(lp.FROZEN_RELAY_SHA256_PREFIX):
-        parser.error("the relay binary is not the pinned build")
+    build = lp.relay_build(sha(root / RELAY))
+    if build is None or (args.admissible and build != "certified"):
+        parser.error("the admissible run needs the certified relay build; a diagnostic may also run the "
+                     "named candidate")
     if os.environ.get(LINK_QOS_ENV, "default") != "default":
         parser.error("the relay was qualified at the default scheduling class only")
     if args.admissible:
@@ -357,7 +346,7 @@ def main(argv=None):
         try:
             bm.check_qualification([json.loads(p.read_text()) for p in args.frames_qualification],
                                    sha(root / RELAY))
-            check_link2_qualification([json.loads(p.read_text()) for p in args.link2_qualification],
+            lp.check_link2_qualification([json.loads(p.read_text()) for p in args.link2_qualification],
                                       sha(root / RELAY))
         except ValueError as error:
             parser.error(str(error))

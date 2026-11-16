@@ -86,8 +86,8 @@ def main():
     for binary in (RELAY, lp.PROBE):
         if not (root / binary).exists():
             parser.error(f"build first: {binary}")
-    if not sha(root / RELAY).startswith(lp.FROZEN_RELAY_SHA256_PREFIX):
-        parser.error("the relay binary is not the frozen build LINK-2 certifies")
+    if lp.relay_build(sha(root / RELAY)) is None:
+        parser.error("the relay binary is neither the certified build nor the named candidate")
     if args.qualifying and lp.busy_processes():
         parser.error("a compiler or model process is running; a qualifying attempt needs a quiet machine")
     out = args.out.resolve()

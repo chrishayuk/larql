@@ -797,26 +797,44 @@ class RelayQualification(unittest.TestCase):
         return receipt
 
     def test_two_distinct_passing_receipts_for_this_relay_qualify(self):
-        import verify_remote as driver
-        driver.check_link2_qualification([self.receipt("t1"), self.receipt("t2")], self.RELAY)
+        import link_pair as lp
+        lp.check_link2_qualification([self.receipt("t1"), self.receipt("t2")], self.RELAY)
 
     def test_one_receipt_or_the_same_run_twice_does_not(self):
-        import verify_remote as driver
+        import link_pair as lp
         for receipts in ([self.receipt("t1")], [self.receipt("t1"), self.receipt("t1")]):
             with self.assertRaises(ValueError):
-                driver.check_link2_qualification(receipts, self.RELAY)
+                lp.check_link2_qualification(receipts, self.RELAY)
 
     def test_receipts_for_another_relay_build_do_not(self):
-        import verify_remote as driver
+        import link_pair as lp
         receipts = [self.receipt("t1", relay="7" * 64), self.receipt("t2", relay="7" * 64)]
         with self.assertRaisesRegex(ValueError, "different relay build"):
-            driver.check_link2_qualification(receipts, self.RELAY)
+            lp.check_link2_qualification(receipts, self.RELAY)
 
     def test_a_diagnostic_does_not(self):
-        import verify_remote as driver
+        import link_pair as lp
         receipts = [self.receipt("t1"), self.receipt("t2", kind="diagnostic")]
         with self.assertRaises(ValueError):
-            driver.check_link2_qualification(receipts, self.RELAY)
+            lp.check_link2_qualification(receipts, self.RELAY)
+
+
+class RelayBuild(unittest.TestCase):
+    """Admissible runs take only the certified relay build; the candidate is for qualification and diagnostics."""
+
+    def test_the_certified_build_the_candidate_and_anything_else(self):
+        import link_pair as lp
+        self.assertEqual(lp.relay_build(lp.FROZEN_RELAY_SHA256_PREFIX + "0" * 48), "certified")
+        self.assertEqual(lp.relay_build(lp.CANDIDATE_RELAY_SHA256_PREFIX + "0" * 48), "candidate")
+        self.assertIsNone(lp.relay_build("f" * 64))
+        self.assertNotEqual(lp.FROZEN_RELAY_SHA256_PREFIX, lp.CANDIDATE_RELAY_SHA256_PREFIX)
+
+    def test_the_frozen_block_time_harnesses_still_require_the_certified_build(self):
+        # They gate on the certified prefix only, so the candidate cannot run there at all.
+        for name in ("block_time.py", "block_time_2.py"):
+            text = (Path(__file__).with_name(name)).read_text()
+            self.assertIn("startswith(lp.FROZEN_RELAY_SHA256_PREFIX)", text)
+            self.assertNotIn("CANDIDATE_RELAY", text)
 
 
 PINNED_UNIT_ORDER_SHA256 = "f3fe7765dfc0bc4977d33f95ed41af3ae9a24eab5daaba59790dafb4169fee0f"
