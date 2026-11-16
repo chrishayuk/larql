@@ -96,7 +96,32 @@ def fake_trial(arm, ids=None, accept=2, shards=1, profiled=True, per_id_ns=BASE_
         "final_position": position, "generation_from": generation, "units": units, "ledger": ledger,
         "frames": {"whole_run": {vr.SINGLE_ROW: singles, vr.MULTI_ROW: len(exchanges) - singles}},
         "exchanges": exchanges, "worker_records": records,
+        "relay_mark": {"control": "127.0.0.1:1", "answer": "ok 1", "error": None, "waited_ns": 1000,
+                       "exchanges_completed": generation["exchange"]},
     }
+
+
+def fake_relay(prefill_late_ns=0, generation_late_ns=0, answer="ok", reasons=(), chunks=(10, 6)):
+    """A relay's closing and mark records for one connection marked once.
+
+    Prefill lateness is all in the snapshot; generation lateness is what the
+    closing records add after it, split across the two directions.
+    """
+    before, after = chunks
+    snapshot = {"mark": 1, "connection": 0, "queued": 0, "unread": False, "last_delivered": "response",
+                "read_after_snapshot": 0}
+    stats = []
+    for direction, share in (("request", 0.25), ("response", 0.75)):
+        prefill = int(prefill_late_ns * share)
+        generation = int(generation_late_ns * share)
+        snapshot[direction] = {"bytes": 1000 * before, "chunks": before, "late_sum_ns": prefill,
+                               "late_max_ns": prefill}
+        stats.append({"connection": 0, "direction": direction, "qos": "default", "delay_us": 0,
+                      "rate_bits_per_s": "inf", "bytes": 1000 * (before + after), "chunks": before + after,
+                      "late_sum_ns": prefill + generation, "late_max_ns": max(prefill, generation)})
+    summary = {"mark": 1, "summary": True, "connections": [0], "accepted_before": 1, "answer": answer,
+               "reasons": list(reasons)}
+    return {"stats": stats, "marks": [snapshot, summary]}
 
 
 def observation(entry, trial):
@@ -540,8 +565,9 @@ class Execute(unittest.TestCase):
             return fake_trial(entry["arm"], ids=ids, corrupt=entry["corrupt"], generate=entry["generate"],
                               accept=0 if entry["corrupt"] != "none" else 2), relay
 
-        relay = None if relay_late_ns is None else [
-            {"late_sum_ns": relay_late_ns, "chunks": 10, "bytes": 1, "late_max_ns": relay_late_ns}]
+        # Prefill lateness far over the gate in every trial: it must not count.
+        relay = None if relay_late_ns is None else fake_relay(prefill_late_ns=100 * BASE_NS,
+                                                              generation_late_ns=relay_late_ns)
 
         def timed_trial(root, model_, out_, env, entry, urls):
             trial, relay = run_trial(root, model_, out_, env, entry, urls)
@@ -647,13 +673,112 @@ class Execute(unittest.TestCase):
         self.assertIn("reference process exited 101", report["stopped"])
         self.assertTrue({"references.json", "references_run.json", "failure.txt"} <= files)
 
-    def test_a_late_relay_voids_its_units(self):
-        # Lateness above 1% of every trial's own timed generation.
+    def test_a_late_relay_in_generation_voids_its_units(self):
+        # Generation lateness above 1% of every trial's own timed generation.
         report, _, trials = self.run_execute(relay_late_ns=10 * BASE_NS)
         self.assertEqual(report["valid_units"], 0)
         self.assertTrue(all(not t["relay"]["relay_on_schedule"] for t in trials))
+        # Generation lateness well under 1%; prefill lateness far over it.
         report, _, trials = self.run_execute(relay_late_ns=1000)
         self.assertEqual(report["void_units"], 0)
+
+
+class RelayGate(unittest.TestCase):
+    """Revision 2: only relay lateness after the generation-boundary mark is gated."""
+
+    def setUp(self):
+        self.trial = fake_trial("verify-8")
+        self.wall = self.trial["wall_ns"]
+
+    def check(self, relay, trial=None):
+        return vr.relay_check(relay, self.trial if trial is None else trial)
+
+    def test_any_prefill_lateness_cannot_affect_the_verdict(self):
+        for prefill in (0, self.wall, 1000 * self.wall):
+            gate = self.check(fake_relay(prefill_late_ns=prefill, generation_late_ns=self.wall // 200))
+            self.assertTrue(gate["relay_on_schedule"], prefill)
+            self.assertEqual(gate["mark_defects"], [])
+        gate = self.check(fake_relay(prefill_late_ns=1000 * self.wall))
+        self.assertGreater(gate["whole_trial"]["share_of_wall"], 100)  # kept, as a diagnostic
+
+    def test_generation_lateness_over_one_percent_fails_and_exactly_one_percent_passes(self):
+        exactly = self.check(fake_relay(generation_late_ns=self.wall // 100))
+        self.assertEqual(exactly["generation_late_sum_ns"], self.wall // 100)
+        self.assertTrue(exactly["relay_on_schedule"])
+        over = self.check(fake_relay(generation_late_ns=self.wall // 100 + 4))
+        self.assertFalse(over["relay_on_schedule"])
+        self.assertEqual(over["mark_defects"], [])
+        reasons = vr.trial_defects(dict(ledger_defects=[], frame_defects=[], relay=over))
+        self.assertEqual(reasons, ["relay behind schedule in generation"])
+
+    def test_the_generation_split_is_closing_minus_snapshot(self):
+        gate = self.check(fake_relay(prefill_late_ns=4000, generation_late_ns=800, chunks=(10, 6)))
+        self.assertEqual(gate["generation_late_sum_ns"], 800)
+        self.assertEqual(gate["generation_chunks"], 12)
+
+    def assert_void(self, relay, phrase, trial=None):
+        gate = self.check(relay, trial)
+        self.assertFalse(gate["relay_on_schedule"])
+        self.assertTrue(any(phrase in d for d in gate["mark_defects"]), gate["mark_defects"])
+        reasons = vr.trial_defects(dict(ledger_defects=[], frame_defects=[], relay=gate))
+        self.assertTrue(reasons and all(r.startswith("relay mark: ") for r in reasons), reasons)
+
+    def test_a_trial_that_sent_no_mark_is_void(self):
+        trial = dict(self.trial, relay_mark=None)
+        self.assert_void(fake_relay(), "sent no mark", trial)
+
+    def test_an_unanswered_or_delayed_mark_is_void(self):
+        trial = dict(self.trial, relay_mark=dict(self.trial["relay_mark"], answer=None, error="timed out"))
+        self.assert_void(fake_relay(), "never answered", trial)
+
+    def test_a_mark_the_relay_did_not_record_is_void(self):
+        relay = fake_relay()
+        relay["marks"] = []
+        self.assert_void(relay, "recorded no mark")
+
+    def test_a_duplicated_mark_is_void(self):
+        relay = fake_relay()
+        relay["marks"].append(dict(relay["marks"][1], mark=2))
+        self.assert_void(relay, "recorded 2 marks")
+
+    def test_a_refused_mark_is_void_with_its_reasons(self):
+        relay = fake_relay(answer="refused", reasons=["connection 0: 2 chunks queued on the link"])
+        trial = dict(self.trial, relay_mark=dict(self.trial["relay_mark"], answer="refused 1 connection 0: ..."))
+        self.assert_void(relay, "chunks queued on the link", trial)
+
+    def test_an_answer_that_disagrees_with_the_relay_is_void(self):
+        trial = dict(self.trial, relay_mark=dict(self.trial["relay_mark"], answer="ok 7"))
+        self.assert_void(fake_relay(), "is not the relay's", trial)
+
+    def test_a_summary_that_does_not_name_the_boundary_connections_is_void(self):
+        relay = fake_relay()
+        del relay["marks"][1]["accepted_before"]
+        self.assert_void(relay, "which connections came before it")
+
+    def test_a_missing_snapshot_is_void(self):
+        relay = fake_relay()
+        relay["marks"] = relay["marks"][1:]
+        self.assert_void(relay, "snapshots for connections []")
+
+    def test_a_closing_tally_below_its_snapshot_is_void(self):
+        relay = fake_relay(prefill_late_ns=4000)
+        relay["stats"][1] = dict(relay["stats"][1], late_sum_ns=0)
+        self.assert_void(relay, "closing late_sum_ns below its snapshot")
+
+    def test_a_connection_opened_after_the_mark_counts_whole_and_one_closed_before_not_at_all(self):
+        relay = fake_relay(generation_late_ns=400)
+        relay["marks"][1]["accepted_before"] = 2
+        relay["marks"][1]["connections"] = [1]
+        relay["marks"][0]["connection"] = 1
+        for record in relay["stats"]:
+            record["connection"] = 1
+        # Connection 0 closed before the mark; connection 2 opened after it.
+        for connection, late in ((0, 10 ** 12), (2, 300)):
+            for direction in ("request", "response"):
+                relay["stats"].append({"connection": connection, "direction": direction, "bytes": 1,
+                                       "chunks": 1, "late_sum_ns": late, "late_max_ns": late})
+        gate = self.check(relay)
+        self.assertEqual(gate["generation_late_sum_ns"], 400 + 600)
 
 
 PINNED_UNIT_ORDER_SHA256 = "f3fe7765dfc0bc4977d33f95ed41af3ae9a24eab5daaba59790dafb4169fee0f"

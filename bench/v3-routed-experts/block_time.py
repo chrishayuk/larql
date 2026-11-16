@@ -26,7 +26,8 @@ from profile_exact import agreement, save, sha, workers
 
 TRIAL = "target/release/examples/v3_block_time"
 SERVER = "target/release/larql-server"
-TRIAL_SOURCES = ("crates/larql-cli/examples/v3_block_time.rs", "crates/larql-server/examples/v3_link_shaper.rs")
+TRIAL_SOURCES = ("crates/larql-cli/examples/v3_block_time.rs", "crates/larql-server/examples/v3_link_shaper.rs",
+                 "crates/larql-server/examples/support/relay.rs", "crates/larql-server/examples/support/qos.rs")
 # Environment recorded with every receipt: anything that can change how the
 # runtime, its thread pools or the relay behave.
 ENVIRONMENT_PREFIXES = ("LARQL_", "RAYON_", "VECLIB_", "TOKIO_", "OMP_", "MKL_", "OPENBLAS_")

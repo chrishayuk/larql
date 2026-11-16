@@ -5,8 +5,10 @@ changing one is a new revision, not an edit. Nothing here starts a process
 or reads a clock.
 
 Reads the records `v3_verify_remote` writes (schema
-`larql.v3.verify-remote-trial.v1`). The bracket drift, the relay gate and
-the stall rule are BLOCK-TIME's, imported, not restated.
+`larql.v3.verify-remote-trial.v2`). The bracket drift and the stall rule are
+BLOCK-TIME's, imported, not restated. The relay gate is revision 2's: relay
+lateness during timed generation only, split at the relay's
+generation-boundary mark.
 """
 import random
 import statistics
@@ -16,9 +18,9 @@ import block_time_model as bt
 import link_model as lm
 from profile_exact import agreement
 
-PROTOCOL = "VERIFY-REMOTE-1 revision 1 (draft)"
+PROTOCOL = "VERIFY-REMOTE-1 revision 2 (draft)"
 SCHEMA = "larql.v3.verify-remote.v1"
-TRIAL_SCHEMA = "larql.v3.verify-remote-trial.v1"
+TRIAL_SCHEMA = "larql.v3.verify-remote-trial.v2"
 
 ROUTED_LAYERS = bt.ROUTED_LAYERS
 SEQUENTIAL = "sequential"
@@ -274,15 +276,101 @@ def record_mismatches(entry, trial, workload_sha256):
     return wrong
 
 
-def relay_check(relay_records, trial):
-    """The relay's total lateness against this trial's own timed generation.
+MARK_OK = "ok"
+DIRECTIONS = ("request", "response")
 
-    Conservative: lateness during the untimed prefill is in the numerator
-    too, while the denominator is the timed generation alone.
+
+def mark_defects(marks, trial_mark, stats):
+    """Why a trial's generation boundary cannot be trusted; empty if it can.
+
+    The relay writes one snapshot per connection open at the mark and one
+    summary; the trial records the answer it received. Exactly one mark, an
+    `ok` answer on both sides, the same epoch, a snapshot for every
+    connection the summary names, and no closing tally below its snapshot.
     """
-    gate = lm.relay_gate(relay_records, 1, trial["wall_ns"])
-    gate["relay_late_share_of_wall"] = gate["relay_late_per_position_ns"] / trial["wall_ns"]
-    return gate
+    if trial_mark is None:
+        return ["the trial sent no mark"]
+    if trial_mark.get("answer") is None:
+        return [f"the relay never answered the mark: {trial_mark.get('error')}"]
+    summaries = [m for m in marks if m.get("summary")]
+    if not summaries:
+        return ["the relay recorded no mark"]
+    if len(summaries) > 1:
+        return [f"the relay recorded {len(summaries)} marks"]
+    summary = summaries[0]
+    epoch = summary["mark"]
+    if "accepted_before" not in summary:
+        return ["the relay's mark summary does not say which connections came before it"]
+    defects = []
+    if trial_mark["answer"].split(" ")[:2] != [summary["answer"], str(epoch)]:
+        defects.append(f"the trial's answer {trial_mark['answer']!r} is not the relay's "
+                       f"({summary['answer']} {epoch})")
+    if summary["answer"] != MARK_OK:
+        defects.append("the relay refused the mark: " + "; ".join(summary.get("reasons", [])))
+    snapshots = {m["connection"]: m for m in marks if not m.get("summary") and m.get("mark") == epoch}
+    if sorted(snapshots) != sorted(summary["connections"]):
+        defects.append(f"snapshots for connections {sorted(snapshots)}, "
+                       f"summary names {sorted(summary['connections'])}")
+    for connection, snapshot in snapshots.items():
+        for direction in DIRECTIONS:
+            closing = [r for r in stats if r["connection"] == connection and r["direction"] == direction]
+            if len(closing) != 1:
+                defects.append(f"connection {connection} {direction}: {len(closing)} closing records")
+                continue
+            for field in ("bytes", "chunks", "late_sum_ns"):
+                if closing[0][field] < snapshot[direction][field]:
+                    defects.append(f"connection {connection} {direction}: closing {field} "
+                                   f"below its snapshot")
+    return defects
+
+
+def generation_lateness(stats, marks):
+    """Relay lateness after the mark: closing minus snapshot per marked
+    connection; whole tallies of connections admitted after it (ids at or
+    above `accepted_before`); nothing from connections admitted before it
+    and closed before it (lower ids with no snapshot). The relay admits a
+    connection on accept, under the same lock a mark starts under, so the
+    split is exact. Assumes `mark_defects` found none."""
+    summary = next(m for m in marks if m.get("summary"))
+    snapshots = {m["connection"]: m for m in marks
+                 if not m.get("summary") and m.get("mark") == summary["mark"]}
+    late_sum = chunks = 0
+    for record in stats:
+        connection = record["connection"]
+        if connection in snapshots:
+            before = snapshots[connection][record["direction"]]
+            late_sum += record["late_sum_ns"] - before["late_sum_ns"]
+            chunks += record["chunks"] - before["chunks"]
+        elif connection >= summary["accepted_before"]:
+            late_sum += record["late_sum_ns"]
+            chunks += record["chunks"]
+    return {"late_sum_ns": late_sum, "chunks": chunks}
+
+
+def relay_check(relay, trial):
+    """Relay lateness during timed generation against 1% of the timed generation.
+
+    `relay` holds the relay's closing records (`stats`) and its mark records
+    (`marks`). A mark defect voids the trial by name. Revision 1's whole-trial
+    figure, prefill included, is kept as a diagnostic and gates nothing.
+    """
+    stats, marks = relay["stats"], relay["marks"]
+    wall = trial["wall_ns"]
+    whole = lm.relay_gate(stats, 1, wall)
+    defects = mark_defects(marks, trial.get("relay_mark"), stats)
+    generation = None if defects else generation_lateness(stats, marks)
+    share = None if generation is None else generation["late_sum_ns"] / wall
+    return {
+        "relay_on_schedule": generation is not None and share <= GATE,
+        "mark_defects": defects,
+        "generation_late_sum_ns": None if generation is None else generation["late_sum_ns"],
+        "generation_chunks": None if generation is None else generation["chunks"],
+        "relay_late_share_of_wall": share,
+        "whole_trial": {"relay_late_sum_ns": whole["relay_late_per_position_ns"],
+                        "relay_chunks": whole["relay_chunks"],
+                        "relay_late_max_ns": whole["relay_late_max_ns"],
+                        "share_of_wall": whole["relay_late_per_position_ns"] / wall},
+    }
 
 
 def evaluated_positions(trial):
@@ -370,8 +458,11 @@ def rejected_within_change(blocks, offsets):
 def trial_defects(observation):
     """Reasons that void a trial: gates 2 and 3, the relay and the stall rule."""
     reasons = list(observation["ledger_defects"]) + list(observation["frame_defects"])
-    if observation.get("relay") is not None and not observation["relay"]["relay_on_schedule"]:
-        reasons.append("relay behind schedule")
+    relay = observation.get("relay")
+    if relay is not None:
+        reasons += [f"relay mark: {d}" for d in relay.get("mark_defects", [])]
+        if not relay["relay_on_schedule"] and not relay.get("mark_defects"):
+            reasons.append("relay behind schedule in generation")
     for suspension in observation.get("suspensions", []):
         reasons.append(f"driver suspended {suspension['seconds']:.1f} s during the trial")
     return reasons

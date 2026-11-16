@@ -2,5 +2,6 @@
 //! includes the whole module with `mod support;`; `v3_block_time` includes
 //! only `timing.rs`, by path.
 
+pub mod mark;
 pub mod timing;
 pub mod verify;
