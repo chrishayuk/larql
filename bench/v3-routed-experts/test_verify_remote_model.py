@@ -613,7 +613,8 @@ class Execute(unittest.TestCase):
             driver.ht.spotlight_starts = lambda start, end: {"per_minute": {}}
             driver.b1.provenance = lambda root, sources: {}
             driver.lp.host_state = lambda: {"load_average": [0, 0, 0], "busy_processes": []}
-            args = argparse.Namespace(frames_qualification=[], peer_handshake=None, diagnostic="unit test",
+            args = argparse.Namespace(frames_qualification=[], link2_qualification=[], peer_handshake=None,
+                                      diagnostic="unit test",
                                       continue_unsettled=False, port=0)
             report = driver.execute(args, Path(driver.__file__).resolve().parents[2], model, out, kind)
         finally:
@@ -779,6 +780,43 @@ class RelayGate(unittest.TestCase):
                                        "chunks": 1, "late_sum_ns": late, "late_max_ns": late})
         gate = self.check(relay)
         self.assertEqual(gate["generation_late_sum_ns"], 400 + 600)
+
+
+class RelayQualification(unittest.TestCase):
+    """The admissible run needs two distinct passing LINK-2 qualifying receipts for the relay it runs."""
+    RELAY = "b" * 64
+
+    def receipt(self, started, relay=None, **changes):
+        import link_pair_model as pm
+        points = [{"point": p, "passes": True} for p in pm.frozen_points()]
+        receipt = {"schema": pm.SCHEMA, "protocol": pm.REVISION, "kind": "qualifying",
+                   "counts_toward_qualification": True, "frozen": pm.frozen_parameters(),
+                   "binary_sha256": {"v3_link_shaper": relay or self.RELAY}, "run_passes": True,
+                   "points": points, "host_before": {"utc": started}}
+        receipt.update(changes)
+        return receipt
+
+    def test_two_distinct_passing_receipts_for_this_relay_qualify(self):
+        import verify_remote as driver
+        driver.check_link2_qualification([self.receipt("t1"), self.receipt("t2")], self.RELAY)
+
+    def test_one_receipt_or_the_same_run_twice_does_not(self):
+        import verify_remote as driver
+        for receipts in ([self.receipt("t1")], [self.receipt("t1"), self.receipt("t1")]):
+            with self.assertRaises(ValueError):
+                driver.check_link2_qualification(receipts, self.RELAY)
+
+    def test_receipts_for_another_relay_build_do_not(self):
+        import verify_remote as driver
+        receipts = [self.receipt("t1", relay="7" * 64), self.receipt("t2", relay="7" * 64)]
+        with self.assertRaisesRegex(ValueError, "different relay build"):
+            driver.check_link2_qualification(receipts, self.RELAY)
+
+    def test_a_diagnostic_does_not(self):
+        import verify_remote as driver
+        receipts = [self.receipt("t1"), self.receipt("t2", kind="diagnostic")]
+        with self.assertRaises(ValueError):
+            driver.check_link2_qualification(receipts, self.RELAY)
 
 
 PINNED_UNIT_ORDER_SHA256 = "f3fe7765dfc0bc4977d33f95ed41af3ae9a24eab5daaba59790dafb4169fee0f"

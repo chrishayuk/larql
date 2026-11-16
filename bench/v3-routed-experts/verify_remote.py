@@ -34,6 +34,7 @@ import block_time_2 as d2
 import host_telemetry as ht
 import link_block_frames_model as bm
 import link_pair as lp
+import link_pair_model as pm
 import verify_remote_model as vr
 import link_model as lm
 from link_sweep import LINK_QOS_ENV, RELAY, RELAY_READY, RELAY_START_SECONDS, read_relay_stats
@@ -198,10 +199,24 @@ def take_references(root, model, out, env, worker_urls, references, observations
         save(out / "references.json", {"ids": references})
 
 
+LINK2_RUNS_REQUIRED = 2
+
+
+def check_link2_qualification(receipts, relay_sha256):
+    """Two distinct passing LINK-2 revision 3 qualifying receipts for this relay build."""
+    for receipt in receipts:
+        pm.check_qualifying_receipt(receipt, relay_sha256)
+    started = {receipt.get("host_before", {}).get("utc") for receipt in receipts}
+    if len(receipts) < LINK2_RUNS_REQUIRED or len(started) < LINK2_RUNS_REQUIRED:
+        raise ValueError(f"the relay needs {LINK2_RUNS_REQUIRED} distinct passing LINK-2 qualifying runs")
+
+
 def execute(args, root, model, out, kind):
     receipts = [json.loads(path.read_text()) for path in args.frames_qualification]
+    link2 = [json.loads(path.read_text()) for path in args.link2_qualification]
     if kind == "admissible":
         bm.check_qualification(receipts, sha(root / RELAY))
+        check_link2_qualification(link2, sha(root / RELAY))
     env = dict(os.environ, **b1.SETTINGS)
     order = vr.schedule(controls=kind == "diagnostic")
     handshake = args.peer_handshake.read_text() if args.peer_handshake else None
@@ -224,6 +239,7 @@ def execute(args, root, model, out, kind):
         "relay_gate": "relay lateness after the generation-boundary mark at most the gate share of the "
                       "timed generation; a mark defect voids the trial; the whole-trial figure is a diagnostic",
         "frames_qualification": [{"path": str(path), "sha256": sha(path)} for path in args.frames_qualification],
+        "link2_qualification": [{"path": str(path), "sha256": sha(path)} for path in args.link2_qualification],
         "binary_sha256": {name: sha(root / path) for name, path in
                           (("v3_verify_remote", TRIAL), ("larql-server", b1.SERVER), ("v3_link_shaper", RELAY))},
         "harness_sha256": {name: sha(Path(__file__).with_name(name)) for name in HARNESS},
@@ -314,6 +330,8 @@ def main(argv=None):
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--frames-qualification", type=Path, action="append", default=[],
                         help="Passing block-frame qualifying receipt; --admissible needs two distinct ones")
+    parser.add_argument("--link2-qualification", type=Path, action="append", default=[],
+                        help="Passing LINK-2 revision 3 qualifying receipt; --admissible needs two distinct ones")
     parser.add_argument("--peer-handshake", type=Path, help="Saved peer-session quiet acknowledgements")
     parser.add_argument("--port", type=int, default=19581)
     parser.add_argument("--continue-unsettled", action="store_true",
@@ -328,7 +346,7 @@ def main(argv=None):
         if not (root / binary).exists():
             parser.error(f"build first: {binary}")
     if not sha(root / RELAY).startswith(lp.FROZEN_RELAY_SHA256_PREFIX):
-        parser.error("the relay binary is not the frozen build LINK-2 certifies")
+        parser.error("the relay binary is not the pinned build")
     if os.environ.get(LINK_QOS_ENV, "default") != "default":
         parser.error("the relay was qualified at the default scheduling class only")
     if args.admissible:
@@ -339,6 +357,8 @@ def main(argv=None):
         try:
             bm.check_qualification([json.loads(p.read_text()) for p in args.frames_qualification],
                                    sha(root / RELAY))
+            check_link2_qualification([json.loads(p.read_text()) for p in args.link2_qualification],
+                                      sha(root / RELAY))
         except ValueError as error:
             parser.error(str(error))
     out = args.out.resolve()

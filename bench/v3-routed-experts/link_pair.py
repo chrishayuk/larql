@@ -23,8 +23,18 @@ from link_sweep import RELAY, REQUEST_BYTES, RESPONSE_BYTES, ECHO_HEADER
 from profile_exact import save, sha
 
 PROBE = "target/release/examples/v3_link_pair"
-# The relay build LINK-2 certifies. A different binary is a different instrument.
-FROZEN_RELAY_SHA256_PREFIX = "7b1097f814216208"
+# The relay build every harness runs. A different binary is a different
+# instrument, certified only by its own receipts (LINK-2 revision 3 and the
+# block-frame addendum, each two passing qualifying runs recorded for its
+# hash).
+#   7b1097f814216208: certified 2026-11-14/15 (link-results/link-2,
+#     link-results/link-2-block-frames); used by BLOCK-TIME-1 and -2 and
+#     VERIFY-REMOTE-1 diagnostic 01.
+#   b4068220a544782c: VERIFY-REMOTE-1 revision 2's relay with the
+#     generation-boundary mark (#865), pinned 2026-11-16 as the candidate
+#     for requalification under the same frozen rules. Until its receipts
+#     pass, it is not certified, and no admissible run can use it.
+FROZEN_RELAY_SHA256_PREFIX = "b4068220a544782c"
 # Processes whose presence makes a qualifying attempt meaningless.
 BUSY_EXECUTABLES = ("rustc", "cargo", "larql", "larql-server")
 POINT_TIMEOUT_SECONDS = 900
