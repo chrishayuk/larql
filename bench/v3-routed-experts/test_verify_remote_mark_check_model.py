@@ -20,6 +20,9 @@ def real(label):
     return trial, relay
 
 
+LABELS = ("stop-reference", "stop-verify-2", "stop-verify-4", "stop-verify-8")
+
+
 class Requirements(unittest.TestCase):
     def test_the_schedule_is_every_arm_on_json_edit_at_20_ms_sequential_first(self):
         order = mc.entries()
@@ -30,24 +33,33 @@ class Requirements(unittest.TestCase):
 
     def test_the_real_stop_check_records_meet_every_requirement(self):
         reference, _ = real("stop-reference")
-        for label in ("stop-reference", "stop-verify-2", "stop-verify-4", "stop-verify-8"):
+        for label in LABELS:
             trial, relay = real(label)
             self.assertEqual(mc.failures(trial, relay, reference["ids"]), [], label)
-            phases = mc.phase_bytes(trial, relay)
-            for direction, reading in phases.items():
-                for phase in ("prefill", "generation"):
-                    self.assertGreaterEqual(reading["relay_bytes"][phase], reading["frame_bytes"][phase])
+            for reading in mc.phase_bytes(trial, relay).values():
+                self.assertLess(abs(reading["generation_residual_bytes"]), mc.RESIDUAL_TOLERANCE_BYTES / 10)
 
-    def test_a_generation_frame_counted_before_the_mark_is_caught(self):
+    def test_a_whole_exchange_on_the_wrong_side_of_the_mark_is_caught_in_every_arm(self):
+        reference, _ = real("stop-reference")
+        for label in LABELS:
+            trial, relay = real(label)
+            split = trial["generation_from"]["exchange"]
+            late = trial["exchanges"][split]      # the mark one exchange late
+            early = trial["exchanges"][split - 1]  # the mark one exchange early
+            for moved, sign in ((late, +1), (early, -1)):
+                for direction, field in mc.DIRECTIONS.items():
+                    shifted = copy.deepcopy(relay)
+                    snapshot = next(m for m in shifted["marks"] if not m.get("summary"))
+                    snapshot[direction]["bytes"] += sign * (moved[field] + 180)
+                    found = mc.failures(trial, shifted, reference["ids"])
+                    self.assertTrue(any(f.startswith(direction) for f in found), (label, sign, direction))
+
+    def test_a_second_connection_fails(self):
         trial, relay = real("stop-verify-8")
         reference, _ = real("stop-reference")
-        moved = copy.deepcopy(relay)
-        snapshot = next(m for m in moved["marks"] if not m.get("summary"))
-        # Move the first generation exchange's response bytes into the snapshot.
-        frame = trial["exchanges"][trial["generation_from"]["exchange"]]["response_bytes"]
-        snapshot["response"]["bytes"] += frame
-        found = mc.failures(trial, moved, reference["ids"])
-        self.assertTrue(any("fewer generation bytes" in f for f in found), found)
+        extra = copy.deepcopy(relay)
+        extra["stats"] += [dict(r, connection=1) for r in relay["stats"]]
+        self.assertTrue(any("one is required" in f for f in mc.failures(trial, extra, reference["ids"])))
 
     def test_a_mark_defect_fails_and_stops_the_byte_checks(self):
         trial, relay = real("stop-verify-4")
@@ -65,8 +77,7 @@ class Requirements(unittest.TestCase):
         self.assertTrue(any("ids differ" in f for f in mc.failures(trial, relay, ids)))
 
     def test_a_reading_passes_only_with_every_arm_clean(self):
-        labels = ("stop-reference", "stop-verify-2", "stop-verify-4", "stop-verify-8")
-        results = [(arm, *real(label)) for arm, label in zip(vr.ARMS, labels)]
+        results = [(arm, *real(label)) for arm, label in zip(vr.ARMS, LABELS)]
         reading = mc.reading(results)
         self.assertTrue(reading["passes"], reading)
         self.assertFalse(reading["timed_result"])
