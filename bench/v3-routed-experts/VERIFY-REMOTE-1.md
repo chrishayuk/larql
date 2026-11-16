@@ -341,8 +341,9 @@ measured or reported):
   rates.
 - **Warm-up and gates.** Warm-up as now. Gate 1 applies to every trial.
   Pausing is allowed only between stand-in units.
-- **Measure.** Per candidate, the 8 drifts (`|after − before| / before` of
-  time per timed id), with their median and maximum.
+- **Measure.** Per candidate, the 8 drifts, with their median and maximum.
+  Drift is the protocol's existing bracket drift on time per timed id: the
+  difference between the two brackets over their mean.
 - **Budget.** About 1 to 1.5 hours.
 
 **Selection rule, fixed in advance:**
@@ -500,16 +501,22 @@ four performance workloads, which are unchanged):
     record and report, and never presented as evidence of natural
     end-of-sequence behaviour.
 - **Arms.** `sequential` and `verify-2`, `verify-4`, `verify-8`, at 0 ms.
-  The prompt includes earlier text that makes prompt lookup propose the
-  stop id, so the stop can arrive inside an accepted block as well as by
-  correction. The record shows which happened.
+- **How the stop arrives.** `greedy_speculate` cuts every proposal before
+  a stop id, so prompt lookup never proposes one, and the stop never
+  arrives inside an accepted block. It arrives as the target's own id:
+  either the correction after a block, or a single step.
+  - The prompt's earlier assistant turn ends in `<|return|>`, so lookup
+    proposes the answer and cuts the proposal there. The stop should then
+    arrive as the correction after a block that accepted its whole
+    proposal.
+  - The record shows which happened.
 - **Requirements, per arm:**
   - ids identical to `sequential`'s, ending at the stop id;
   - nothing emitted after it, with `ended_by` = stop id;
-  - the event ledger reconciles, with the stop id's event emitted and any
-    later accepted proposal not emitted;
-  - the committed continuation position equals the prompt length plus the
-    committed ids, as `sequential`'s;
+  - the event ledger reconciles, with the stop id's event emitted last;
+  - the continuation position is the prompt length plus the emitted ids
+    minus one, since the stop id is emitted but never fed back, and equals
+    `sequential`'s;
   - no exchange after the unit that produced the stop: gate 3's tiling
     ends at that unit.
 
