@@ -1,0 +1,208 @@
+{
+  "kind": "mark-check",
+  "counts": false,
+  "complete": true,
+  "stopped": null,
+  "passes": true,
+  "arms": [
+    {
+      "arm": "sequential",
+      "answer": "ok 1",
+      "waited_ns": 1807500,
+      "failures": [],
+      "phases": {
+        "request": {
+          "relay_bytes": {
+            "prefill": 71164947,
+            "generation": 17778096
+          },
+          "frame_bytes": {
+            "prefill": 70960128,
+            "generation": 17502912
+          },
+          "overhead_per_exchange": {
+            "prefill": 266.69140625,
+            "generation": 182.0
+          },
+          "exchanges": {
+            "prefill": 768,
+            "generation": 1512
+          }
+        },
+        "response": {
+          "relay_bytes": {
+            "prefill": 283765237,
+            "generation": 70170475
+          },
+          "frame_bytes": {
+            "prefill": 283345920,
+            "generation": 69757632
+          },
+          "overhead_per_exchange": {
+            "prefill": 545.9856770833334,
+            "generation": 273.04431216931215
+          },
+          "exchanges": {
+            "prefill": 768,
+            "generation": 1512
+          }
+        }
+      },
+      "generation_late_share_of_wall": 0.0009048161412718237,
+      "whole_trial_late_share_of_wall": 0.00749864007029024,
+      "on_schedule_in_generation": true
+    },
+    {
+      "arm": "verify-2",
+      "answer": "ok 1",
+      "waited_ns": 1741167,
+      "failures": [],
+      "phases": {
+        "request": {
+          "relay_bytes": {
+            "prefill": 71164947,
+            "generation": 17638896
+          },
+          "frame_bytes": {
+            "prefill": 70960128,
+            "generation": 17488992
+          },
+          "overhead_per_exchange": {
+            "prefill": 266.69140625,
+            "generation": 183.7058823529412
+          },
+          "exchanges": {
+            "prefill": 768,
+            "generation": 816
+          }
+        },
+        "response": {
+          "relay_bytes": {
+            "prefill": 283765262,
+            "generation": 70048550
+          },
+          "frame_bytes": {
+            "prefill": 283345920,
+            "generation": 69754848
+          },
+          "overhead_per_exchange": {
+            "prefill": 546.0182291666666,
+            "generation": 359.92892156862746
+          },
+          "exchanges": {
+            "prefill": 768,
+            "generation": 816
+          }
+        }
+      },
+      "generation_late_share_of_wall": 0.0016641474023860149,
+      "whole_trial_late_share_of_wall": 0.012399643348733221,
+      "on_schedule_in_generation": true
+    },
+    {
+      "arm": "verify-4",
+      "answer": "ok 1",
+      "waited_ns": 1597583,
+      "failures": [],
+      "phases": {
+        "request": {
+          "relay_bytes": {
+            "prefill": 71164947,
+            "generation": 17557152
+          },
+          "frame_bytes": {
+            "prefill": 70960128,
+            "generation": 17473440
+          },
+          "overhead_per_exchange": {
+            "prefill": 266.69140625,
+            "generation": 183.57894736842104
+          },
+          "exchanges": {
+            "prefill": 768,
+            "generation": 456
+          }
+        },
+        "response": {
+          "relay_bytes": {
+            "prefill": 283765191,
+            "generation": 69902299
+          },
+          "frame_bytes": {
+            "prefill": 283345920,
+            "generation": 69739488
+          },
+          "overhead_per_exchange": {
+            "prefill": 545.92578125,
+            "generation": 357.0416666666667
+          },
+          "exchanges": {
+            "prefill": 768,
+            "generation": 456
+          }
+        }
+      },
+      "generation_late_share_of_wall": 0.002217967966113084,
+      "whole_trial_late_share_of_wall": 0.01346438833289914,
+      "on_schedule_in_generation": true
+    },
+    {
+      "arm": "verify-8",
+      "answer": "ok 1",
+      "waited_ns": 1708791,
+      "failures": [],
+      "phases": {
+        "request": {
+          "relay_bytes": {
+            "prefill": 71164947,
+            "generation": 17518848
+          },
+          "frame_bytes": {
+            "prefill": 70960128,
+            "generation": 17466048
+          },
+          "overhead_per_exchange": {
+            "prefill": 266.69140625,
+            "generation": 183.33333333333334
+          },
+          "exchanges": {
+            "prefill": 768,
+            "generation": 288
+          }
+        },
+        "response": {
+          "relay_bytes": {
+            "prefill": 283765213,
+            "generation": 69831369
+          },
+          "frame_bytes": {
+            "prefill": 283345920,
+            "generation": 69732096
+          },
+          "overhead_per_exchange": {
+            "prefill": 545.9544270833334,
+            "generation": 344.6979166666667
+          },
+          "exchanges": {
+            "prefill": 768,
+            "generation": 288
+          }
+        }
+      },
+      "generation_late_share_of_wall": 0.0029765748215097036,
+      "whole_trial_late_share_of_wall": 0.01619146436051275,
+      "on_schedule_in_generation": true
+    }
+  ],
+  "timed_result": false,
+  "host_after": {
+    "load_average": [
+      7.25732421875,
+      6.84619140625,
+      6.16650390625
+    ],
+    "busy_processes": [],
+    "utc": "2026-11-16T11:23:43Z"
+  },
+  "ended_utc": "2026-11-16T11:23:43Z"
+}

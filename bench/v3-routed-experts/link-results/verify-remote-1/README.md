@@ -6,6 +6,8 @@ protocol is not frozen.**
 
 | Run | Kind | Outcome |
 |---|---|---|
+| [`20261116-03-mark-check`](20261116-03-mark-check/analysis.json) | Revision 2 relay mark functional check, under the predicted-bytes rule; declared, never timed; non-exclusive host | **Passes**: every mark `ok`; the split falls on the exchange boundary in every arm; ids exact |
+| [`20261116-02-mark-check`](20261116-02-mark-check/analysis.json) | The same check under its first rule, which review found too weak; declared, never timed | Passes under that rule; superseded by `-03`, kept as run |
 | [`20261116-01-stop-check`](20261116-01-stop-check/analysis.json) | Revision 2 real-model stop check: declared, functional, never timed; non-exclusive host | **Passes**: natural stop (`<\|return\|>` after 11 ids); all three verify arms exact |
 | [`20261115-01-diagnostic`](20261115-01-diagnostic/analysis.json) | Declared functional diagnostic with `--continue-unsettled` on a non-exclusive host; does not count | Complete: 147 of 147 trials plus 4 references, no stop. Ids exact in all 147 trials. No ledger or frame defects. All 3 controls passed. 5 of 24 units valid, 19 void |
 
@@ -226,3 +228,54 @@ functional and never timed as a result.
 The records are not gzipped (852 KB). Every file `verification.json`
 lists matches its SHA-256. `run.log` is the driver's console output,
 copied in after the run.
+
+## 20261116-02-mark-check and 20261116-03-mark-check
+
+Revision 2's functional qualification of the relay's generation-boundary
+mark on the real model: one trial per arm on `json_edit` at 20 ms,
+through the candidate relay `b4068220…`. Declared before each run and
+never timed as a result. The host was non-exclusive: another session's
+correctness run shared the CPU, by agreement.
+
+**Two runs, and why.** Run `-02` (revision `1bc10e13`, 11:16:47 to
+11:23:43 UTC) used the check's first rule.
+- That rule was that relay bytes cover the frames in each phase.
+- An independent review, made while `-02` was running, showed the rule
+  could not catch a boundary one exchange late on `sequential`, or early
+  on any arm.
+- The rule was replaced before `-02`'s data was examined: the bytes after
+  the mark must match the generation exchanges' frames plus per-route HTTP
+  overhead, with constants measured in the stop check's records, to within
+  5,000 bytes. That tolerance is under half the smallest frame, so a whole
+  exchange on either side of the mark always shows.
+- Run `-03` (revision `678a5553`, 11:23:55 to 11:31:18 UTC) is the check
+  under that rule. `-02` stays as run and is not re-analysed; it passed
+  under its own rule.
+
+**Run `-03` passes.**
+
+| Arm | Mark | Generation exchanges | Request residual | Response residual | Relay lateness, generation / whole trial |
+|---|---|---|---|---|---|
+| `sequential` | `ok 1` | 1,512 | 0 B | +990 B | 0.09% / 0.76% |
+| `verify-2` | `ok 1` | 816 | 0 B | +1,511 B | 0.19% / 1.97% |
+| `verify-4` | `ok 1` | 456 | 0 B | +2,055 B | 0.30% / 2.36% |
+| `verify-8` | `ok 1` | 288 | 0 B | +1,330 B | 0.36% / 2.15% |
+
+- **Every mark was answered `ok`** after 768 prefill exchanges, within
+  1.5 to 2.1 ms. Each trial had one relay connection.
+- **Ids are exact** against `sequential`.
+- **The split falls on the exchange boundary.** The request bytes after
+  the mark are exactly the generation exchanges' predicted bytes. The
+  response bytes are within about 2 KB, against a smallest response frame
+  of 46,136 B.
+- **Relay lateness by phase.** In generation it is 0.09% to 0.36% of each
+  trial's timed wall time, so every trial is on schedule under revision
+  2's gate. The whole-trial figure is revision 1's gate, with prefill
+  included: it reads 0.76% to 2.36%, so three of these four trials would
+  have failed it. That is diagnostic 01's relay failure, now separated by
+  phase. These timings are unqualified (non-exclusive host); they show
+  only that the accounting separates the phases.
+
+Every file `verification.json` lists matches its SHA-256 in both runs.
+`run.log` in each is the driver's console output. `-03`'s manifest lists
+`-02`'s directory as uncommitted at the time it ran.
