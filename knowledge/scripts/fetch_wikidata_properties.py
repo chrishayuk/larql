@@ -77,10 +77,45 @@ def fetch_properties(max_id: int = 2000, batch_size: int = 50) -> dict:
     return all_props
 
 
+def fetch_properties_from_lbdb(source: str | None = None) -> dict:
+    """Fetch property labels from a local wikidata.lbdb (no network).
+
+    Returns the same ``{pid: label}`` map as :func:`fetch_properties`, read
+    from the ``edge_meta`` node table via the ladybug Python bindings.
+    """
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).parent))
+    import wikidata_lbdb
+
+    db_path = wikidata_lbdb.find_source_db(source)
+    print(f"Using local Ladybug source: {db_path}")
+    conn = wikidata_lbdb.connect_readonly(db_path)
+    all_props = {f"P{pid}": name for pid, name in wikidata_lbdb.list_properties(conn)}
+    return all_props
+
+
 def main() -> None:
     """Fetch Wikidata property labels and save as category list."""
-    print("Fetching Wikidata property labels...")
-    props = fetch_properties(max_id=2000)
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Fetch Wikidata property labels (API, or fast local Ladybug path)."
+    )
+    parser.add_argument(
+        "--from-lbdb",
+        default=None,
+        help="Read property labels from a local wikidata.lbdb via ladybug "
+        "instead of the network API.",
+    )
+    args = parser.parse_args()
+
+    if args.from_lbdb is not None:
+        print("Fetching Wikidata property labels from local Ladybug db...")
+        props = fetch_properties_from_lbdb(args.from_lbdb)
+    else:
+        print("Fetching Wikidata property labels...")
+        props = fetch_properties(max_id=2000)
     print(f"Got {len(props)} semantic properties")
 
     # Extract unique labels, lowercased and deduplicated

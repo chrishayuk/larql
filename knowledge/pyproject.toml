@@ -15,6 +15,9 @@ wordnet = ["nltk", "inflect"]
 probe = ["mlx", "mlx-lm"]  # Apple Silicon only
 vindex = ["tokenizers"]
 ast = ["tree-sitter"]
+# Local Ladybug graph path (spec §3.1.4):
+#   uv pip install ladybug==0.22.3
+ladybug = ["ladybug>=0.22.3"]
 all = ["nltk", "inflect", "mlx", "mlx-lm", "tree-sitter", "tokenizers"]
 
 [project.scripts]
