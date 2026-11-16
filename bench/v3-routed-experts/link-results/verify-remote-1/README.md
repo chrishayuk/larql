@@ -6,6 +6,7 @@ protocol is not frozen.**
 
 | Run | Kind | Outcome |
 |---|---|---|
+| [`20261116-01-stop-check`](20261116-01-stop-check/analysis.json) | Revision 2 real-model stop check: declared, functional, never timed; non-exclusive host | **Passes**: natural stop (`<\|return\|>` after 11 ids); all three verify arms exact |
 | [`20261115-01-diagnostic`](20261115-01-diagnostic/analysis.json) | Declared functional diagnostic with `--continue-unsettled` on a non-exclusive host; does not count | Complete: 147 of 147 trials plus 4 references, no stop. Ids exact in all 147 trials. No ledger or frame defects. All 3 controls passed. 5 of 24 units valid, 19 void |
 
 ## 20261115-01-diagnostic
@@ -177,3 +178,51 @@ Observations, none of them registered statements:
   file `verification.json` lists matches its SHA-256 after decompression:
   477 files checked when this was packaged.
 - `run.log` is the driver's console output, copied in after the run.
+
+## 20261116-01-stop-check
+
+The real-model stop check that VERIFY-REMOTE-1 revision 2 adds: one
+prompt outside the four performance workloads
+([`stop_check.json`](../../verify-remote/functional/stop_check.json)), at
+0 ms, through the relay with the generation-boundary mark. It is declared,
+functional and never timed as a result.
+
+> VERIFY-REMOTE-1 revision 2 real-model stop check 1 (approved
+> 2026-11-16; functional, non-exclusive host, never timed)
+
+**Provenance.**
+- Revision `99598315` (branch `feat/verify-remote-stop-check`; the stop
+  check's files are unchanged in content by the later rebase), clean tree.
+- Binaries: `v3_verify_remote` `127eb712…`; `larql-server` `7ee4cb24…`
+  (as diagnostic 01); relay `v3_link_shaper` `b4068220…`.
+- The relay build **carries the mark** and is not yet the pinned,
+  qualified build, as the manifest records. That does not matter for a
+  functional check.
+- 2026-11-16, about 09:47 to 09:49 UTC. Another session's correctness run
+  shared the CPU, by agreement.
+
+**Result: passes.**
+- **Natural stop.** The `sequential` reference generated 11 ids, the
+  sentence and then `<|return|>` (200002), within the 64-id limit. No
+  synthetic stop was used.
+- **Every verify arm is exact.** `verify-2`, `verify-4` and `verify-8`
+  each reproduced the reference's 11 ids exactly and ended at the stop
+  with nothing after it. Gates 2 and 3 are clean, so no exchange came after
+  the last unit.
+- **Position.** The continuation position is 85 in every arm: the 75-id
+  prompt plus 11 ids, minus the stop id, which is never fed back.
+- **How the stop arrived.** In every arm it was the target's correction
+  after a block that accepted its whole proposal. `verify-8` ran blocks
+  7/7, then 1/1, then the stop. The proposer cut each proposal before
+  `<|return|>`, as `greedy_speculate` requires.
+- **The relay mark answered `ok` in all four trials.** Each had one
+  connection, nothing queued, and no request outstanding.
+  - The trial waited 1.5 ms for the answer (`verify-8`) after 240 prefill
+    exchanges.
+  - This is functional evidence that the mark works on the real model. It
+    is not the mechanism's qualification check, which runs at 20 ms on
+    `json_edit`.
+
+The records are not gzipped (852 KB). Every file `verification.json`
+lists matches its SHA-256. `run.log` is the driver's console output,
+copied in after the run.

@@ -1,0 +1,10 @@
+running stop-reference: stop-reference sequential stop_check rtt=0.0ms corrupt=none
+running stop-verify-2: stop-arm verify-2 stop_check rtt=0.0ms corrupt=none
+running stop-verify-4: stop-arm verify-4 stop_check rtt=0.0ms corrupt=none
+running stop-verify-8: stop-arm verify-8 stop_check rtt=0.0ms corrupt=none
+{
+  "complete": true,
+  "stopped": null,
+  "reference_stop": "natural",
+  "passes": true
+}

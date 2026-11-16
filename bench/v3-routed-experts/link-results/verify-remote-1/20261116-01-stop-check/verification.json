@@ -1,0 +1,26 @@
+{
+  "complete": true,
+  "sha256": {
+    "analysis.json": "d5b424c74032cb42ec5f43e92a216eed5c9dd8568815b9d7a696828eea278e0f",
+    "manifest.json": "86ae04f4901ca3a97e18a3a5772970282981078cba0eeabb4a14917e4202381f",
+    "stop-reference.json": "e975543a7f4921e147adf2a4a4d4f54fbee56323cda953187efa3e20f2920a67",
+    "stop-reference.relay-0.jsonl": "72b1b185fb047669d12fcff960bcac6dd8665d680590f1601dd56e244070b71f",
+    "stop-reference.relay-0.jsonl.marks": "eeee792b7891b1de898544418b8068a8d756166f19d5e25b5c6e5372fdade339",
+    "stop-reference.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stop-verify-2.json": "4801d6f38a83e3ef31b2d0bd69de2f676ed1ce6f76332cd6d7ad56142683b856",
+    "stop-verify-2.relay-0.jsonl": "d2ddbe3acdea5e660525edb13b369a6c507f38117c40bca5d51ab84a29c1dc9c",
+    "stop-verify-2.relay-0.jsonl.marks": "42b9f3a62cf536cb9ae4b0d3efe971cb8e1e9eb3003dd537df34b850e31b8771",
+    "stop-verify-2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stop-verify-4.json": "51dcf1efe91930b82fb9add5ee12c63087f482b8413b5507b6fd4a350bc1143d",
+    "stop-verify-4.relay-0.jsonl": "10e752cbc04af367775a0e1de50f4a74b70e2629d2e4a9481d07c960e424576c",
+    "stop-verify-4.relay-0.jsonl.marks": "16f919e300ad84a4aa13e3d9939297799c69cdedb56953022b018b0a84a5d1e8",
+    "stop-verify-4.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stop-verify-8.json": "7e78e4dbcf397ed5a5163581d174d7a657f10ee5495909129492fe3fc93fbce0",
+    "stop-verify-8.relay-0.jsonl": "897e62411d19f441cfdd88a44fa3dce87cc480979a517b58290e580df61aebfd",
+    "stop-verify-8.relay-0.jsonl.marks": "088faa735e82cf7d0e40a3471aa61327060898dbfe8372abf868771022b406e1",
+    "stop-verify-8.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "trials.json": "59166eef14e9fe6ba7e8736f4f677afd98d3ecfd49782b1c99fb8db9d0fe3dd9",
+    "worker-0.log": "a0c15ca92fbd1aae466ce558818e557143a054ae101e62ecb278e885517b7a97",
+    "workers.json": "1afc7135bd0187f718107b6bda849fca66d47dc52d6b4fcdd5c22f3ce7320ffa"
+  }
+}

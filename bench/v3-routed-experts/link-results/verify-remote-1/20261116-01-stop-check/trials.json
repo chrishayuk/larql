@@ -1,0 +1,299 @@
+[
+  {
+    "label": "stop-reference",
+    "unit": null,
+    "role": "stop-reference",
+    "bracket": null,
+    "arm": "sequential",
+    "workload": "stop_check",
+    "generate": 64,
+    "rtt_ms": 0.0,
+    "corrupt": "none",
+    "summary": {
+      "ids": 11,
+      "requested_ids": 64,
+      "prefill_produced_ids": 1,
+      "ended_by": "stop id",
+      "timed_ids": 10,
+      "wall_ns": 1239987750,
+      "tokens_per_s": 8.06459579943431,
+      "per_position_ns": 123998775.0,
+      "exchanges": 240,
+      "exchange_ns": 926870419,
+      "blocks": 0,
+      "single_steps": 10,
+      "proposed": 0,
+      "accepted": 0,
+      "mean_accepted_per_block": null,
+      "rejection_offsets": [],
+      "block_widths": [],
+      "verified_positions": 0,
+      "committed_in_blocks": 0,
+      "share_committed_in_blocks": 0.0,
+      "worker_execute_ns_per_verified_position": 85114253.8,
+      "traffic": {
+        "by_width": {
+          "1": {
+            "exchanges": 240,
+            "bytes": 13850880
+          }
+        },
+        "unqualified_exchange_share": 0.0,
+        "unqualified_byte_share": 0.0
+      },
+      "rejected_within_change": null
+    },
+    "ledger_defects": [],
+    "frame_defects": [],
+    "host_load_average": [
+      3.294921875,
+      3.31640625,
+      3.57763671875
+    ],
+    "relay": {
+      "relay_on_schedule": true,
+      "mark_defects": [],
+      "generation_late_sum_ns": 379526,
+      "generation_chunks": 960,
+      "relay_late_share_of_wall": 0.00030607237853761055,
+      "whole_trial": {
+        "relay_late_sum_ns": 3428997.0,
+        "relay_chunks": 7528,
+        "relay_late_max_ns": 10041,
+        "share_of_wall": 0.0027653474802472847
+      }
+    },
+    "started_utc": "2026-11-16T09:48:30Z",
+    "ended_utc": "2026-11-16T09:48:45Z",
+    "started_monotonic": 474535.35059775,
+    "ended_monotonic": 474550.561413916
+  },
+  {
+    "label": "stop-verify-2",
+    "unit": null,
+    "role": "stop-arm",
+    "bracket": null,
+    "arm": "verify-2",
+    "workload": "stop_check",
+    "generate": 64,
+    "rtt_ms": 0.0,
+    "corrupt": "none",
+    "summary": {
+      "ids": 11,
+      "requested_ids": 64,
+      "prefill_produced_ids": 1,
+      "ended_by": "stop id",
+      "timed_ids": 10,
+      "wall_ns": 1241045833,
+      "tokens_per_s": 8.057720137399631,
+      "per_position_ns": 124104583.3,
+      "exchanges": 120,
+      "exchange_ns": 882473546,
+      "blocks": 5,
+      "single_steps": 0,
+      "proposed": 5,
+      "accepted": 5,
+      "mean_accepted_per_block": 1.0,
+      "rejection_offsets": [],
+      "block_widths": [
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "verified_positions": 10,
+      "committed_in_blocks": 10,
+      "share_committed_in_blocks": 1.0,
+      "worker_execute_ns_per_verified_position": 83654412.5,
+      "traffic": {
+        "by_width": {
+          "2": {
+            "exchanges": 120,
+            "bytes": 13848000
+          }
+        },
+        "unqualified_exchange_share": 0.0,
+        "unqualified_byte_share": 0.0
+      },
+      "rejected_within_change": null
+    },
+    "ledger_defects": [],
+    "frame_defects": [],
+    "host_load_average": [
+      3.09521484375,
+      3.2724609375,
+      3.55908203125
+    ],
+    "relay": {
+      "relay_on_schedule": true,
+      "mark_defects": [],
+      "generation_late_sum_ns": 458996,
+      "generation_chunks": 960,
+      "relay_late_share_of_wall": 0.00036984613121858814,
+      "whole_trial": {
+        "relay_late_sum_ns": 3584192.0,
+        "relay_chunks": 7530,
+        "relay_late_max_ns": 11958,
+        "share_of_wall": 0.002888041605470666
+      }
+    },
+    "started_utc": "2026-11-16T09:48:45Z",
+    "ended_utc": "2026-11-16T09:48:56Z",
+    "started_monotonic": 474550.563443583,
+    "ended_monotonic": 474561.707785291
+  },
+  {
+    "label": "stop-verify-4",
+    "unit": null,
+    "role": "stop-arm",
+    "bracket": null,
+    "arm": "verify-4",
+    "workload": "stop_check",
+    "generate": 64,
+    "rtt_ms": 0.0,
+    "corrupt": "none",
+    "summary": {
+      "ids": 11,
+      "requested_ids": 64,
+      "prefill_produced_ids": 1,
+      "ended_by": "stop id",
+      "timed_ids": 10,
+      "wall_ns": 1191462583,
+      "tokens_per_s": 8.393045776411093,
+      "per_position_ns": 119146258.3,
+      "exchanges": 72,
+      "exchange_ns": 866227211,
+      "blocks": 3,
+      "single_steps": 0,
+      "proposed": 7,
+      "accepted": 7,
+      "mean_accepted_per_block": 2.3333333333333335,
+      "rejection_offsets": [],
+      "block_widths": [
+        4,
+        4,
+        2
+      ],
+      "verified_positions": 10,
+      "committed_in_blocks": 10,
+      "share_committed_in_blocks": 1.0,
+      "worker_execute_ns_per_verified_position": 83366470.7,
+      "traffic": {
+        "by_width": {
+          "4": {
+            "exchanges": 48,
+            "bytes": 11074176
+          },
+          "2": {
+            "exchanges": 24,
+            "bytes": 2769600
+          }
+        },
+        "unqualified_exchange_share": 0.0,
+        "unqualified_byte_share": 0.0
+      },
+      "rejected_within_change": null
+    },
+    "ledger_defects": [],
+    "frame_defects": [],
+    "host_load_average": [
+      3.2275390625,
+      3.29541015625,
+      3.56396484375
+    ],
+    "relay": {
+      "relay_on_schedule": true,
+      "mark_defects": [],
+      "generation_late_sum_ns": 447538,
+      "generation_chunks": 912,
+      "relay_late_share_of_wall": 0.0003756206920683467,
+      "whole_trial": {
+        "relay_late_sum_ns": 3399304.0,
+        "relay_chunks": 7482,
+        "relay_late_max_ns": 10000,
+        "share_of_wall": 0.002853051407993733
+      }
+    },
+    "started_utc": "2026-11-16T09:48:56Z",
+    "ended_utc": "2026-11-16T09:49:07Z",
+    "started_monotonic": 474561.710984458,
+    "ended_monotonic": 474572.821439833
+  },
+  {
+    "label": "stop-verify-8",
+    "unit": null,
+    "role": "stop-arm",
+    "bracket": null,
+    "arm": "verify-8",
+    "workload": "stop_check",
+    "generate": 64,
+    "rtt_ms": 0.0,
+    "corrupt": "none",
+    "summary": {
+      "ids": 11,
+      "requested_ids": 64,
+      "prefill_produced_ids": 1,
+      "ended_by": "stop id",
+      "timed_ids": 10,
+      "wall_ns": 1167825792,
+      "tokens_per_s": 8.562921001148775,
+      "per_position_ns": 116782579.2,
+      "exchanges": 48,
+      "exchange_ns": 859335497,
+      "blocks": 2,
+      "single_steps": 0,
+      "proposed": 8,
+      "accepted": 8,
+      "mean_accepted_per_block": 4.0,
+      "rejection_offsets": [],
+      "block_widths": [
+        8,
+        2
+      ],
+      "verified_positions": 10,
+      "committed_in_blocks": 10,
+      "share_committed_in_blocks": 1.0,
+      "worker_execute_ns_per_verified_position": 83125312.4,
+      "traffic": {
+        "by_width": {
+          "8": {
+            "exchanges": 24,
+            "bytes": 11072064
+          },
+          "2": {
+            "exchanges": 24,
+            "bytes": 2769600
+          }
+        },
+        "unqualified_exchange_share": 0.0,
+        "unqualified_byte_share": 0.0
+      },
+      "rejected_within_change": null
+    },
+    "ledger_defects": [],
+    "frame_defects": [],
+    "host_load_average": [
+      3.0380859375,
+      3.251953125,
+      3.54541015625
+    ],
+    "relay": {
+      "relay_on_schedule": true,
+      "mark_defects": [],
+      "generation_late_sum_ns": 428005,
+      "generation_chunks": 888,
+      "relay_late_share_of_wall": 0.0003664973003096681,
+      "whole_trial": {
+        "relay_late_sum_ns": 3409348.0,
+        "relay_chunks": 7456,
+        "relay_late_max_ns": 15625,
+        "share_of_wall": 0.002919397758942457
+      }
+    },
+    "started_utc": "2026-11-16T09:49:07Z",
+    "ended_utc": "2026-11-16T09:49:18Z",
+    "started_monotonic": 474572.822689916,
+    "ended_monotonic": 474583.8762635
+  }
+]
