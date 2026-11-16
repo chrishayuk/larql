@@ -6,7 +6,7 @@ protocol is not frozen.**
 
 | Run | Kind | Outcome |
 |---|---|---|
-| [`20261115-01-diagnostic`](20261115-01-diagnostic/analysis.json) | Declared functional diagnostic with `--continue-unsettled` on a non-exclusive host; does not count | Complete: 147 of 147 trials plus 4 references, no stop. Ids exact in all 151. No ledger or frame defects. All 3 controls passed. 5 of 24 units valid, 19 void |
+| [`20261115-01-diagnostic`](20261115-01-diagnostic/analysis.json) | Declared functional diagnostic with `--continue-unsettled` on a non-exclusive host; does not count | Complete: 147 of 147 trials plus 4 references, no stop. Ids exact in all 147 trials. No ledger or frame defects. All 3 controls passed. 5 of 24 units valid, 19 void |
 
 ## 20261115-01-diagnostic
 
@@ -36,10 +36,12 @@ as unqualified observations.
 
 ### What it shows, functionally
 
-- **Exact greedy ids in 151 of 151 trials.** Each of the 147 trials and the
-  4 sequential references produced ids identical to the independent
-  sequential greedy reference for its workload. Gate 1 would have stopped
-  the run on any mismatch.
+- **Exact greedy ids in all 147 trials.** Each trial's ids are identical
+  to its workload's sequential greedy reference: 4 independent
+  `sequential` runs through `RoutedBlockSession::step` at 0 ms, made before
+  the units. Gate 1 would have stopped the run on any mismatch. The
+  references themselves are the comparison standard, so they are not
+  counted as checked.
 - **0 gate-2 defects (ledger and id counts) and 0 gate-3 defects (frames).**
   - Gate 2: in every trial the requested, emitted, prefill-produced and
     timed id counts reconcile with the event ledger.
@@ -56,6 +58,10 @@ as unqualified observations.
   | `verify-2` (trial-144) | 0 (29, 29) | offset 0 |
   | `verify-4` (trial-145) | 29 (44, 44) | offset 1 |
   | `verify-8` (trial-146) | 43 (51, 51) | offset 3 |
+
+  The offset shown is for full-width blocks. A block cut short near the
+  64-id limit is rejected at its own middle: for example, trial-146's
+  last block is 3 wide and was rejected at offset 1.
 
 - **Ordinary rejection and rollback were exercised.** Clean trials had
   rejected blocks too, and generation continued with exact ids after each.
@@ -78,9 +84,12 @@ its own reasons.
 | Void reason | Occurrences |
 |---|---|
 | Brackets differ by more than 1% | 19 units (every void unit) |
-| Relay behind schedule | 25 trials, in 9 units |
+| Relay behind schedule | 25 trials, in 8 units |
 | Driver suspended 4.2 s during a trial | 1 trial (trial-055, unit 9) |
 
+- **The stall** is recorded in `suspensions.json` with `seconds` 4.24, but
+  its start and end monotonic times are only 0.26 s apart. The record is
+  kept as written; "4.2 s" quotes its `seconds` field.
 - **Bracket drift** across the 24 units: median 2.4%, max 74%; 19 over the
   1% gate.
 - **Warm-up never settled**: 249.6, 222.6, 228.8 and 220.0 ms per id. An
@@ -98,9 +107,14 @@ its own reasons.
 
 ### Frames and worker timing
 
-These are medians over every worker record in all 147 trials (single-row
-frames are prefill and sequential steps; multi-row frames are verify
-blocks):
+The table gives medians over every worker record in all 147 trials.
+
+- Prefill runs at width 8, so prompt frames are 8 rows wide, with a
+  narrower final remainder of 4 rows (`prose_free`) or 7 rows
+  (`code_docstring`, `explain`).
+- Every single-row frame is a generation step.
+- Of the 61,080 eight-row frames, 58,752 are prefill and 2,328 are verify
+  blocks.
 
 | Rows per frame | Frames | Request / response bytes | Worker execute | Per row |
 |---|---|---|---|---|
@@ -109,7 +123,9 @@ blocks):
 | 4 | 6,288 | 46,220 / 184,492 | 24.9 ms | 6.2 ms |
 | 8 | 61,080 | 92,396 / 368,940 | 49.4 ms | 6.2 ms |
 
-Frames of 3, 6 and 7 rows (prefill remainders) follow the same pattern.
+Frames of 3, 6 and 7 rows follow the same pattern. The 3-row and 6-row
+frames are verify blocks cut short near the 64-id limit. Of the 1,176
+seven-row frames, 1,152 are prefill remainders and 24 are generation.
 Bytes and worker execution are both linear in rows: expert compute has no
 batching economy on this worker. A rejected proposed row therefore costs as
 much worker compute as an accepted one.
