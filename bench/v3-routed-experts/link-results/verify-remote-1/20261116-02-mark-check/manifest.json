@@ -1,0 +1,131 @@
+{
+  "schema": "larql.v3.verify-remote-mark-check.v1",
+  "protocol": "VERIFY-REMOTE-1 revision 2 (draft)",
+  "kind": "mark-check",
+  "label": "VERIFY-REMOTE-1 revision 2 relay mark functional check 1 (approved 2026-11-16; non-exclusive host, never timed)",
+  "counts": false,
+  "timed_result": false,
+  "model": "/Users/christopherhay/chris-models/gpt-oss-20b.vindex3",
+  "topology": "one",
+  "provenance": {
+    "revision": "1bc10e13de8a736f74cb3821ee4d8c7da2fda07c",
+    "uncommitted": [
+      "?? bench/v3-routed-experts/link-results/verify-remote-1/20261116-02-mark-check.log"
+    ],
+    "source_sha256": {
+      "crates/larql-cli/examples/v3_verify_remote.rs": "d2a27c467a7402c21c771051e59fb25352ceba873722fbf7985275e2b6888c20",
+      "crates/larql-cli/examples/support/timing.rs": "364211c3e6f4a32ca86aeb49b884f6c3e14de82372c8ee49b12ea555affb710f",
+      "crates/larql-cli/examples/support/verify.rs": "59c81c587a4483bace0c3f5f37aa0c555f977b0a281dabd64c034bf229e13a11",
+      "crates/larql-cli/examples/support/mark.rs": "0fbb02e7778b93f26424b27c39e653aa9a93c21ef583493e370a9a17bf488976",
+      "crates/larql-inference/src/vindex3/speculate.rs": "84542150e46cd8bb223ab40a350e72f9ba7d43faf61da98513000a8bf93d0e0a",
+      "crates/larql-inference/src/speculation/prompt_lookup.rs": "852b098c0ed5060c5614c597b238d9cb963712ddc972324fb1e1b3df72c94306",
+      "crates/larql-inference/src/speculation/greedy.rs": "e74160e5252c649e8ec5a2688c7f45ee77efbb3a431096bfa057fe9d67349b63",
+      "crates/larql-inference/src/vindex3/routed_block.rs": "df5a51525a68e6fbd6dcf609b2825ee4ef6dbcd0e60e28096d2fa2c6735a69ad",
+      "crates/larql-server/examples/v3_link_shaper.rs": "55586ebc4ad6e5f572fc0f94f24cd687dafb7786d66641325c376d12603a4082",
+      "crates/larql-server/examples/support/relay.rs": "adc68f4c74a65f3b9aeb80220026aed14925717e3d117f746015e0399d1db76a",
+      "crates/larql-server/examples/support/qos.rs": "021df116e175c8d4fcabd629779a7bef39e661ce53f49aa20ae7da4c5226cc8f"
+    },
+    "environment": {}
+  },
+  "settings": {
+    "LARQL_CPU_WORKERS": "8",
+    "RAYON_NUM_THREADS": "8",
+    "VECLIB_MAXIMUM_THREADS": "1",
+    "TOKIO_WORKER_THREADS": "2",
+    "LARQL_KV_ENGINE": ""
+  },
+  "link_qos": "default",
+  "workload": {
+    "name": "json_edit",
+    "path": "/Users/christopherhay/chris-source/larql/.claude/worktrees/v3-block-timing/bench/v3-routed-experts/verify-remote/workloads/json_edit.json",
+    "sha256": "1263aacc295556b799dd435788e1a1112f5b95946a3ef668d13b6d0d2814df3b"
+  },
+  "stop_ids": [
+    200002,
+    199999,
+    200012
+  ],
+  "generate": 64,
+  "rtt_ms": 20.0,
+  "schedule": [
+    {
+      "label": "mark-sequential",
+      "unit": null,
+      "role": "mark-check",
+      "bracket": null,
+      "arm": "sequential",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "mark-verify-2",
+      "unit": null,
+      "role": "mark-check",
+      "bracket": null,
+      "arm": "verify-2",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "mark-verify-4",
+      "unit": null,
+      "role": "mark-check",
+      "bracket": null,
+      "arm": "verify-4",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    },
+    {
+      "label": "mark-verify-8",
+      "unit": null,
+      "role": "mark-check",
+      "bracket": null,
+      "arm": "verify-8",
+      "workload": "json_edit",
+      "generate": 64,
+      "rtt_ms": 20.0,
+      "corrupt": "none"
+    }
+  ],
+  "binary_sha256": {
+    "v3_verify_remote": "127eb712721cbcb9cb90c701702542fcf214880d67d86361c4b747dd3cadbcc9",
+    "larql-server": "7ee4cb240e17d6b225fcf9df486a2894f2cacb7a9f353121627f34f801d453b3",
+    "v3_link_shaper": "b4068220a544782cdd069770e6d97f54bbc82e23f1acb62f02a72c63bb284dff"
+  },
+  "relay_build": "candidate",
+  "harness_sha256": {
+    "verify_remote.py": "c811bf88c64ad238d31a71294009eb1b6f802907bc1f8e783ecba8f9542e14e2",
+    "verify_remote_model.py": "d84d56b240a5870bed1aadd8ffa0c921b8769942d82da1118dc4d5a9995341a3",
+    "block_time_2.py": "ec50dc3a8b1419964c65863914539e4b04a88740acfa6fc709da26e149c3784a",
+    "block_time_2_model.py": "a3f5c0ff004aeebe62a8c0091653080f38ea034017abf471903a9bff293b547a",
+    "host_telemetry.py": "8625f56c302a5bd8613e41a16884b0188cd586ed4e8fda0e11414868f7b8f8b8",
+    "block_time.py": "5409134e43452eae593f15b25fa9d3b148e902e5f06b1691c518f6089c8677ea",
+    "block_time_model.py": "c5215c10319d51bdae5a7374874d889d74a39c7ab03655ff56f6415cd20b01fa",
+    "link_model.py": "f8c52bbbc3da6b0291ab15efec2d4ff0ed15daf54ad4b1eb4c69acf9542816fb",
+    "link_sweep.py": "4818cbcf9bea20b0c70567735a2eb598193b891e1ec26385807fbd36139efe9e",
+    "link_block_frames_model.py": "95930043d0607721c133f7ecf906a9434ef7e3b6aaf933577fae0a4e044fb28d",
+    "profile_exact.py": "c84996b1395fc255d0c3e27e494b203ba74443ab4975bd8f2a939c719a4b264b",
+    "verify_remote_mark_check.py": "c2259f7d2266769534d44c533ebea7837eac2b096a2fe26be7fea4ff43f0e6cd",
+    "verify_remote_mark_check_model.py": "b0a710469e085dd81074825f3e2c73edefe7879bd05f8ae25b869c3fb431e4ab"
+  },
+  "metadata_sha256": {
+    "index.json": "17523831d6f365cda8e52bafa9f437b2cf14b2d7efa3d0a8abd3e512902d4440",
+    "system_graph.json": "82db1eb1a4490e24ae1086fada201100b81ceddfcf71e51ba63572efe2a6ae78"
+  },
+  "host_before": {
+    "load_average": [
+      4.796875,
+      5.0703125,
+      5.37548828125
+    ],
+    "busy_processes": [],
+    "utc": "2026-11-16T11:16:47Z"
+  },
+  "started_utc": "2026-11-16T11:16:47Z"
+}

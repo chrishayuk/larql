@@ -1,0 +1,9 @@
+running mark-sequential: mark-check sequential json_edit rtt=20.0ms corrupt=none
+running mark-verify-2: mark-check verify-2 json_edit rtt=20.0ms corrupt=none
+running mark-verify-4: mark-check verify-4 json_edit rtt=20.0ms corrupt=none
+running mark-verify-8: mark-check verify-8 json_edit rtt=20.0ms corrupt=none
+{
+  "complete": true,
+  "stopped": null,
+  "passes": true
+}
