@@ -1,0 +1,277 @@
+{
+  "units": [
+    {
+      "unit": 0,
+      "candidates": {
+        "16": {
+          "drift": 0.0006169353073110236,
+          "counted": true,
+          "reasons": []
+        },
+        "32": {
+          "drift": 0.001855238299231874,
+          "counted": true,
+          "reasons": []
+        },
+        "64": {
+          "drift": 0.0018619720788011836,
+          "counted": true,
+          "reasons": []
+        }
+      },
+      "filler_spread": 0.0007473575453133857,
+      "filler_reasons": [],
+      "disturbed": false
+    },
+    {
+      "unit": 1,
+      "candidates": {
+        "16": {
+          "drift": 0.0019261671028903034,
+          "counted": true,
+          "reasons": []
+        },
+        "32": {
+          "drift": 0.003793524052051469,
+          "counted": true,
+          "reasons": []
+        },
+        "64": {
+          "drift": 0.000650780084265973,
+          "counted": true,
+          "reasons": []
+        }
+      },
+      "filler_spread": 0.0005482788780055447,
+      "filler_reasons": [],
+      "disturbed": false
+    },
+    {
+      "unit": 2,
+      "candidates": {
+        "16": {
+          "drift": 0.004675017743138289,
+          "counted": true,
+          "reasons": []
+        },
+        "32": {
+          "drift": 0.000425278722240054,
+          "counted": true,
+          "reasons": []
+        },
+        "64": {
+          "drift": 0.004164638734296829,
+          "counted": true,
+          "reasons": []
+        }
+      },
+      "filler_spread": 0.0004282688431568569,
+      "filler_reasons": [],
+      "disturbed": false
+    },
+    {
+      "unit": 3,
+      "candidates": {
+        "16": {
+          "drift": 0.0023675730255144412,
+          "counted": true,
+          "reasons": []
+        },
+        "32": {
+          "drift": 0.0034980737511634413,
+          "counted": true,
+          "reasons": []
+        },
+        "64": {
+          "drift": 0.002734998906702697,
+          "counted": true,
+          "reasons": []
+        }
+      },
+      "filler_spread": 0.0008223050888182747,
+      "filler_reasons": [],
+      "disturbed": false
+    },
+    {
+      "unit": 4,
+      "candidates": {
+        "16": {
+          "drift": 0.06328259839881527,
+          "counted": true,
+          "reasons": []
+        },
+        "32": {
+          "drift": 0.03225989302232006,
+          "counted": true,
+          "reasons": []
+        },
+        "64": {
+          "drift": 0.04461586727249862,
+          "counted": true,
+          "reasons": []
+        }
+      },
+      "filler_spread": 0.000741144228729459,
+      "filler_reasons": [],
+      "disturbed": false
+    },
+    {
+      "unit": 5,
+      "candidates": {
+        "16": {
+          "drift": 0.01997483312795883,
+          "counted": true,
+          "reasons": []
+        },
+        "32": {
+          "drift": 0.034641933522172284,
+          "counted": true,
+          "reasons": []
+        },
+        "64": {
+          "drift": 0.030911384275973036,
+          "counted": true,
+          "reasons": []
+        }
+      },
+      "filler_spread": 0.0010298573186356141,
+      "filler_reasons": [],
+      "disturbed": false
+    },
+    {
+      "unit": 6,
+      "candidates": {
+        "16": {
+          "drift": 5.6520936636449804e-05,
+          "counted": true,
+          "reasons": []
+        },
+        "32": {
+          "drift": 0.0010521645188121286,
+          "counted": true,
+          "reasons": []
+        },
+        "64": {
+          "drift": 0.0002009230741175248,
+          "counted": true,
+          "reasons": []
+        }
+      },
+      "filler_spread": 0.001443791398304677,
+      "filler_reasons": [],
+      "disturbed": false
+    },
+    {
+      "unit": 7,
+      "candidates": {
+        "16": {
+          "drift": 0.007352733341492036,
+          "counted": true,
+          "reasons": []
+        },
+        "32": {
+          "drift": 0.004807490613459501,
+          "counted": true,
+          "reasons": []
+        },
+        "64": {
+          "drift": 0.0006779238027788143,
+          "counted": true,
+          "reasons": []
+        }
+      },
+      "filler_spread": 0.0005900591723569432,
+      "filler_reasons": [],
+      "disturbed": false
+    }
+  ],
+  "selection": {
+    "rule": "shortest length with at least 7 of 8 drifts within 0.01",
+    "candidates": [
+      {
+        "candidate": 16,
+        "counted_units": 8,
+        "drifts": [
+          0.0006169353073110236,
+          0.0019261671028903034,
+          0.004675017743138289,
+          0.0023675730255144412,
+          0.06328259839881527,
+          0.01997483312795883,
+          5.6520936636449804e-05,
+          0.007352733341492036
+        ],
+        "uncounted": {},
+        "within_gate": 6,
+        "median": 0.003521295384326365,
+        "max": 0.06328259839881527,
+        "qualifies": false,
+        "missed_disturbances": []
+      },
+      {
+        "candidate": 32,
+        "counted_units": 8,
+        "drifts": [
+          0.001855238299231874,
+          0.003793524052051469,
+          0.000425278722240054,
+          0.0034980737511634413,
+          0.03225989302232006,
+          0.034641933522172284,
+          0.0010521645188121286,
+          0.004807490613459501
+        ],
+        "uncounted": {},
+        "within_gate": 6,
+        "median": 0.003645798901607455,
+        "max": 0.034641933522172284,
+        "qualifies": false,
+        "missed_disturbances": []
+      },
+      {
+        "candidate": 64,
+        "counted_units": 8,
+        "drifts": [
+          0.0018619720788011836,
+          0.000650780084265973,
+          0.004164638734296829,
+          0.002734998906702697,
+          0.04461586727249862,
+          0.030911384275973036,
+          0.0002009230741175248,
+          0.0006779238027788143
+        ],
+        "uncounted": {},
+        "within_gate": 6,
+        "median": 0.0022984854927519402,
+        "max": 0.04461586727249862,
+        "qualifies": false,
+        "missed_disturbances": []
+      }
+    ],
+    "selected": null,
+    "outcome": "no candidate qualifies; no length is selected and the protocol is not frozen",
+    "selected_missed_disturbances": null,
+    "review_needed": true
+  },
+  "kind": "bracket-study",
+  "counts": false,
+  "complete": true,
+  "stopped": null,
+  "scheduled": 80,
+  "observed": 80,
+  "telemetry_samples": 604,
+  "pauses": [],
+  "suspensions": [],
+  "host_after": {
+    "load_average": [
+      3.07568359375,
+      3.1044921875,
+      2.97265625
+    ],
+    "busy_processes": [],
+    "utc": "2026-11-16T14:25:01Z"
+  },
+  "quiet_at_end": true,
+  "ended_utc": "2026-11-16T14:25:01Z"
+}

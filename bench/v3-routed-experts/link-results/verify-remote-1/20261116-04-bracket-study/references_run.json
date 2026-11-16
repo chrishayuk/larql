@@ -1,0 +1,142 @@
+[
+  {
+    "label": "reference-prose_free",
+    "unit": null,
+    "role": "reference",
+    "bracket": null,
+    "arm": "sequential",
+    "workload": "prose_free",
+    "generate": 64,
+    "rtt_ms": 0.0,
+    "corrupt": "none",
+    "summary": {
+      "ids": 64,
+      "requested_ids": 64,
+      "prefill_produced_ids": 1,
+      "ended_by": "generation limit",
+      "timed_ids": 63,
+      "wall_ns": 7900667583,
+      "tokens_per_s": 7.974009707174387,
+      "per_position_ns": 125407421.95238096,
+      "exchanges": 1512,
+      "exchange_ns": 5824874969,
+      "blocks": 0,
+      "single_steps": 63,
+      "proposed": 0,
+      "accepted": 0,
+      "mean_accepted_per_block": null,
+      "rejection_offsets": [],
+      "block_widths": [],
+      "verified_positions": 0,
+      "committed_in_blocks": 0,
+      "share_committed_in_blocks": 0.0,
+      "worker_execute_ns_per_verified_position": 84951720.44444445,
+      "traffic": {
+        "by_width": {
+          "1": {
+            "exchanges": 1512,
+            "bytes": 87260544
+          }
+        },
+        "unqualified_exchange_share": 0.0,
+        "unqualified_byte_share": 0.0
+      },
+      "rejected_within_change": null
+    },
+    "ledger_defects": [],
+    "frame_defects": [],
+    "host_load_average": [
+      2.24072265625,
+      2.6923828125,
+      3.89013671875
+    ],
+    "relay": {
+      "relay_on_schedule": true,
+      "mark_defects": [],
+      "generation_late_sum_ns": 2534533,
+      "generation_chunks": 6048,
+      "relay_late_share_of_wall": 0.00032079985309767966,
+      "whole_trial": {
+        "relay_late_sum_ns": 5947423.0,
+        "relay_chunks": 13385,
+        "relay_late_max_ns": 15583,
+        "share_of_wall": 0.0007527747418201938
+      }
+    },
+    "started_utc": "2026-11-16T13:42:42Z",
+    "ended_utc": "2026-11-16T13:43:01Z",
+    "started_monotonic": 488587.432850833,
+    "ended_monotonic": 488606.267093875,
+    "suspensions": []
+  },
+  {
+    "label": "reference-explain",
+    "unit": null,
+    "role": "reference",
+    "bracket": null,
+    "arm": "sequential",
+    "workload": "explain",
+    "generate": 64,
+    "rtt_ms": 0.0,
+    "corrupt": "none",
+    "summary": {
+      "ids": 64,
+      "requested_ids": 64,
+      "prefill_produced_ids": 1,
+      "ended_by": "generation limit",
+      "timed_ids": 63,
+      "wall_ns": 7950950375,
+      "tokens_per_s": 7.923581085110219,
+      "per_position_ns": 126205561.50793651,
+      "exchanges": 1512,
+      "exchange_ns": 5866951289,
+      "blocks": 0,
+      "single_steps": 63,
+      "proposed": 0,
+      "accepted": 0,
+      "mean_accepted_per_block": null,
+      "rejection_offsets": [],
+      "block_widths": [],
+      "verified_positions": 0,
+      "committed_in_blocks": 0,
+      "share_committed_in_blocks": 0.0,
+      "worker_execute_ns_per_verified_position": 85623737.17460318,
+      "traffic": {
+        "by_width": {
+          "1": {
+            "exchanges": 1512,
+            "bytes": 87260544
+          }
+        },
+        "unqualified_exchange_share": 0.0,
+        "unqualified_byte_share": 0.0
+      },
+      "rejected_within_change": null
+    },
+    "ledger_defects": [],
+    "frame_defects": [],
+    "host_load_average": [
+      2.25146484375,
+      2.6630859375,
+      3.85107421875
+    ],
+    "relay": {
+      "relay_on_schedule": true,
+      "mark_defects": [],
+      "generation_late_sum_ns": 2306251,
+      "generation_chunks": 6048,
+      "relay_late_share_of_wall": 0.0002900597904939131,
+      "whole_trial": {
+        "relay_late_sum_ns": 5784871.0,
+        "relay_chunks": 13625,
+        "relay_late_max_ns": 9667,
+        "share_of_wall": 0.000727569752942899
+      }
+    },
+    "started_utc": "2026-11-16T13:43:01Z",
+    "ended_utc": "2026-11-16T13:43:20Z",
+    "started_monotonic": 488606.269912375,
+    "ended_monotonic": 488625.595823791,
+    "suspensions": []
+  }
+]
