@@ -86,7 +86,7 @@ def fake_trial(arm, ids=None, accept=2, shards=1, profiled=True, per_id_ns=BASE_
     return {
         "schema": vr.TRIAL_SCHEMA, "arm": arm, "width": width, "corrupt": corrupt, "profiled": profiled,
         "generate": len(ids) if generate is None else generate, "stop": list(vr.STOP_IDS),
-        "prefill_width": vr.PREFILL_WIDTH, "workload": {"name": "fake", "sha256": FAKE_SHA},
+        "prefill_width": vr.PREFILL_WIDTH, "workload": {"name": "fake", "sha256": FAKE_SHA}, "prompt_tokens": PROMPT,
         "shards": ["http://relay"] * shards, "ids": ids, "timed_ids": max(len(ids) - 1, 0),
         "id_counts": {"requested": len(ids) if generate is None else generate, "emitted": len(ids),
                       "prefill_produced": 1 if ids else 0, "timed": max(len(ids) - 1, 0),

@@ -52,6 +52,9 @@ TRIAL_SOURCES = ("crates/larql-cli/examples/v3_verify_remote.rs",
                  "crates/larql-server/examples/support/relay.rs",
                  "crates/larql-server/examples/support/qos.rs")
 WORKLOADS_DIR = Path(__file__).with_name("verify-remote") / "workloads"
+# Functional checks' prompts, outside the four performance workloads.
+FUNCTIONAL_DIR = Path(__file__).with_name("verify-remote") / "functional"
+FUNCTIONAL_WORKLOADS = ("stop_check",)
 HARNESS = ("verify_remote.py", "verify_remote_model.py", "block_time_2.py", "block_time_2_model.py",
            "host_telemetry.py", "block_time.py", "block_time_model.py", "link_model.py", "link_sweep.py",
            "link_block_frames_model.py", "profile_exact.py")
@@ -64,7 +67,7 @@ MARKS_SUFFIX = ".marks"
 
 
 def workload_path(name):
-    return WORKLOADS_DIR / f"{name}.json"
+    return (FUNCTIONAL_DIR if name in FUNCTIONAL_WORKLOADS else WORKLOADS_DIR) / f"{name}.json"
 
 
 @contextmanager
