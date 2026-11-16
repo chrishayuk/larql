@@ -1,0 +1,1 @@
+INFER "<start_of_turn>user\nReply with only a JSON object with exactly the keys \"item\", \"count\" describing a cup of coffee. No other text, no code fence.<end_of_turn>\n<start_of_turn>model\n" GENERATE 40;
