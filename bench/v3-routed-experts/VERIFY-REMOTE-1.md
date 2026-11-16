@@ -4,9 +4,11 @@ Status: **DRAFT, revision 2 proposed. Not frozen; no admissible run.**
 Revision 1's one authorised functional diagnostic has run
 ([diagnostic 01](link-results/verify-remote-1/README.md)): ids exact in all
 147 trials, no ledger or frame defect, all three controls passed, but only
-5 of 24 units valid. Revision 2 proposes the two measurement changes that
-result calls for (below, under "Revision 2"). It awaits review; nothing
-under it has run.
+5 of 24 units valid. Revision 2's three additions (the bracket study, the relay gate by
+phase, and a real-model stop check) were **approved for implementation and
+limited qualification diagnostics on 2026-11-16, with the conditions
+written into each section below**. Freezing and the admissible run each
+need separate approval.
 
 | Seam | PR | State |
 |---|---|---|
@@ -311,7 +313,7 @@ speculative arms take less in proportion to acceptance. Four workloads,
 three delays, four arms and two repeats make 96 trials, plus brackets:
 roughly **2 to 2.5 hours**, holdable between units.
 
-## Revision 2: bracket length (proposed)
+## Revision 2: bracket length (approved 2026-11-16 for implementation)
 
 **Why.** In diagnostic 01 every void unit had bracket drift over 1%. That
 run was on a non-exclusive host (one-minute load about 8.7, with another
@@ -352,6 +354,15 @@ measured or reported):
   reported. The gate is never loosened to make a candidate pass.
 - Every candidate is reported, including those that fail.
 
+**Does the bracket see disturbances?** This is the approval's caveat: a
+bracket must detect variation, not merely agree with itself. Each filler
+runs the same sequential work four times, so the spread of its four times
+per timed id measures disturbance inside the unit. Per candidate, the
+report counts **missed disturbances**: units whose filler spread exceeds
+1% while that candidate's brackets agree within 1%. The count is reported
+beside the selection, not added to the rule. A selected length with
+missed disturbances goes back to review before any freeze.
+
 **What it does not do.** It does not run the experiment's cells, measure
 any arm's speed, or change the 1% gate, the workloads, the widths or the
 64-id generation length.
@@ -361,7 +372,7 @@ reusing the existing trial binary, with its own manifest kind and tests in
 the bench suite: the schedule shape and seed, the drift computation, and
 the selection rule at, above and below 7 of 8.
 
-## Revision 2: relay gate by phase (proposed)
+## Revision 2: relay gate by phase (approved 2026-11-16 for implementation)
 
 **Why.** The relay records lateness per connection, totalled when the
 connection closes. Prefill and generation share one connection, so
@@ -370,83 +381,139 @@ timed generation. In diagnostic 01, 24 of the 25 relay failures were on
 the two long-prompt workloads at 5 and 20 ms. The records cannot say how
 much of that lateness fell in generation.
 
-**Proposed rule.** Only the relay's lateness during **timed generation**,
-both directions summed, is compared with 1% of that trial's timed
-generation wall time. The threshold is unchanged, and every other trial
-of the protocol uses the same rule.
+**Rule.** Only the relay's lateness during **timed generation**, both
+directions summed, is compared with 1% of that trial's timed generation
+wall time. The threshold is unchanged, and every trial of the protocol
+uses the same rule. Revision 1's whole-trial figure is still reported, as
+a diagnostic.
 
-**Mechanism: a generation-boundary snapshot in the relay** (preferred). It
-keeps one connection and one network path for prefill and generation.
-- **The mark.** The relay gains an optional control listener. A connection
-  there that sends `mark` makes every open connection append a snapshot of
-  its tallies (bytes, chunks, late sum, late max) and the length of its
-  queue. The control connection answers only once every open connection
-  has written its snapshot.
-- **Polling cost.** Each connection loop already busy-polls, so it sees
-  the mark within one iteration. The added work per iteration is one
-  atomic load.
-- **When the trial marks.** The trial binary sends the mark after prefill
-  has committed and before the clock starts, and waits for the answer. At
-  that point no exchange is in flight, so every queue should be empty.
-- **Generation lateness** is the closing tally minus the snapshot.
-- **Defects.** A trial is void by name if its mark is missing, duplicated
-  or unanswered, or if any queue is non-empty at the mark: then the
-  boundary was not clean.
+**Mechanism: a generation-boundary mark in the relay.** One warmed
+connection and one network path carry prefill and generation, as now.
 
-**Cost.** This changes the frozen relay binary (`7b1097f8…`). Its
-qualifications are tied to that hash, so before any admissible run they
-must be rerun on the new binary, on a quiet host, under the frozen rules:
-- LINK-2 revision 3: two qualifying receipts;
-- the block-frame qualification.
+- **The control listener.** The relay always opens one, on loopback, and
+  prints its address after the existing ready line. So the binary that is
+  qualified is exactly the binary that is measured, and no mode switch
+  exists to differ between them. The listener does nothing until it is
+  asked.
+  - Harnesses that never mark see no change: their records are
+    byte-identical, and mark records go to a separate file.
+  - The per-chunk shaping code is untouched. Each connection loop adds one
+    atomic load per iteration and one atomic increment per chunk read.
+- **The mark.** A control connection that sends `mark` starts one new
+  epoch, the logical boundary, for every connection then open. Each
+  connection's loop, at its next iteration, snapshots both directions'
+  tallies and checks whether it is quiescent. The relay answers `ok`
+  only if:
+  - every connection open at the mark wrote its snapshot within the
+    timeout;
+  - in every direction, nothing is queued on the link and nothing is
+    unread in the socket (checked with a non-consuming peek);
+  - the last chunk each connection delivered was a response, so no request
+    is still waiting for its answer;
+  - no connection read a chunk between its snapshot and the answer, so no
+    generation traffic crossed the boundary;
+  - at least one connection was open.
 
-The control listener is off unless asked for, and the shaping code does
-not change. Requalification is still required: the binary differs, and
-"the shaping code did not change" is a claim, not a measurement.
+  Otherwise it answers `refused`, with the reasons. Either way, it writes
+  every snapshot and a summary line to the mark file before answering.
+- **Quiescence from the coordinator's side.** The relay's checks cannot
+  see a response still being computed and partly sent. The trial covers
+  that case:
+  - it marks only after prefill has committed, with every exchange it
+    started completed (the count is recorded);
+  - its transport is synchronous;
+  - it sends no generation exchange and does not start its clock until
+    the answer arrives.
 
-**Alternative: a fresh connection for generation.** Considered, and not
-preferred.
-- **How.** The trial binary would reconnect after prefill, so generation
-  runs on its own relay connection with its own record. The relay binary
-  and its qualifications are unchanged.
-- **Why not preferred.** The first generation exchanges would run on a
-  new TCP connection, with a new relay thread and new socket buffers.
-  That is inside the clock, and it differs from the current trial, where
-  prefill has already warmed the connection.
-- **If it were chosen anyway,** it would need its own functional
-  qualification: ids exact, one record per phase, and no first-exchange
-  penalty larger than the relay gate's resolution.
+  The two sides together establish the boundary. An empty queue alone
+  would not.
+- **Generation lateness** is the closing tally minus the snapshot, per
+  direction.
+- **Void by name** if:
+  - the mark is missing, duplicated, refused or unanswered;
+  - the trial's recorded answer disagrees with the relay's summary;
+  - a closing tally is smaller than its snapshot;
+  - the set of snapshots does not match the summary's connections.
 
-**Routing prefill directly** to the worker, bypassing the relay, is
-rejected: prefill and generation would then run on different paths.
+**Cost.** This changes the frozen relay binary (`7b1097f8…`). Before any
+admissible run, the new binary must pass, on a quiet host and under the
+existing frozen criteria with no bypass or relaxed threshold:
+- **two LINK-2 revision 3 qualifying runs;**
+- **the block-frame requalification.**
+
+This is mandatory even though the shaping code is unchanged.
+
+**Considered and not chosen.**
+- **A fresh connection for generation.** Its first exchanges would run
+  cold, inside the clock.
+- **Routing prefill directly to the worker.** Prefill and generation would
+  then run on different paths.
 
 **Tests, before any model run:**
-- **Relay (Rust).**
-  - Lateness forced before the mark appears in the snapshot and not after
-    it.
-  - Lateness after the mark appears only after it.
-  - A mark with data queued records the non-empty queue.
-  - Without a control listener, the relay's records are byte-identical to
-    today's.
-- **Trial binary (Rust).** The mark is sent exactly once, after prefill
-  and before the clock starts, and the trial refuses to start the clock
-  without an answer.
+- **Relay (Rust, against the relay's own code over loopback, with a fake
+  upstream).**
+  - With no mark, the closing records are unchanged and no mark file is
+    written.
+  - Chunks and lateness partition exactly at the mark: closing minus
+    snapshot equals post-mark traffic.
+  - **Negative controls**, each of which must be refused:
+    - a mark while a request awaits its response;
+    - a mark while a delayed chunk is queued on the link;
+    - a mark with no open connection.
+  - A second mark is recorded as a second epoch, so it is detectable.
+  - A connection that never answers its snapshot is refused by timeout.
+- **Trial binary (Rust).** The client records `ok`, `refused`, no answer
+  (timeout) and no listener exactly as received.
 - **Gate (Python, bench suite).**
   - Arbitrarily large prefill lateness with generation lateness under 1%
-    passes, so prefill cannot affect the verdict.
+    passes.
   - Generation lateness just over 1% fails, and exactly 1% passes.
-  - A missing, duplicated or unanswered mark, or a non-empty queue at the
-    mark, voids the trial by name.
-  - Revision 1's whole-trial figure is still reported, as a diagnostic.
+  - Each of these voids the trial by name: a missing, duplicated, refused,
+    delayed (unanswered) or inconsistent mark, and a non-quiescent mark.
 
-**Qualification of the mechanism, before freeze.** The relay
-requalification above, plus a short declared functional check on the real
-model:
-- one trial per arm on `json_edit` at 20 ms;
-- the snapshot shows an empty queue at every mark;
-- the generation lateness plus the snapshot equals the closing total;
-- the ids are exact.
+**Qualification of the mechanism, before freeze.**
+- The relay requalification above.
+- A short declared functional check on the real model:
+  - one trial per arm on `json_edit` at 20 ms;
+  - every mark answered `ok`;
+  - snapshot plus generation lateness equals the closing total;
+  - ids exact.
 
-## Event-ledger invariants
+## Revision 2: real-model stop check (approved 2026-11-16 for implementation)
+
+**Why.** Diagnostic 01 never reached a stop id: all 151 runs ended at the
+64-id limit. Stop handling is covered by unit tests, but not on the real
+model through the remote session.
+
+**The check** (declared, functional, never timed as a result; outside the
+four performance workloads, which are unchanged):
+- **One prompt**, chosen so the real model's greedy continuation reaches
+  one of the configured stop ids within 64 ids. It is chosen by a
+  sequential reference run, before the check, and recorded with its ids.
+- **Natural or synthetic.**
+  - Preferred: a stop the model produces naturally. A chat-formatted
+    prompt that opens the final channel and asks for a one-word answer
+    should end in `<|return|>` within a few ids.
+  - If no prompt does this deterministically, the check uses a
+    **synthetic stop**: the stop set is the id the model was observed to
+    predict at a chosen position. It is labelled synthetic in every
+    record and report, and never presented as evidence of natural
+    end-of-sequence behaviour.
+- **Arms.** `sequential` and `verify-2`, `verify-4`, `verify-8`, at 0 ms.
+  The prompt includes earlier text that makes prompt lookup propose the
+  stop id, so the stop can arrive inside an accepted block as well as by
+  correction. The record shows which happened.
+- **Requirements, per arm:**
+  - ids identical to `sequential`'s, ending at the stop id;
+  - nothing emitted after it, with `ended_by` = stop id;
+  - the event ledger reconciles, with the stop id's event emitted and any
+    later accepted proposal not emitted;
+  - the committed continuation position equals the prompt length plus the
+    committed ids, as `sequential`'s;
+  - no exchange after the unit that produced the stop: gate 3's tiling
+    ends at that unit.
+
+## Event-ledger invariants## Event-ledger invariants
 
 What `SpeculativeRun::reconcile` (#857) checks on every trial. A trial that
 fails it is void by name.
@@ -528,8 +595,13 @@ re-checked per trial:
    [diagnostic 01](link-results/verify-remote-1/README.md), gates 1 to 3
    working end to end).
 4a. Revision 2's bracket diagnostic, with a length selected by its rule.
-4b. Revision 2's relay snapshot built and tested, the relay requalified on
-   its new binary, and the mechanism's functional check passed.
+4b. Revision 2's relay mark built and tested, the relay requalified on its
+   new binary (two LINK-2 revision 3 runs, block frames), and the
+   mechanism's functional check passed.
+4c. Revision 2's real-model stop check passed.
+4d. Bracket study, relay qualification and stop-check evidence returned for
+   review; then a final protocol review and **separate approval** to
+   freeze and to run.
 5. Independent review of this protocol and the implementation, then a
    freeze with hashes in `frozen-protocols.json`.
 6. A quiet window agreed with the WSP-002 session, which has priority.
