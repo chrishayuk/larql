@@ -1,16 +1,20 @@
 # VERIFY-REMOTE-1: prompt-lookup speculation over remote experts
 
-Status: **DRAFT, revision 1. Unqualified, not approved for any model run,
-not frozen.** No model has been run under it. Revision 1 records the review
-decisions on revision 0 and what implementing seams 1 to 5 established.
+Status: **DRAFT, revision 2 proposed. Not frozen; no admissible run.**
+Revision 1's one authorised functional diagnostic has run
+([diagnostic 01](link-results/verify-remote-1/README.md)): ids exact in all
+147 trials, no ledger or frame defect, all three controls passed, but only
+5 of 24 units valid. Revision 2 proposes the two measurement changes that
+result calls for (below, under "Revision 2"). It awaits review; nothing
+under it has run.
 
 | Seam | PR | State |
 |---|---|---|
 | 1. Proposer and stop handling moved to `larql_inference::speculation` | #855 | merged |
 | 2. `RoutedBlockSession::step` | #856 | merged |
 | 3. `greedy_speculate` with event ledger | #857 | merged |
-| 4. Trial binary (`v3_verify_remote`) | #860 | open |
-| 5. Driver (`verify_remote.py`, `verify_remote_model.py`) | #861 | open |
+| 4. Trial binary (`v3_verify_remote`) | #860 | merged |
+| 5. Driver (`verify_remote.py`, `verify_remote_model.py`) | #861 | merged |
 
 ## Question
 
@@ -224,11 +228,9 @@ quiet-machine and handshake rules apply unchanged.
   reproduce its ids (gate 1). References are not timed results.
 - **The bracket**: `sequential`, 0 ms, `prose_free` (the shortest prompt),
   16 ids. Its time per timed id is the bracket measure. **Provisional:**
-  the functional diagnostic reports every unit's bracket drift against the
-  1% gate. Before freeze, that observation decides whether 16 ids is
-  stable enough. The gate is not loosened; if the bracket is too noisy,
-  its length changes in a reviewed revision before the admissible run,
-  never after performance results.
+  diagnostic 01 put 19 of 24 units over the 1% gate (median 2.4%, max
+  74%) on a loaded host. Revision 2 chooses the length by a bracket-only
+  diagnostic (see "Revision 2: bracket length"). The gate is not loosened.
 - **Units.** One unit is one workload at one delay: the four arms in a
   seeded order, opened and closed by a short `sequential` 0 ms bracket.
   That is 4 workloads × 3 delays = **12 units per repeat, two repeats**.
@@ -306,6 +308,56 @@ timings that is about 11 to 47 s per trial at 20 ms, and less at 0 and
 speculative arms take less in proportion to acceptance. Four workloads,
 three delays, four arms and two repeats make 96 trials, plus brackets:
 roughly **2 to 2.5 hours**, holdable between units.
+
+## Revision 2: bracket length (proposed)
+
+**Why.** In diagnostic 01 every void unit had bracket drift over 1%. That
+run was on a non-exclusive host (one-minute load about 8.7, with another
+session's work running), so it cannot separate host load from a 16-id
+bracket being too short to be stable. The 1% gate stays. The length is
+chosen by a separate diagnostic whose selection rule is fixed here, before
+it runs.
+
+**The bracket diagnostic** (declared, never counted, no throughput
+measured or reported):
+- **Host.** It needs a quiet window agreed with the WSP-002 session, with
+  the handshake recorded. Without a quiet host it does not run: on a busy
+  host it could only repeat diagnostic 01's finding.
+- **Candidates.** `sequential`, 0 ms, `prose_free`, at **16, 32 and 64
+  generated ids** (15, 31 and 63 timed).
+- **Units.** **8 stand-in units.** Each opens with all three candidate
+  brackets in an order shuffled per unit from seed 20261117, and closes
+  with them in the same order, so every candidate's pair is the same
+  distance apart.
+- **Filler.** Between a unit's brackets runs a filler of the length and
+  load of a real unit: `explain` at 20 ms, all four arms in a fixed order.
+  Prompt lookup proposes nothing on `explain`, so this is sequential work
+  under every arm, and the 20 ms delay gives the longest real unit
+  duration. Filler timings are recorded but not analysed or reported as
+  rates.
+- **Warm-up and gates.** Warm-up as now. Gate 1 applies to every trial.
+  Pausing is allowed only between stand-in units.
+- **Measure.** Per candidate, the 8 drifts (`|after − before| / before` of
+  time per timed id), with their median and maximum.
+- **Budget.** About 1 to 1.5 hours.
+
+**Selection rule, fixed in advance:**
+- A length **qualifies** if at least 7 of its 8 drifts are at most 1%.
+- The bracket is the **shortest qualifying length**. If 16 qualifies, the
+  bracket stays 16 ids.
+- If **no length qualifies**, none is selected. The protocol is not
+  frozen, and the decision returns to review with all three candidates
+  reported. The gate is never loosened to make a candidate pass.
+- Every candidate is reported, including those that fail.
+
+**What it does not do.** It does not run the experiment's cells, measure
+any arm's speed, or change the 1% gate, the workloads, the widths or the
+64-id generation length.
+
+**Implementation.** A `--bracket-study` mode in `verify_remote.py`
+reusing the existing trial binary, with its own manifest kind and tests in
+the bench suite: the schedule shape and seed, the drift computation, and
+the selection rule at, above and below 7 of 8.
 
 ## Event-ledger invariants
 
@@ -385,8 +437,10 @@ re-checked per trial:
    reproduces the ids exactly, and the ids remain authoritative.)
 3. ~~The within-unit cost-stability rule~~ (decided: none; diagnostics
    only). ~~Generation length~~ (decided: 64).
-4. One declared functional diagnostic (busy host allowed, never counted)
-   showing gates 1 to 3 working end to end.
+4. ~~One declared functional diagnostic~~ (done:
+   [diagnostic 01](link-results/verify-remote-1/README.md), gates 1 to 3
+   working end to end).
+4a. Revision 2's bracket diagnostic, with a length selected by its rule.
 5. Independent review of this protocol and the implementation, then a
    freeze with hashes in `frozen-protocols.json`.
 6. A quiet window agreed with the WSP-002 session, which has priority.
