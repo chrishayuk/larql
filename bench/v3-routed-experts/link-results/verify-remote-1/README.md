@@ -286,7 +286,10 @@ Every file `verification.json` lists matches its SHA-256 in both runs.
 Revision 2's bracket study, run by
 [`verify_remote_bracket.py`](../../verify_remote_bracket.py). It chooses
 the length of the bracket that checks each unit for drift, under a rule
-fixed before the run.
+fixed before the run (committed in 7c47638c, #866; the harness hashes in
+`manifest.json` match those files at the run's revision). Declared as:
+
+> VERIFY-REMOTE-1 rev 2 bracket study
 
 **Rule.** Candidates are 16, 32 and 64 ids. A candidate's drift in a unit
 is the `agreement()` measure: the difference between its before and after
@@ -307,8 +310,10 @@ frozen.
 - 2026-11-16, 13:41:30 to 14:25:01 UTC. 80 of 80 trials ran, plus 3
   warm-ups and 2 references. No pause, no suspension, no stall.
 - **Quiet window.** Both peer sessions agreed in writing before the start
-  (`peer-handshake.txt`, also copied into the manifest). No compiler or
-  model process other than the study's own ran at the start or the end.
+  (`peer-handshake.txt`, also copied into the manifest). The driver's
+  start and end checks found no `rustc`, `cargo`, `larql` or
+  `larql-server` process other than the study's own; that check matches
+  those executable names only.
   The one-minute load average was 1.5 at the start and 3.1 at the end.
 
 **Result: no candidate qualifies.**
@@ -331,23 +336,39 @@ frozen.
 - **One episode accounts for every failure.** Units 4 and 5 fail at all
   three lengths together. Every bracket that ran from 14:08:34 to
   14:10:11 UTC was slow: 126 to 131 ms per position, against 123.2 to
-  124.9 ms everywhere else. That window holds exactly unit 4's after
-  brackets and unit 5's before brackets, which ran back to back between
-  the two units' fillers.
+  124.9 ms in every other bracket. That window holds exactly unit 4's
+  after brackets and unit 5's before brackets, which ran back to back
+  between the two units' fillers. Those times are trial boundaries: the
+  episode began after filler 046 started and ended before filler 053
+  finished, and its exact bounds are not known.
   - Unit 4 slowed from before to after (e.g. 16 ids: 123.4 to 131.4 ms).
   - Unit 5 recovered from before to after (16 ids: 126.3 to 123.8 ms).
-- **The cause is not identified.** The process telemetry in that window
-  shows no competing compiler or model process. CleanMyMac used about 40%
-  of one core for one sample at 14:09:29. That is not enough, on its own,
-  to explain a 5% slowdown.
+- **The cause is not identified.** The telemetry samples only the top 10
+  processes every 5 s. In that window it shows only the study's own
+  processes and the driver, apart from CleanMyMac at about 40% of one
+  core in one sample (14:09:29). That is unlikely to be the cause:
+  - CleanMyMac appears about every 8 minutes (13:45:59, 13:53:59,
+    14:01:59, 14:09:29, 14:17:29, 14:24:58). At 14:24:58 it used about
+    26% during bracket trial-079, which was normal (124.6 ms).
+  - Heavier system load hit other brackets with no slowdown:
+    `mediaanalysisd` at 55% (13:58:37, trial-028) and `duetexpertd` at
+    100% (14:20:21, trial-072).
 - **The study's own disturbance check could not see it.** That check
   compares the filler arms, and no filler ran inside the window, so both
   units' filler spreads are small (0.07%, 0.10%).
-  `missed_disturbances` is empty for every candidate.
-- **Outside that episode, the lengths do not separate.** In the other six
-  units every candidate is within 0.75%, and the medians are within 0.14
-  percentage points of each other. The study, therefore, gives no
-  evidence that a longer bracket is more stable on this host.
+- **Outside that episode, the lengths do not separate clearly.** In the
+  other six units every candidate is within 0.75%. Their medians there
+  are 0.21% (16 ids), 0.27% (32) and 0.13% (64). 64 ids is lowest both
+  there and overall, but with six units that is not evidence that a
+  longer bracket is more stable on this host. This is a judgement, not a
+  test.
+
+**Why one episode cost two units at every length.** The schedule puts
+unit k's after brackets directly next to unit k+1's before brackets, with
+no filler between them. One disturbance in that gap therefore spoils two
+units at once, and the 7-of-8 rule absorbs only one. All three lengths
+share each window, so such an episode cannot separate them either. Any
+repeat should take this into account.
 
 Under the rule, no length is selected and the protocol is not frozen.
 Whether to repeat the study, and on what terms, is for review.
