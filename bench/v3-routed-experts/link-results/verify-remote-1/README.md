@@ -6,6 +6,7 @@ protocol is not frozen.**
 
 | Run | Kind | Outcome |
 |---|---|---|
+| [`20261116-04-bracket-study`](20261116-04-bracket-study/analysis.json) | Revision 2 bracket study: 16, 32 and 64-id brackets over 8 stand-in units, in a quiet window agreed with both peer sessions; never counts | **No candidate qualifies**: each length has 6 of 8 drifts within 1%, against 7 required. No length is selected and the protocol is not frozen |
 | [`20261116-03-mark-check`](20261116-03-mark-check/analysis.json) | Revision 2 relay mark functional check, under the predicted-bytes rule; declared, never timed; non-exclusive host | **Passes**: every mark `ok`; the split falls on the exchange boundary in every arm; ids exact |
 | [`20261116-02-mark-check`](20261116-02-mark-check/analysis.json) | The same check under its first rule, which review found too weak; declared, never timed | Passes under that rule; superseded by `-03`, kept as run |
 | [`20261116-01-stop-check`](20261116-01-stop-check/analysis.json) | Revision 2 real-model stop check: declared, functional, never timed; non-exclusive host | **Passes**: natural stop (`<\|return\|>` after 11 ids); all three verify arms exact |
@@ -279,3 +280,82 @@ correctness run shared the CPU, by agreement.
 Every file `verification.json` lists matches its SHA-256 in both runs.
 `run.log` in each is the driver's console output. `-03`'s manifest lists
 `-02`'s directory as uncommitted at the time it ran.
+
+## 20261116-04-bracket-study
+
+Revision 2's bracket study, run by
+[`verify_remote_bracket.py`](../../verify_remote_bracket.py). It chooses
+the length of the bracket that checks each unit for drift, under a rule
+fixed before the run.
+
+**Rule.** Candidates are 16, 32 and 64 ids. A candidate's drift in a unit
+is the `agreement()` measure: the difference between its before and after
+brackets' time per position, over their mean. The selected length is the
+shortest candidate whose drift is within 1% in at least 7 of 8 units. If
+no candidate qualifies, no length is selected and the protocol is not
+frozen.
+
+**Provenance.**
+- Revision `144d984d` (main, with #870 merged), clean tree, protocol
+  "VERIFY-REMOTE-1 revision 2 (draft)", seed 20261117.
+- Binaries: `v3_verify_remote` `127eb712…`; `larql-server` `7ee4cb24…`;
+  relay `v3_link_shaper` `b4068220…`, the requalified candidate (#869),
+  not the certified build.
+- Brackets are `sequential` `prose_free` at 0 ms. The filler between the
+  before and after brackets is `explain` at 20 ms, in all four arms, 64
+  ids each.
+- 2026-11-16, 13:41:30 to 14:25:01 UTC. 80 of 80 trials ran, plus 3
+  warm-ups and 2 references. No pause, no suspension, no stall.
+- **Quiet window.** Both peer sessions agreed in writing before the start
+  (`peer-handshake.txt`, also copied into the manifest). No compiler or
+  model process other than the study's own ran at the start or the end.
+  The one-minute load average was 1.5 at the start and 3.1 at the end.
+
+**Result: no candidate qualifies.**
+
+| Unit | 16 ids | 32 ids | 64 ids | Filler spread |
+|---|---|---|---|---|
+| 0 | 0.06% | 0.19% | 0.19% | 0.07% |
+| 1 | 0.19% | 0.38% | 0.07% | 0.05% |
+| 2 | 0.47% | 0.04% | 0.42% | 0.04% |
+| 3 | 0.24% | 0.35% | 0.27% | 0.08% |
+| 4 | **6.33%** | **3.23%** | **4.46%** | 0.07% |
+| 5 | **2.00%** | **3.46%** | **3.09%** | 0.10% |
+| 6 | 0.01% | 0.11% | 0.02% | 0.14% |
+| 7 | 0.74% | 0.48% | 0.07% | 0.06% |
+| **Within 1%** | 6 of 8 | 6 of 8 | 6 of 8 | |
+| Median | 0.35% | 0.36% | 0.23% | |
+
+- Every bracket counted: no ledger, frame, mark or relay defect, and no
+  unit was marked disturbed.
+- **One episode accounts for every failure.** Units 4 and 5 fail at all
+  three lengths together. Every bracket that ran from 14:08:34 to
+  14:10:11 UTC was slow: 126 to 131 ms per position, against 123.2 to
+  124.9 ms everywhere else. That window holds exactly unit 4's after
+  brackets and unit 5's before brackets, which ran back to back between
+  the two units' fillers.
+  - Unit 4 slowed from before to after (e.g. 16 ids: 123.4 to 131.4 ms).
+  - Unit 5 recovered from before to after (16 ids: 126.3 to 123.8 ms).
+- **The cause is not identified.** The process telemetry in that window
+  shows no competing compiler or model process. CleanMyMac used about 40%
+  of one core for one sample at 14:09:29. That is not enough, on its own,
+  to explain a 5% slowdown.
+- **The study's own disturbance check could not see it.** That check
+  compares the filler arms, and no filler ran inside the window, so both
+  units' filler spreads are small (0.07%, 0.10%).
+  `missed_disturbances` is empty for every candidate.
+- **Outside that episode, the lengths do not separate.** In the other six
+  units every candidate is within 0.75%, and the medians are within 0.14
+  percentage points of each other. The study, therefore, gives no
+  evidence that a longer bracket is more stable on this host.
+
+Under the rule, no length is selected and the protocol is not frozen.
+Whether to repeat the study, and on what terms, is for review.
+
+### Files
+
+- Trial, reference and warm-up records and the telemetry are gzipped.
+  Every file `verification.json` lists matches its SHA-256 after
+  decompression: 352 files checked when this was packaged.
+- `run.log` is the driver's console output, copied in after the run.
+- `peer-handshake.txt` is the agreement record the driver required.

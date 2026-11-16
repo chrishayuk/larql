@@ -1,0 +1,4 @@
+VERIFY-REMOTE-1 bracket study quiet window, agreed 2026-11-16T13:41:25Z
+larql-a9: "machine free: larql-a9's test 1 run finished at 13:38Z, and archiving and upload are done. No builds, model runs or large file operations from me until you send \"quiet done\"."
+larql-50: "go. Nothing of mine is running or planned. I'll keep to small text edits and git/gh reads, with no builds, model runs or large file operations, until you message that it's finished."
+Pause: touch <out>/PAUSE holds the study before the next stand-in unit.

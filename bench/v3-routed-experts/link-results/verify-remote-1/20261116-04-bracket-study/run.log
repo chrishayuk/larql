@@ -1,0 +1,155 @@
+running warm-0: warm sequential prose_free rtt=0.0ms corrupt=none
+running warm-1: warm sequential prose_free rtt=0.0ms corrupt=none
+running warm-2: warm sequential prose_free rtt=0.0ms corrupt=none
+running reference-prose_free: reference sequential prose_free rtt=0.0ms corrupt=none
+running reference-explain: reference sequential explain rtt=0.0ms corrupt=none
+running trial-000: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-001: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-002: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-003: filler sequential explain rtt=20.0ms corrupt=none
+running trial-004: filler verify-2 explain rtt=20.0ms corrupt=none
+running trial-005: filler verify-4 explain rtt=20.0ms corrupt=none
+running trial-006: filler verify-8 explain rtt=20.0ms corrupt=none
+running trial-007: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-008: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-009: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-010: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-011: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-012: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-013: filler sequential explain rtt=20.0ms corrupt=none
+running trial-014: filler verify-2 explain rtt=20.0ms corrupt=none
+running trial-015: filler verify-4 explain rtt=20.0ms corrupt=none
+running trial-016: filler verify-8 explain rtt=20.0ms corrupt=none
+running trial-017: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-018: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-019: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-020: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-021: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-022: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-023: filler sequential explain rtt=20.0ms corrupt=none
+running trial-024: filler verify-2 explain rtt=20.0ms corrupt=none
+running trial-025: filler verify-4 explain rtt=20.0ms corrupt=none
+running trial-026: filler verify-8 explain rtt=20.0ms corrupt=none
+running trial-027: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-028: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-029: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-030: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-031: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-032: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-033: filler sequential explain rtt=20.0ms corrupt=none
+running trial-034: filler verify-2 explain rtt=20.0ms corrupt=none
+running trial-035: filler verify-4 explain rtt=20.0ms corrupt=none
+running trial-036: filler verify-8 explain rtt=20.0ms corrupt=none
+running trial-037: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-038: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-039: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-040: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-041: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-042: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-043: filler sequential explain rtt=20.0ms corrupt=none
+running trial-044: filler verify-2 explain rtt=20.0ms corrupt=none
+running trial-045: filler verify-4 explain rtt=20.0ms corrupt=none
+running trial-046: filler verify-8 explain rtt=20.0ms corrupt=none
+running trial-047: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-048: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-049: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-050: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-051: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-052: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-053: filler sequential explain rtt=20.0ms corrupt=none
+running trial-054: filler verify-2 explain rtt=20.0ms corrupt=none
+running trial-055: filler verify-4 explain rtt=20.0ms corrupt=none
+running trial-056: filler verify-8 explain rtt=20.0ms corrupt=none
+running trial-057: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-058: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-059: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-060: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-061: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-062: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-063: filler sequential explain rtt=20.0ms corrupt=none
+running trial-064: filler verify-2 explain rtt=20.0ms corrupt=none
+running trial-065: filler verify-4 explain rtt=20.0ms corrupt=none
+running trial-066: filler verify-8 explain rtt=20.0ms corrupt=none
+running trial-067: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-068: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-069: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-070: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-071: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-072: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-073: filler sequential explain rtt=20.0ms corrupt=none
+running trial-074: filler verify-2 explain rtt=20.0ms corrupt=none
+running trial-075: filler verify-4 explain rtt=20.0ms corrupt=none
+running trial-076: filler verify-8 explain rtt=20.0ms corrupt=none
+running trial-077: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-078: bracket sequential prose_free rtt=0.0ms corrupt=none
+running trial-079: bracket sequential prose_free rtt=0.0ms corrupt=none
+{
+  "rule": "shortest length with at least 7 of 8 drifts within 0.01",
+  "candidates": [
+    {
+      "candidate": 16,
+      "counted_units": 8,
+      "drifts": [
+        0.0006169353073110236,
+        0.0019261671028903034,
+        0.004675017743138289,
+        0.0023675730255144412,
+        0.06328259839881527,
+        0.01997483312795883,
+        5.6520936636449804e-05,
+        0.007352733341492036
+      ],
+      "uncounted": {},
+      "within_gate": 6,
+      "median": 0.003521295384326365,
+      "max": 0.06328259839881527,
+      "qualifies": false,
+      "missed_disturbances": []
+    },
+    {
+      "candidate": 32,
+      "counted_units": 8,
+      "drifts": [
+        0.001855238299231874,
+        0.003793524052051469,
+        0.000425278722240054,
+        0.0034980737511634413,
+        0.03225989302232006,
+        0.034641933522172284,
+        0.0010521645188121286,
+        0.004807490613459501
+      ],
+      "uncounted": {},
+      "within_gate": 6,
+      "median": 0.003645798901607455,
+      "max": 0.034641933522172284,
+      "qualifies": false,
+      "missed_disturbances": []
+    },
+    {
+      "candidate": 64,
+      "counted_units": 8,
+      "drifts": [
+        0.0018619720788011836,
+        0.000650780084265973,
+        0.004164638734296829,
+        0.002734998906702697,
+        0.04461586727249862,
+        0.030911384275973036,
+        0.0002009230741175248,
+        0.0006779238027788143
+      ],
+      "uncounted": {},
+      "within_gate": 6,
+      "median": 0.0022984854927519402,
+      "max": 0.04461586727249862,
+      "qualifies": false,
+      "missed_disturbances": []
+    }
+  ],
+  "selected": null,
+  "outcome": "no candidate qualifies; no length is selected and the protocol is not frozen",
+  "selected_missed_disturbances": null,
+  "review_needed": true
+}
+exit=0
