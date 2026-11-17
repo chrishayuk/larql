@@ -160,11 +160,11 @@ language:
 ```console
 $ larql lql 'USE "Qwen3-0.6B"; INFER "The capital of France is" TOP 5;'
 Predictions (VINDEX3 program):
-   1.  Paris               (74.36%)  [id 12095]
-   2.  the                 (2.18%)  [id 279]
-   3.  in                  (2.07%)  [id 304]
-   4.  located             (1.34%)  [id 7407]
-   5. ...                  (1.07%)  [id 1112]
+   1.  Paris               (65.71%)  [id 12095]
+   2.  located             (2.78%)  [id 7407]
+   3.  the                 (2.35%)  [id 279]
+   4. ...                  (1.57%)  [id 1112]
+   5.  ____                (1.38%)  [id 30743]
 ```
 
 **Look at its structure:**
@@ -189,9 +189,9 @@ $ larql vindex3 observe Qwen3-0.6B --backend production \
     --prompt "The capital of France is" --record run.jsonl
   ...
   final position, top 10:
-       12095  logp -0.4184 " Paris"
-        7407  logp -3.6079 " located"
-         279  logp -3.7446 " the"
+       12095  logp -0.4202 " Paris"
+        7407  logp -3.5819 " located"
+         279  logp -3.7498 " the"
   ...
 ```
 
