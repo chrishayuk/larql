@@ -775,3 +775,81 @@ fn cached_snapshot_file_with_revision_falls_back_to_pinned_dir() {
     assert_eq!(size, 3);
     assert!(path.ends_with("f.bin"));
 }
+
+const COMMIT: &str = "6046fecd3cf71a701bb81ccc6b5d6f68d3dbaefc";
+
+#[test]
+fn is_commit_id_accepts_only_a_full_hex_commit() {
+    assert!(is_commit_id(COMMIT));
+    assert!(is_commit_id(&COMMIT.to_uppercase()));
+    assert!(!is_commit_id("main"));
+    assert!(!is_commit_id("v2.0"));
+    assert!(!is_commit_id(&COMMIT[..39]));
+    assert!(!is_commit_id(&format!("{}g", &COMMIT[..39])));
+}
+
+#[test]
+#[serial]
+fn cached_snapshot_file_serves_a_pinned_commit_without_any_request() {
+    // A HEAD here would fail the `expect(0)`: a pinned commit's cached
+    // file must be served from disk alone, so a slow or unreachable hub
+    // cannot stall a fully cached pull.
+    let mut server = mockito::Server::new();
+    let _g = HfTestEnv::new(&server.url());
+    let head = server
+        .mock("HEAD", mockito::Matcher::Any)
+        .expect(0)
+        .create();
+    let hub_root: PathBuf = std::env::var("HF_HOME")
+        .map(|p| PathBuf::from(p).join("hub"))
+        .unwrap();
+    make_hub_blob(
+        &hub_root,
+        "models--",
+        "owner/repo",
+        "etag-unused",
+        b"hello",
+        Some(COMMIT),
+        "README.md",
+    );
+
+    let (path, size) =
+        cached_snapshot_file(RepoKind::Model, "owner/repo", Some(COMMIT), "README.md").unwrap();
+    assert_eq!(size, 5);
+    assert!(path.ends_with(format!("snapshots/{COMMIT}/README.md")));
+    head.assert();
+}
+
+#[test]
+#[serial]
+fn cached_snapshot_file_checks_the_hub_when_the_pinned_commit_has_no_file() {
+    // No snapshot entry for the commit: the HEAD check runs as before,
+    // and its 404 is a miss.
+    let mut server = mockito::Server::new();
+    let _g = HfTestEnv::new(&server.url());
+    let head = server
+        .mock("HEAD", mockito::Matcher::Any)
+        .with_status(404)
+        .expect(1)
+        .create();
+
+    assert!(cached_snapshot_file(RepoKind::Model, "owner/repo", Some(COMMIT), "f.bin").is_none());
+    head.assert();
+}
+
+#[test]
+fn repo_documentation_is_the_card_its_notes_and_git_attributes_only() {
+    for name in ["README.md", "PROVENANCE.md", ".gitattributes"] {
+        assert!(is_repo_documentation(name), "{name}");
+    }
+    for name in [
+        "index.json",
+        "system_graph.json",
+        "tokenizer.json",
+        "chat_template.jinja",
+        "segments/target.embedding.bin",
+        "segments/notes.md",
+    ] {
+        assert!(!is_repo_documentation(name), "{name}");
+    }
+}
