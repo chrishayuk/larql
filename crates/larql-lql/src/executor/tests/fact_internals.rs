@@ -3,7 +3,6 @@
 //! fact-id collision refusal (a 64-bit collision cannot be produced on
 //! demand), and the labels of every status, realization and durability.
 
-use super::*;
 use crate::executor::facts::{collision, single_token_id};
 use crate::executor::{AssertedFact, FactDurability, FactRealization, FactStatus};
 use larql_vindex::FactKey;
