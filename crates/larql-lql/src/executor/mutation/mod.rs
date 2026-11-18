@@ -36,7 +36,9 @@ impl Session {
     /// edge its preview did not show. Four things differ deliberately,
     /// all in the narrowing direction:
     /// - `entity` together with `relation` is refused (SELECT ranks a
-    ///   gate walk for that pair; see below);
+    ///   gate walk for that pair; see below). The exact pair alone never
+    ///   reaches here: it addresses an asserted fact (FACT-ID-1,
+    ///   `executor::facts`);
     /// - a `relation` condition needs relation labels loaded (SELECT
     ///   lists nothing without them; a mutation refuses);
     /// - `layer` + `feature` together name one slot, which must exist
@@ -55,10 +57,11 @@ impl Session {
             // need mention the entity. That is a ranking to read, not a
             // set to destroy.
             return Err(LqlError::Execution(
-                "unsupported WHERE clause: a mutation does not combine `entity` and \
-                 `relation` — SELECT resolves that pair by a ranked gate walk, which is \
-                 too broad to delete or update by. List the edges with SELECT and address \
-                 each by `layer` and `feature`"
+                "unsupported WHERE clause: a mutation combines `entity` and `relation` \
+                 only as `entity = … AND relation = …` with nothing else, which addresses \
+                 an asserted fact. Over discovered rows SELECT resolves the pair by a \
+                 ranked gate walk, which is too broad to delete or update by: list the \
+                 edges with SELECT and address each by `layer` and `feature`"
                     .into(),
             ));
         }

@@ -298,9 +298,9 @@ impl Session {
                     .unwrap_or_default(),
             )
         };
-        if let Some(ref mut recording) = self.patch_recording {
+        {
             let b64 = larql_vindex::patch::core::encode_gate_vector;
-            recording.operations.push(larql_vindex::PatchOp::Insert {
+            self.record_knowledge_op(larql_vindex::PatchOp::Insert {
                 layer,
                 feature,
                 relation: Some(relation.to_string()),

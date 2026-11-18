@@ -72,9 +72,7 @@ impl Session {
             confidence: Some(c_score),
             key_vector_b64: key_b64,
         };
-        if let Some(ref mut recording) = self.patch_recording {
-            recording.operations.push(patch_op);
-        }
+        self.record_knowledge_op(patch_op);
 
         Ok(vec![
             format!(

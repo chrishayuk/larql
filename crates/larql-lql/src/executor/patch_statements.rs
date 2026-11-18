@@ -240,6 +240,12 @@ impl Session {
             patch.description = Some(path.to_string());
         }
 
+        // FACT-ID-1 I-2: a patch that asserts a live fact, changes one that is
+        // not live, or collides on a fact id is refused whole, before anything
+        // is applied.
+        let name = patch.description.clone().unwrap_or_default();
+        self.check_patch_facts(&patch, &name)?;
+
         // Stored-weight ops are bound to the exact container they were written
         // against. Check that before anything is applied.
         use larql_vindex::format::vindex3::weight_patch::WeightOpRef;

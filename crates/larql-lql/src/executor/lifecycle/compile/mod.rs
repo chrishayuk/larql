@@ -15,8 +15,27 @@ mod source_files;
 mod unexported;
 
 impl Session {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn exec_compile(
+        &mut self,
+        vindex: &VindexRef,
+        output: &str,
+        format: Option<OutputFormat>,
+        target: CompileTarget,
+        on_conflict: Option<CompileConflict>,
+    ) -> Result<Vec<String>, LqlError> {
+        // FACT-ID-1 §5.6: the compiled artifact keeps a compose install's
+        // vectors, not its entity and relation — say so, from the session's
+        // catalogue as it stood before the compile.
+        let identity_loss = match vindex {
+            VindexRef::Current => self.compose_identity_loss_line(),
+            VindexRef::Path(_) => None,
+        };
+        let mut out = self.exec_compile_from(vindex, output, format, target, on_conflict)?;
+        out.extend(identity_loss);
+        Ok(out)
+    }
+
+    fn exec_compile_from(
         &mut self,
         vindex: &VindexRef,
         output: &str,

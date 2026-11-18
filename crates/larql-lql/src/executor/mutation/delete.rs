@@ -18,6 +18,11 @@ impl Session {
         // Validate the clause and resolve its targets with a readonly
         // borrow: a refusal here leaves the overlay and the recording
         // exactly as they were.
+        // FACT-ID-1 D-8: `entity = … AND relation = …` alone addresses an
+        // asserted fact, never discovered rows.
+        if let Some((entity, relation)) = crate::executor::facts::semantic_pair(conditions)? {
+            return self.exec_delete_fact(&entity, &relation);
+        }
         let deletes = self.resolve_mutation_targets(conditions)?;
 
         if deletes.is_empty() {
@@ -45,8 +50,8 @@ impl Session {
 
         // Record to patch session
         for &(layer, feature) in &deletes {
-            if let Some(ref mut recording) = self.patch_recording {
-                recording.operations.push(larql_vindex::PatchOp::Delete {
+            {
+                self.record_knowledge_op(larql_vindex::PatchOp::Delete {
                     layer,
                     feature,
                     reason: None,

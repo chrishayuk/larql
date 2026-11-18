@@ -19,6 +19,7 @@ pub use executor::install_fault;
 pub use executor::model_resolver::ModelResolver;
 pub use executor::operations;
 pub use executor::Session;
+pub use executor::{AssertedFact, FactDurability, FactRealization, FactStatus};
 pub use executor::{RepresentationSource, DEFAULT_REPRESENTATION_SOURCE};
 pub use parser::parse;
 pub use repl::{

@@ -479,6 +479,7 @@ mod compile_into_vindex_integration_tests;
 mod describe_on_moe_router_fixture_try_moe_d;
 mod describe_rich_fixture;
 mod diff_into_patch;
+mod fact_internals;
 mod full_fixture_real_modelweights_safetenso;
 mod full_fixture_tests_real_modelweights_on;
 mod infer_trace_explain_infer_mode_variants;
