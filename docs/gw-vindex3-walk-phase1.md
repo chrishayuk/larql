@@ -107,6 +107,16 @@ weights are not treated as source contribution: source-level records require the
 lossless same-run HEAD evidence needed to reconstruct each projected source
 write.
 
+A controlled synthetic counterpart lives outside this repository. GW-SYNTH-1A
+trains a small transformer on a random entity-relation graph. It applies the
+[GW-CAR-1B](gw-car-1b-results.md) carrier-source classes and the SG
+relation-swap instrument to a model whose full graph is known. It also seals
+insertion slots for a follow-on (1B) that edits facts while the relational
+machinery stays frozen. The plan is `semantic_graph/GW_SYNTH_1A_PLAN.md` in
+chris-experiments, registered as `gw-synth-1a` under the `semantic-graph`
+programme. It is frozen and has not been executed. Its outcomes describe only
+that synthetic model and are not evidence about Gemma.
+
 ## Frozen calibration input
 
 The first calibration input is sealed before any model execution at
