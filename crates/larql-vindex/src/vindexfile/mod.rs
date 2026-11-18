@@ -284,6 +284,8 @@ impl InstalledFacts {
                 }
                 PatchOp::InsertKnn { .. }
                 | PatchOp::DeleteKnn { .. }
+                | PatchOp::DeleteKnnFact { .. }
+                | PatchOp::UpdateKnnFact { .. }
                 | PatchOp::WeightDelta(_)
                 | PatchOp::StructuredWeight(_)
                 | PatchOp::LowRankColumnsWeight(_) => {}

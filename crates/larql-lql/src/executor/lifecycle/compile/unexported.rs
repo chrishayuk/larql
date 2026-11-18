@@ -64,7 +64,10 @@ fn census(patched: &PatchedVindex, recording_ops: &[PatchOp]) -> EditCensus {
         match op {
             PatchOp::Delete { .. } => census.deletes += 1,
             PatchOp::Update { .. } => census.updates += 1,
-            PatchOp::InsertKnn { .. } | PatchOp::DeleteKnn { .. } => census.knn += 1,
+            PatchOp::InsertKnn { .. }
+            | PatchOp::DeleteKnn { .. }
+            | PatchOp::DeleteKnnFact { .. }
+            | PatchOp::UpdateKnnFact { .. } => census.knn += 1,
             PatchOp::Insert { .. } => census.inserts += 1,
             // Applies to a VINDEX3 container, which has its own compile.
             PatchOp::WeightDelta(_)

@@ -10,6 +10,7 @@
 //! - `refine`:       refine pass for compiled gates.
 //! - `validate`:     whether a patch fits the index it is applied onto.
 
+pub mod fact_key;
 pub mod format;
 pub(crate) mod gate_overlay;
 pub mod knn_store;
@@ -21,6 +22,7 @@ pub mod overlay_meta_bake;
 pub mod refine;
 pub mod validate;
 
+pub use fact_key::{normalize_fact_part, FactKey};
 pub use format::*;
 pub use knn_store::{KnnEntry, KnnStore};
 pub use overlay::*;
