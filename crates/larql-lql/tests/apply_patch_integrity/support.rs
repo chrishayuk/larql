@@ -125,6 +125,21 @@ pub fn with_base_model(mut patch: VindexPatch, model: &str) -> VindexPatch {
     patch
 }
 
+/// The same edits asserted for other entities. A patch that re-asserts a
+/// fact already live is refused (FACT-ID-1 I-2), so a second valid patch on
+/// the stack must name different facts.
+pub fn with_other_entities(mut patch: VindexPatch) -> VindexPatch {
+    for op in &mut patch.operations {
+        match op {
+            PatchOp::Insert { entity, .. } | PatchOp::InsertKnn { entity, .. } => {
+                entity.push_str("-other");
+            }
+            _ => {}
+        }
+    }
+    patch
+}
+
 /// A valid op followed by an invalid one: the valid op must not be applied.
 pub fn with_trailing_invalid_op(mut patch: VindexPatch) -> VindexPatch {
     patch.operations.push(PatchOp::Delete {

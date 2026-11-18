@@ -6,7 +6,7 @@ use super::*;
 // restored: dual-mode INSERT defaults to KNN
 fn knn_store_insert_populates_store() {
     // INSERT on a browse-only vindex (no model weights) uses embedding-key fallback
-    let (mut session, dir) = vindex_session("knn_insert");
+    let (mut session, dir) = knn_vindex_session("knn_insert");
 
     let stmt = parser::parse(
         r#"INSERT INTO EDGES (entity, relation, target) VALUES ("Atlantis", "capital", "Poseidon");"#,
@@ -29,7 +29,7 @@ fn knn_store_insert_populates_store() {
 #[test]
 // restored: dual-mode INSERT defaults to KNN
 fn knn_store_insert_multiple_facts() {
-    let (mut session, dir) = vindex_session("knn_multi");
+    let (mut session, dir) = knn_vindex_session("knn_multi");
 
     for (entity, target) in &[
         ("Atlantis", "Poseidon"),
@@ -58,7 +58,7 @@ fn knn_store_insert_multiple_facts() {
 #[test]
 // restored: dual-mode INSERT defaults to KNN
 fn knn_store_describe_shows_inserted_edges() {
-    let (mut session, dir) = vindex_session("knn_describe");
+    let (mut session, dir) = knn_vindex_session("knn_describe");
 
     // Insert a fact
     let stmt = parser::parse(
@@ -78,7 +78,7 @@ fn knn_store_describe_shows_inserted_edges() {
 #[test]
 // restored: dual-mode INSERT defaults to KNN
 fn knn_store_delete_removes_entries() {
-    let (mut session, dir) = vindex_session("knn_delete");
+    let (mut session, dir) = knn_vindex_session("knn_delete");
 
     // Insert two facts for different entities
     for sql in &[
@@ -105,7 +105,7 @@ fn knn_store_delete_removes_entries() {
 #[test]
 // restored: dual-mode INSERT defaults to KNN
 fn knn_store_compile_saves_and_loads() {
-    let (mut session, dir) = vindex_session("knn_compile");
+    let (mut session, dir) = knn_vindex_session("knn_compile");
 
     // Insert a fact
     let stmt = parser::parse(
@@ -209,7 +209,7 @@ fn knn_store_delete_knn_patch_op() {
 #[test]
 // restored: dual-mode INSERT defaults to KNN
 fn knn_store_insert_at_layer_hint() {
-    let (mut session, dir) = vindex_session("knn_layer_hint");
+    let (mut session, dir) = knn_vindex_session("knn_layer_hint");
 
     // Synthetic vindex has only 2 layers (0, 1), so use AT LAYER 0
     let stmt = parser::parse(

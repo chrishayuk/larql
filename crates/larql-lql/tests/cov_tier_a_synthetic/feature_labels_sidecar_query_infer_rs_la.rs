@@ -116,7 +116,7 @@ fn infer_renders_trace_hits_after_compose_seeding() {
             let _ = try_run(
                 &mut session,
                 &format!(
-                    r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[{i}]", "capital", "{t}") MODE COMPOSE AT LAYER {layer};"#
+                    r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[{i}]", "capital{layer}", "{t}") MODE COMPOSE AT LAYER {layer};"#
                 ),
             )
             .expect("compose insert");
