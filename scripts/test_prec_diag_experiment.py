@@ -401,5 +401,26 @@ class EndToEnd(unittest.TestCase):
             ex.readings(self.w.freeze, self.w.sha, self.w.runs)
 
 
+class ConfigLayerTypes(unittest.TestCase):
+    """`layer_types` from a config that lists them, or from the older
+    `sliding_window_pattern` form (Gemma 3 1B)."""
+
+    def test_an_explicit_list_is_used_as_it_is(self):
+        types = ["sliding_attention", "full_attention"]
+        self.assertEqual(ex.config_layer_types({"layer_types": types, "sliding_window_pattern": 6}), types)
+
+    def test_the_pattern_form_matches_transformers_expansion(self):
+        types = ex.config_layer_types({"sliding_window_pattern": 6, "num_hidden_layers": 26})
+        self.assertEqual(len(types), 26)
+        self.assertEqual([i for i, t in enumerate(types) if t == "full_attention"], [5, 11, 17, 23])
+
+    def test_the_private_pattern_key_is_read_too(self):
+        types = ex.config_layer_types({"_sliding_window_pattern": 2, "num_hidden_layers": 4})
+        self.assertEqual(types, ["sliding_attention", "full_attention"] * 2)
+
+    def test_no_types_and_no_pattern_names_none(self):
+        self.assertEqual(ex.config_layer_types({"num_hidden_layers": 4}), [])
+
+
 if __name__ == "__main__":
     unittest.main()
