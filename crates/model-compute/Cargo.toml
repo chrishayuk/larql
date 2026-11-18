@@ -11,7 +11,7 @@ categories = ["wasm", "mathematics"]
 
 [features]
 default = ["native"]
-native = ["dep:evalexpr", "dep:chrono"]
+native = ["dep:evalexpr", "dep:time"]
 wasm = ["dep:wasmtime"]
 
 [dependencies]
@@ -19,7 +19,7 @@ thiserror = { workspace = true }
 
 # Feature: native kernels
 evalexpr = { version = "11", optional = true }
-chrono = { version = "0.4", optional = true, default-features = false, features = ["std", "clock"] }
+time = { version = "0.3.47", optional = true, default-features = false, features = ["std"] }
 
 # Feature: wasm host
 wasmtime = { version = "36.0.7", optional = true, default-features = false, features = ["cranelift", "runtime", "std"] }
