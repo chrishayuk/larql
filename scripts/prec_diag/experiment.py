@@ -106,7 +106,20 @@ def load_freeze(path: Path, expected_sha256: str) -> dict:
 
 def layer_types(manifest: dict) -> list[str]:
     config = json.loads((Path(manifest["checkpoint"]["directory"]) / "config.json").read_text())
-    return sorted(set(config.get("layer_types") or []))
+    return sorted(set(config_layer_types(config)))
+
+
+def config_layer_types(config: dict) -> list[str]:
+    """Per-layer attention types. An older Gemma 3 config (1B) names only
+    `sliding_window_pattern`; transformers expands it as every
+    `pattern`-th layer full, the rest sliding, and so does this."""
+    if config.get("layer_types"):
+        return list(config["layer_types"])
+    pattern = config.get("sliding_window_pattern") or config.get("_sliding_window_pattern")
+    if not pattern:
+        return []
+    return ["sliding_attention" if (i + 1) % pattern else "full_attention"
+            for i in range(config["num_hidden_layers"])]
 
 
 def rope_table_labels(manifest: dict) -> list[str]:

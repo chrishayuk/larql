@@ -125,5 +125,15 @@ class EndToEnd(unittest.TestCase):
             fa.run(self.w.freeze, "0" * 64, self.w.runs, self.tmp / "other.json")
 
 
+class Scope(unittest.TestCase):
+    def test_a_freeze_without_a_model_is_the_original_270m_scope(self):
+        self.assertTrue(fa.scope({"values": {}}).startswith("Gemma 3 270M (google/gemma-3-270m-it"))
+
+    def test_a_freeze_that_names_its_model_reports_that_model(self):
+        text = fa.scope({"values": {"model": "Gemma 3 1B (google/gemma-3-1b-it at the frozen revision)"}})
+        self.assertTrue(text.startswith("Gemma 3 1B (google/gemma-3-1b-it"))
+        self.assertIn("inputs I_rep, I_nr1, I_nr2", text)
+
+
 if __name__ == "__main__":
     unittest.main()
