@@ -431,6 +431,51 @@ def resolve_and_write(
     return summary
 
 
+def write_resolved(
+    resolved: dict[str, list[list[str]]],
+    target_pids: set[str],
+    output_dir: str,
+) -> dict[str, int]:
+    """Write already-resolved ``{relation: pairs}`` in the standard output format.
+
+    Shared by the ``--from-lbdb`` path (labels come straight from the graph,
+    so the dump's Pass 1/Pass 2 + ``resolve_and_write`` are skipped). Output
+    files match ``resolve_and_write`` exactly: one JSON per relation plus a
+    ``_combined.json`` in the ``wikidata_triples.json`` shape.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    pid_by_relation = {v: k for k, v in TOP_PROPERTIES.items()}
+    summary: dict[str, int] = {}
+    combined: dict = {}
+    for relation_name in sorted(resolved):
+        pairs = resolved[relation_name]
+        if not pairs:
+            continue
+        pid = pid_by_relation.get(relation_name, "")
+        if not pid:
+            for cand in target_pids:
+                if TOP_PROPERTIES.get(cand, f"property_{cand}") == relation_name:
+                    pid = cand
+                    break
+        out_data = {
+            "pid": pid,
+            "relation": relation_name,
+            "count": len(pairs),
+            "pairs": pairs,
+        }
+        out_path = Path(output_dir) / f"{relation_name}.json"
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(out_data, f, indent=2, ensure_ascii=False)
+        summary[relation_name] = len(pairs)
+        print(f"  {pid} ({relation_name}): {len(pairs)} pairs -> {out_path.name}")
+        combined[relation_name] = {"pid": pid, "pairs": pairs}
+    combined_path = Path(output_dir) / "_combined.json"
+    with open(combined_path, "w", encoding="utf-8") as f:
+        json.dump(combined, f, indent=2, ensure_ascii=False)
+    print(f"\n  Combined file: {combined_path} ({len(combined)} relations)")
+    return summary
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Ingest Wikidata truthy N-Triples dump and extract relation pairs.",
@@ -448,8 +493,14 @@ Examples:
     )
     parser.add_argument(
         "--dump",
-        required=True,
-        help="Path to Wikidata truthy dump (.nt or .nt.gz)",
+        default=None,
+        help="Path to Wikidata truthy dump (.nt or .nt.gz). Required unless --from-lbdb is given.",
+    )
+    parser.add_argument(
+        "--from-lbdb",
+        default=None,
+        help="Read pairs from a local wikidata.lbdb via ladybug instead of "
+        "streaming the N-Triples dump (same output format; no Pass 1/Pass 2).",
     )
     parser.add_argument(
         "--properties",
@@ -480,32 +531,66 @@ Examples:
             print(f"Warning: unknown PIDs (will use generic names): {unknown}")
         print(f"Targeting {len(target_pids)} properties: {sorted(target_pids)}")
 
-    # Verify dump exists
-    if not os.path.exists(args.dump):
-        print(f"Error: dump file not found: {args.dump}", file=sys.stderr)
-        sys.exit(1)
+    # Verify dump exists (dump path only)
+    if args.from_lbdb is None:
+        if not args.dump:
+            print("Error: --dump is required unless --from-lbdb is given.", file=sys.stderr)
+            sys.exit(2)
+        if not os.path.exists(args.dump):
+            print(f"Error: dump file not found: {args.dump}", file=sys.stderr)
+            sys.exit(1)
 
-    file_size = os.path.getsize(args.dump)
-    print(f"Dump file: {args.dump} ({file_size / 1e9:.1f} GB)")
-    print()
+        file_size = os.path.getsize(args.dump)
+        print(f"Dump file: {args.dump} ({file_size / 1e9:.1f} GB)")
+        print()
 
-    t_total = time.time()
+        t_total = time.time()
 
-    # Pass 1: collect QID pairs
-    relation_pairs, needed_qids = run_pass_1(
-        args.dump, target_pids, args.max_per_relation
-    )
+        # Pass 1: collect QID pairs
+        relation_pairs, needed_qids = run_pass_1(
+            args.dump, target_pids, args.max_per_relation
+        )
 
-    if not relation_pairs:
-        print("No matching triples found. Check your dump file and properties.")
-        sys.exit(1)
+        if not relation_pairs:
+            print("No matching triples found. Check your dump file and properties.")
+            sys.exit(1)
 
-    # Pass 2: resolve labels
-    labels = run_pass_2(args.dump, needed_qids)
+        # Pass 2: resolve labels
+        labels = run_pass_2(args.dump, needed_qids)
 
-    # Write output
-    print(f"\n[Output] Writing to {args.output}/")
-    summary = resolve_and_write(relation_pairs, labels, args.output)
+        # Write output
+        print(f"\n[Output] Writing to {args.output}/")
+        summary = resolve_and_write(relation_pairs, labels, args.output)
+    else:
+        import wikidata_lbdb
+
+        t_total = time.time()
+        source = wikidata_lbdb.find_source_db(args.from_lbdb)
+        print(f"Using local Ladybug source: {source}")
+        conn = wikidata_lbdb.connect_readonly(source)
+        pid_nums = sorted(int(p[1:]) for p in target_pids if p[1:].isdigit())
+        counts = wikidata_lbdb.property_counts(conn, pid_nums)
+        resolved: dict[str, list[list[str]]] = {}
+        for pid in sorted(target_pids):
+            relation_name = TOP_PROPERTIES.get(pid, f"property_{pid}")
+            pid_num = int(pid[1:]) if pid[1:].isdigit() else None
+            pairs = (
+                wikidata_lbdb.fetch_pairs(
+                    conn, pid_num, args.max_per_relation, counts.get(pid_num, 0)
+                )
+                if pid_num is not None
+                else []
+            )
+            if pairs:
+                resolved[relation_name] = pairs
+                print(f"  {pid} ({relation_name}): {len(pairs)} pairs")
+            else:
+                print(f"  {pid} ({relation_name}): 0 pairs (no entity-entity edges; skipping)")
+        if not resolved:
+            print("No matching triples found. Check your properties.")
+            sys.exit(1)
+        print(f"\n[Output] Writing to {args.output}/")
+        summary = write_resolved(resolved, target_pids, args.output)
 
     elapsed = time.time() - t_total
     total_pairs = sum(summary.values())

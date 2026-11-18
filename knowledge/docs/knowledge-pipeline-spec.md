@@ -393,6 +393,7 @@ probes/
 | 1 | Hand-curated | ~500 | Gold | Manual JSON files per relation |
 | 2 | DBpedia | ~16K | High | SPARQL queries + API, filtered to single/few-token entities |
 | 3 | Wikidata dump | ~500K+ | Medium | Full dump filtered to top properties, common entities |
+| 4 | Local Ladybug graph | same as 2-3 | High | Columnar `wikidata.lbdb` via ladybug Python bindings (§3.1.4) |
 
 **Ingestion pipeline:**
 
@@ -430,6 +431,88 @@ python3 scripts/assemble_triples.py
 - Must produce single/few-token objects the model can output
 - Exclude media properties (image, audio, video links)
 - Exclude identifier properties (ISNI, VIAF, GND)
+
+#### 3.1.4 Ladybug-backed extraction (fast local path, Tier 4)
+
+The Tier 2/3 network paths (SPARQL endpoints, API backlinks, 100GB+ dump
+parses) are unchanged and remain the default. When a local copy of the
+`wikidata.lbdb` columnar graph is available, the `*wikidata*.py` scripts
+offer opt-in `--from-lbdb` / `--export-lbdb` flags that answer the same
+questions from the local database in seconds instead of minutes/hours.
+Shared logic lives in `scripts/wikidata_lbdb.py`; the SPARQL/API/dump code
+in the sibling scripts is untouched and every `--from-lbdb` flag falls back
+to it per-property when the graph has no entity-entity edges (dates,
+literal-valued properties such as chemical symbols).
+
+**Source schema** (`wikidata.lbdb`, readonly — never mutated):
+
+| Table | Columns | Rows | Notes |
+|-------|---------|------|-------|
+| `wikidata_node` | `csr_index` INT64 PK, `qid` INT64, `name` STRING | ~91M | ART index on `name`; internal row offset == `csr_index` |
+| `edge_meta` | `id` INT64 PK, `name` STRING | ~12K | `id` is the numeric PID (`36` == P36), `name` its English label |
+| `wikidata_rel` | FROM/TO `wikidata_node`, `property` INT64 | ~766M | `property` references `edge_meta.id` |
+
+**Fast vs slow query patterns** (from `EXPLAIN` on this database):
+
+- ✅ `MATCH ()-[r:wikidata_rel]->() RETURN r.property, count(*)` — pure
+  columnar scan + tiny GROUP BY over all 766M edges in ~5s.
+- ✅ `MATCH (s)-[r]->(o) WHERE r.property = $pid RETURN s.csr_index,
+  s.name, id(o) LIMIT …` — streams (`s.*` is free from the node scan,
+  `id(o)` needs no join) and short-circuits in ~1-3s per property.
+  A `((s.csr_index * 2654435761) % 1000) < $t` predicate gives a
+deterministic spread sample; `$t` is calibrated from per-property counts.
+  `id(o).offset` resolves to a name with a batched `csr_index IN …`
+  PK lookup — never a 766M-row join.
+- ✅ `MATCH (s:wikidata_node)-[r]->(o) WHERE s.name = 'France' AND
+  r.property = 36 RETURN DISTINCT o.name` — entity-anchored, uses the ART
+  index, milliseconds.
+- ❌ `MATCH (s)-[r]->(o) WHERE r.property = $pid RETURN s.name, o.name`
+  (unbounded) — expands all 766M edges into a hash-join build side and
+  exhausts the buffer pool. Do not fetch both endpoint names in one
+  full-graph query.
+
+**Derived subset database** (`--export-lbdb`, the "another `.lbdb` file"):
+extracts only the needed relations into a small portable database that
+answers pair queries in milliseconds instead of re-scanning the 766M-edge
+base:
+
+```
+PropInfo(pid INT64 PK, name STRING)
+Entity(id INT64 PK, name STRING)
+Triple(FROM Entity TO Entity, pid INT64, relation STRING)
+```
+
+```bash
+# Property labels + example pairs from the local graph (same JSON outputs)
+python3 scripts/fetch_wikidata_properties.py --from-lbdb /path/to/wikidata.lbdb
+python3 scripts/fetch_wikidata_triples.py --from-lbdb /path/to/wikidata.lbdb \
+  --limit 30 --export-lbdb data/wikidata_subset.lbdb
+python3 scripts/ingest_wikidata_dump.py --from-lbdb /path/to/wikidata.lbdb \
+  --properties P36,P37,P30 --max-per-relation 500 --output data/dump_triples/
+
+# Query the derived subset directly (ladybug Python bindings)
+python3 -c "
+import ladybug as lb
+conn = lb.Connection(lb.Database('data/wikidata_subset.lbdb', read_only=True))
+print(conn.execute(\"MATCH (a:Entity)-[t:Triple]->(b:Entity) \
+  WHERE t.relation = 'capital' RETURN a.name, b.name LIMIT 5\").get_as_df())
+"
+```
+
+**Environment:**
+
+```bash
+uv pip install ladybug==0.22.3
+```
+
+The scripts import it lazily — default (network/dump) runs never need
+it. Memory is capped conservatively (`DEFAULT_BUFFER_POOL_MB = 2048` in
+`scripts/wikidata_lbdb.py`, override with `LBUG_BUFFER_POOL_MB`); the
+gated test module (`tests/test_wikidata_lbdb.py`) runs green inside an 8GB
+cgroup (`LBUG_WIKIDATA_PATH` points at the source db; tests skip without
+it). `tests/test_wikidata_lbdb.py` asserts JSON-shape parity, catalog
+coverage, subset round-trips, derived-faster-than-source, and that the
+SPARQL/API/dump functions are still present and still the default.
 
 ### 3.2 WordNet (Semantic Relations, L0-13)
 
