@@ -28,7 +28,7 @@ ops), FACT-GRAPH-1 (edit-site discovery from the graph-walk work).
   with no knowledge overlay (which refuse both statements anyway); on an
   overlay binding an unreadable ledger is an error, not a pass. No gate
   (§9) changes.
-- **Gate B, B2 (2026-11-19, `docs/gate-b.md`)** — C-11 is fixed: VINDEX2's
+- **Gate B, B2 (2026-11-19; Gate B is defined in PR #881)** — C-11 is fixed: VINDEX2's
   REMOVE PATCH now rebuilds from the vindex's own KNN entries and up/down
   overrides, as VINDEX3 does. ID-8's expected result is therefore stronger:
   the vindex's own facts keep their ids, stay `active` with durability
