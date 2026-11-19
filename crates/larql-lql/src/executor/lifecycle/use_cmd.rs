@@ -65,7 +65,7 @@ impl Session {
                     _ => String::new(),
                 };
 
-                let out = vec![format!(
+                let mut out = vec![format!(
                     "Using: {} ({} layers, {} features, model: {}{})",
                     path.display(),
                     config.num_layers,
@@ -111,9 +111,7 @@ impl Session {
                     router,
                     memit_store,
                 };
-                // Reset any previous patch session
-                self.patch_recording = None;
-                self.auto_patch = false;
+                out.extend(self.reset_binding_state());
                 Ok(out)
             }
             UseTarget::Model {
@@ -142,8 +140,7 @@ impl Session {
                     weights,
                     tokenizer,
                 };
-                self.patch_recording = None;
-                self.auto_patch = false;
+                out.extend(self.reset_binding_state());
                 Ok(out)
             }
             UseTarget::Remote(url) => self.exec_use_remote(url),
@@ -213,8 +210,7 @@ impl Session {
             bos_token,
             patch_files: Vec::new(),
         };
-        self.patch_recording = None;
-        self.auto_patch = false;
+        out.extend(self.reset_binding_state());
         Ok(out)
     }
 }

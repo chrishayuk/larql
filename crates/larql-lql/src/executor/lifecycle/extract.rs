@@ -128,7 +128,9 @@ impl Session {
         let knn_path = output_dir.join(KNN_STORE_BIN);
         if knn_path.exists() {
             if let Ok(store) = larql_vindex::KnnStore::load(&knn_path) {
-                patched.knn_store = store;
+                // The vindex's own entries, as USE binds them: REMOVE PATCH
+                // rebuilds from these.
+                patched.bind_base_knn(store);
             }
         }
 
@@ -153,7 +155,7 @@ impl Session {
             router,
             memit_store,
         };
-
+        out.extend(self.reset_binding_state());
         Ok(out)
     }
 

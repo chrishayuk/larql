@@ -157,10 +157,9 @@ impl Session {
             session_id,
             model_name,
         };
-        self.patch_recording = None;
-        self.auto_patch = false;
-
-        Ok(vec![banner])
+        let mut out = vec![banner];
+        out.extend(self.reset_binding_state());
+        Ok(out)
     }
 
     /// True iff the active backend is the Remote variant.

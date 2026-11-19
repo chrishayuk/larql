@@ -168,6 +168,64 @@ impl Session {
         }
     }
 
+    /// After a successful bind (`USE`, or EXTRACT's auto-bind): give every
+    /// piece of state that derives from the previous binding its fresh value,
+    /// so the session is as one created and bound there (Gate B, B1). Run
+    /// only once the new backend is in place: a bind that fails leaves the
+    /// previous session as it was.
+    ///
+    /// Returns a line naming the open recording this discards, if there was
+    /// one: a recording is never dropped silently.
+    ///
+    /// The destructuring is exhaustive, so a field added to `Session` does
+    /// not compile until it is classified here.
+    pub(crate) fn reset_binding_state(&mut self) -> Option<String> {
+        let discarded = self.patch_recording.as_ref().map(|r| {
+            let name = if r.path.is_empty() {
+                "the anonymous recording".to_string()
+            } else {
+                format!("the recording for {}", r.path)
+            };
+            format!(
+                "Discarded {name} of the previous binding: {} unsaved operation(s). \
+                 Run SAVE PATCH before USE to keep them.",
+                r.operations.len()
+            )
+        });
+        let Session {
+            // Kept: the new binding itself, and the session's own
+            // configuration and counts, which no binding derives.
+            backend: _,
+            profile: _,
+            verifier: _,
+            contract_violations: _,
+            balance_trace: _,
+            install_fault: _,
+            model_resolver: _,
+            representation_source: _,
+            // Reset: everything the previous binding's statements built.
+            patch_recording,
+            auto_patch,
+            decoy_residual_cache,
+            raw_install_residuals,
+            installed_edges,
+            relation_resolver,
+            epoch,
+            mutations_since_minor,
+            mutations_since_major,
+        } = Session::new();
+        self.patch_recording = patch_recording;
+        self.auto_patch = auto_patch;
+        self.decoy_residual_cache = decoy_residual_cache;
+        self.raw_install_residuals = raw_install_residuals;
+        self.installed_edges = installed_edges;
+        self.relation_resolver = relation_resolver;
+        self.epoch = epoch;
+        self.mutations_since_minor = mutations_since_minor;
+        self.mutations_since_major = mutations_since_major;
+        discarded
+    }
+
     /// Choose where a VINDEX3 container bound by a LATER `USE` may take its execution representation from.
     ///
     /// The default, [`RepresentationSource::Stored`], executes the stored weights: the loader manufactures

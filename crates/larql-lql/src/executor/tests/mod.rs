@@ -473,6 +473,7 @@ fn make_rich_test_vindex_dir(tag: &str) -> std::path::PathBuf {
 }
 
 mod architecture_b_knn_store_tests_unified_i;
+mod binding_reset;
 mod compact_major_persistence_backend_vindex;
 mod compile_into_model;
 mod compile_into_vindex_integration_tests;
