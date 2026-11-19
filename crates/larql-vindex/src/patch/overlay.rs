@@ -110,9 +110,15 @@ pub struct PatchedVindex {
     /// Architecture B: per-layer retrieval-override KNN store.
     pub knn_store: super::knn_store::KnnStore,
     /// The KNN entries the bound vindex itself carries (`knn_store.bin`), as
-    /// bound. Read by the FACT-ID-1 catalogue only: `remove_patch` still
-    /// rebuilds `knn_store` from empty (docs/fact-id-1.md C-11).
+    /// bound. `remove_patch` rebuilds `knn_store` from these, and the
+    /// FACT-ID-1 catalogue folds from them (Gate B, B2).
     pub(crate) base_knn: super::knn_store::KnnStore,
+    /// The base's own up and down vector overrides when the overlay was built.
+    /// Patches write their up/down vectors onto the base (see the layering doc
+    /// above), so `remove_patch` restores these before it replays the stack;
+    /// otherwise a removed patch's vectors stay live (Gate B, B2, EDIT-9).
+    pub(crate) base_up_overrides: HashMap<(usize, usize), Vec<f32>>,
+    pub(crate) base_down_overrides: HashMap<(usize, usize), Vec<f32>>,
     /// The session journal (FACT-ID-1): every knowledge op the session applied
     /// to this overlay directly, outside `try_apply_patch`, in order. Cleared
     /// by `remove_patch` with the rest of the session state.
@@ -122,8 +128,12 @@ pub struct PatchedVindex {
 impl PatchedVindex {
     /// Create a patched vindex from a base index.
     pub fn new(base: VectorIndex) -> Self {
+        let base_up_overrides = base.metadata.up_overrides.clone();
+        let base_down_overrides = base.metadata.down_overrides.clone();
         Self {
             base,
+            base_up_overrides,
+            base_down_overrides,
             patches: Vec::new(),
             overrides_meta: HashMap::new(),
             overrides_gate: GateOverlay::default(),
