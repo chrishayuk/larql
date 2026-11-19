@@ -153,9 +153,19 @@ fn ops_compile_would_refuse_refuse_to_execute_with_its_reason() {
 fn removing_the_patch_lifts_the_refusal() {
     let fx = inferable();
     let vlp = save_vlp(&fx, Kind::UpdateWeights, COLUMNS_A, "a");
+    // The tombstone comes from an applied patch: REMOVE PATCH refuses while
+    // a session edit no applied patch holds is live (Gate B, B2).
+    let tombstone = fx.path("tombstone.vlp");
+    let mut author = session_on(&fx.container);
+    run(&mut author, &format!("BEGIN PATCH \"{}\";", q(&tombstone)));
+    run(
+        &mut author,
+        "DELETE FROM EDGES WHERE layer = 0 AND feature = 0;",
+    );
+    run(&mut author, "SAVE PATCH;");
     let mut s = session_on(&fx.container);
+    apply(&mut s, &tombstone);
     let base = printed(&mut s);
-    run(&mut s, "DELETE FROM EDGES WHERE layer = 0 AND feature = 0;");
     let applied = apply(&mut s, &vlp);
     assert!(
         has(&applied, "NOT executable in this session"),
@@ -164,6 +174,6 @@ fn removing_the_patch_lifts_the_refusal() {
     assert_execution_refused(&mut s, "COMPILE refuses that mix");
     let removed = remove(&mut s, &vlp);
     assert!(!has(&removed, "NOT executable"), "{removed:?}");
-    // The tombstone is knowledge state the removal replays away with the patch list (V2's removal contract).
+    // The tombstone's patch stays applied; only the weight op went.
     assert_eq!(printed(&mut s), base);
 }

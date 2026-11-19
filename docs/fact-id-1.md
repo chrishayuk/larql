@@ -28,6 +28,15 @@ ops), FACT-GRAPH-1 (edit-site discovery from the graph-walk work).
   with no knowledge overlay (which refuse both statements anyway); on an
   overlay binding an unreadable ledger is an error, not a pass. No gate
   (§9) changes.
+- **Gate B, B2 (2026-11-19, `docs/gate-b.md`)** — C-11 is fixed: VINDEX2's
+  REMOVE PATCH now rebuilds from the vindex's own KNN entries and up/down
+  overrides, as VINDEX3 does. ID-8's expected result is therefore stronger:
+  the vindex's own facts keep their ids, stay `active` with durability
+  `container`, and INFER answers as before the patch was applied. Detecting
+  the loss as `inconsistent` is no longer the expected outcome. REMOVE PATCH
+  also refuses, before changing anything, while the session holds a
+  knowledge edit no applied patch holds (journal non-empty, C-10), on both
+  backends: it used to drop those edits silently (§6.2).
 
 ## 1. Purpose
 
@@ -58,7 +67,7 @@ anything changes it.
 | C-8 | Compose installs are not independent: the refine pass rewrites earlier slots' gates; `REBALANCE` rewrites every installed fact's down vector and rewrites earlier recorded ops in place; `installed_edges` is session-only. Tombstoning a slot zeroes the base slot's own contribution too, so it is not a restore. | `insert/compose_v3/`, `mutation/rebalance.rs`, `tests/compile_keeps_edits.rs` | Semantic UPDATE **and** DELETE of compose facts refused (D-6). |
 | C-9 | A compose fact's identity does not survive COMPILE (the container keeps vectors and `down_meta`, not entity/relation). A KNN fact's does (`knn_store.bin`). | `compile/into_vindex*.rs` | Guarded: COMPILE says which asserted compose facts lose identity; they read back as discovered. |
 | C-10 | `SAVE PATCH` writes the recording and ends it, but the edits stay live in the overlay and are **not** an applied patch. They are in no ledger component the session can list. | `executor/patch_statements.rs` `save_patch` | A session op journal on the overlay (§3.3) makes them part of the ledger. No change to SAVE's behaviour. |
-| C-11 | On VINDEX2, `REMOVE PATCH` rebuilds the KNN store from empty, dropping the container's own `knn_store.bin` facts; VINDEX3 restores them from `base_knn`. | `patch/overlay_apply.rs` `rebuild_overrides` | Not changed (VINDEX2 is compatibility). The catalogue sees the loss and marks those facts `inconsistent` (§3.4); semantic mutation of them refuses. |
+| C-11 | **Fixed by Gate B, B2.** Was: on VINDEX2, `REMOVE PATCH` rebuilt the KNN store from empty, dropping the container's own `knn_store.bin` facts; VINDEX3 restores them from `base_knn`. | `patch/overlay_apply.rs` `rebuild_overrides` | VINDEX2 now restores the vindex's own KNN entries (and up/down overrides) as VINDEX3 does. The catalogue's `inconsistent` check stays for any other divergence (C-12). |
 | C-12 | `COMPACT MINOR` (VINDEX2) removes KNN entries straight from the store, with no recorded op. | `executor/compact.rs` | Not changed. The catalogue detects the divergence and marks the facts `inconsistent`. |
 
 ## 3. Model
@@ -128,7 +137,7 @@ version, so a later INSERT continues from it.
 | `multi_token` | one KNN entry whose target text needs more than one token | no | refused | yes |
 | `unverified` | one KNN entry, but the binding has no tokenizer to check its target text against its token id | no | refused | yes |
 | `ambiguous` | more than one live KNN entry for the key (legacy ledgers) | no | refused | yes (removes all) |
-| `inconsistent` | the fold disagrees with the live KNN store for this key (C-11, C-12, or an unknown cause) | no | refused | refused |
+| `inconsistent` | the fold disagrees with the live KNN store for this key (C-12, or an unknown cause; C-11 before Gate B, B2) | no | refused | refused |
 | `compose` | a keyed compose install | no (see FACT-PROMOTE-1) | refused | refused |
 | `degraded` | a compose fact one of whose slots was later deleted or overwritten by a physical statement | no | refused | refused |
 
@@ -268,9 +277,10 @@ Patch counts: `update_knn_fact` → updates, `delete_knn_fact` → deletes.
 - Saving and reapplying a patch reproduces the catalogue and the KNN store.
   `insert_knn` carries the key vector. The update op keeps the stored one.
 - `REMOVE PATCH` rebuilds from the base plus the remaining patches, as
-  today. On VINDEX3 that restores a container fact a removed patch had
-  deleted or updated. On VINDEX2 it does not (C-11, flagged
-  `inconsistent`).
+  today. That restores a container fact a removed patch had deleted or
+  updated, on VINDEX3 and, since Gate B, B2, on VINDEX2 (C-11 fixed). It
+  refuses, changing nothing, while the session journal holds an edit no
+  applied patch holds: the rebuild would drop it.
 - `insert_knn` keys are decode-checked before apply on both backends
   (`validate_patch_vectors`, `validate_v3_patch`); FACT-ID-1 confirms this
   with a test.
@@ -308,7 +318,7 @@ named tests passing and by nothing else.
 | ID-5 | Single-token rule (KNN only) | A two-token KNN target is refused on INSERT and on UPDATE. A legacy multi-token entry (from a written patch) lists `multi_token` and refuses UPDATE. A compose INSERT of the same target is not refused by D-5. |
 | ID-6 | Reversible | Patch A inserts, patch B updates: removing B restores A's target in INFER and SELECT. Same for a delete. VINDEX3: a container fact deleted in a patch is restored by REMOVE PATCH. |
 | ID-7 | Save → replay → reload | The catalogue (ids, targets, statuses, versions) and INFER after a script equal those of a fresh session APPLYing its saved patch. COMPILE then reopen: KNN facts present, `durability = container`, same ids. |
-| ID-8 | VINDEX2 parity | On a VINDEX2 fixture, the same ops give the same ids, statuses and versions. A VINDEX2 REMOVE PATCH that drops container facts reports them `inconsistent` (C-11). |
+| ID-8 | VINDEX2 parity | On a VINDEX2 fixture, the same ops give the same ids, statuses and versions. A VINDEX2 REMOVE PATCH that drops container facts reports them `inconsistent` (C-11). *Since Gate B, B2 (stronger):* REMOVE PATCH keeps them: same ids, `active`, durability `container`, same INFER as before the patch was applied. |
 | ID-9 | Compose guard | A keyed compose fact lists as `compose`; semantic UPDATE and DELETE are refused naming REMOVE PATCH, with state unchanged. COMPILE with one prints the identity-loss line. |
 | ID-10 | No regression | Existing `larql-lql` and `larql-vindex` suites pass. Any test changed by D-5 or by the duplicate-INSERT refusal is listed in the PR. |
 | ID-11 | Atomic failure | For each refusal path in §8, the state of §8 is unchanged. |
@@ -323,5 +333,5 @@ named tests passing and by nothing else.
 FACT-PROMOTE-1; FACT-WSP-1; FACT-GRAPH-1; multi-token targets; compose
 UPDATE/DELETE by identity; compose identity across COMPILE; SELECT
 projection; addressing by fact id; FR3 for asserted rows; VINDEX2's
-container-KNN loss on REMOVE PATCH (C-11) and COMPACT MINOR's unrecorded
-removal (C-12), both only detected; remote-specific behaviour.
+COMPACT MINOR's unrecorded removal (C-12), only detected (VINDEX2's
+container-KNN loss on REMOVE PATCH, C-11, was fixed by Gate B, B2); remote-specific behaviour.

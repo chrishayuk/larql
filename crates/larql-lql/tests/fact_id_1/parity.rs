@@ -5,7 +5,7 @@
 //! docs/fact-id-1.md C-11). A change to the store that no op records is
 //! still listed `inconsistent`, not passed off as the ledger's view.
 
-use larql_lql::FactStatus;
+use larql_lql::{FactDurability, FactStatus};
 use larql_vindex::format::vindex3::fixtures::{dense_f32_model, DENSE_VOCAB};
 
 use super::*;
@@ -93,11 +93,29 @@ fn compiled_with_one_fact(dir: &Path) -> Session {
     reopened
 }
 
+/// The prompt the vindex's own fact `([2], b) -> [5]` answers.
+const OWN_FACT_PROMPT: &str = "The b of [2] is";
+
+/// ID-8 after Gate B, B2 (docs/fact-id-1.md C-11, fixed): REMOVE PATCH on
+/// VINDEX2 keeps the vindex's own KNN facts as they were. A stronger
+/// guarantee than before, which only detected the loss: the same fact ids,
+/// still `active`, still held by the container, and INFER answers as it did
+/// before the patch was applied.
 #[test]
 fn vindex2_remove_patch_keeps_the_vindexs_own_facts() {
     let dir = tempfile::tempdir().unwrap();
     let mut reopened = compiled_with_one_fact(dir.path());
+    let own = only_fact(&reopened);
+    assert_eq!(own.id, larql_vindex::FactKey::new("[2]", "b").fact_id());
+    assert_eq!(own.status, FactStatus::Active);
+    assert_eq!(own.durability, FactDurability::Container);
+    let answer = infer_top1(&mut reopened, OWN_FACT_PROMPT);
+    assert!(
+        answer.contains("[5]"),
+        "the own fact must drive INFER: {answer}"
+    );
     let before = observe(&mut reopened);
+
     let empty = write_patch(
         dir.path(),
         "empty.vlp",
@@ -105,7 +123,9 @@ fn vindex2_remove_patch_keeps_the_vindexs_own_facts() {
     );
     run(&mut reopened, &format!("APPLY PATCH \"{empty}\";"));
     run(&mut reopened, &format!("REMOVE PATCH \"{empty}\";"));
-    assert_eq!(only_fact(&reopened).status, FactStatus::Active);
+
+    assert_eq!(only_fact(&reopened), own);
+    assert_eq!(infer_top1(&mut reopened, OWN_FACT_PROMPT), answer);
     assert_eq!(observe(&mut reopened), before);
 }
 

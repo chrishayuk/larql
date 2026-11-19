@@ -131,7 +131,7 @@ fn an_update_is_one_version_step_and_versions_survive_deletion() {
 /// from the session journal; REMOVE PATCH of an unrelated patch resets the
 /// session state, and the catalogue follows the store.
 #[test]
-fn the_journal_keeps_a_saved_fact_listed_until_the_session_state_resets() {
+fn the_journal_keeps_a_saved_fact_listed_and_remove_patch_refuses_to_drop_it() {
     let container = v3_container();
     let dir = tempfile::tempdir().unwrap();
     let mut session = bound(container.path());
@@ -151,11 +151,12 @@ fn the_journal_keeps_a_saved_fact_listed_until_the_session_state_resets() {
     );
     assert_eq!(fact.status, FactStatus::Active);
     assert!(infer_top1(&mut session, CANONICAL_PROMPT).contains("[7]"));
+    let before = observe(&mut session);
 
-    run(&mut session, &format!("REMOVE PATCH \"{empty}\";"));
-    assert!(
-        facts(&session).is_empty(),
-        "the session state was reset with the store"
-    );
-    assert!(!infer(&mut session, CANONICAL_PROMPT).contains("knn_override"));
+    // No applied patch holds the saved fact, so removing a patch would drop
+    // it (Gate B, B2): REMOVE PATCH refuses and nothing changes.
+    let why = refused(&mut session, &format!("REMOVE PATCH \"{empty}\";"));
+    assert!(why.contains("REMOVE PATCH refused"), "{why}");
+    assert_eq!(only_fact(&session), fact);
+    assert_eq!(observe(&mut session), before);
 }

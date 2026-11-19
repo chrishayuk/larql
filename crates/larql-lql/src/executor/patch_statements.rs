@@ -498,6 +498,25 @@ impl Session {
 
     /// The typed operation behind `REMOVE PATCH`: remove the applied patch `path` names.
     pub fn remove_patch(&mut self, path: &str) -> Result<RemovedPatch, LqlError> {
+        // Removal rebuilds the state from the bound vindex and the remaining
+        // patches. A knowledge edit no applied patch holds would be dropped,
+        // and replaying it without the removed patch is not defined (Gate B,
+        // B2): refuse before anything changes.
+        let unowned = match &self.backend {
+            Backend::Vindex { patched, .. } => patched.session_ops().len(),
+            Backend::Vindex3 { overlay, .. } => overlay.session_ops().len(),
+            _ => 0,
+        };
+        if unowned > 0 {
+            return Err(LqlError::Execution(format!(
+                "REMOVE PATCH refused: this session holds {unowned} knowledge edit(s) that no \
+                 applied patch holds (made in this session, saved or not). Removing a patch \
+                 rebuilds the state from the vindex and the remaining patches, which would drop \
+                 them. Nothing was changed. To remove the patch, save the session's edits with \
+                 BEGIN PATCH and SAVE PATCH, bind the vindex again with USE, and APPLY the \
+                 patches you want."
+            )));
+        }
         let by_name = |p: &larql_vindex::VindexPatch| p.description.as_deref() == Some(path);
         // Whether the removed patch carried stored-weight ops: its removal is then a change to what executes.
         let mut carried_weight_ops = false;
