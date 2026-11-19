@@ -7,6 +7,7 @@ mod delete;
 mod insert;
 mod merge;
 mod rebalance;
+mod refit;
 mod update;
 pub(crate) mod update_set;
 

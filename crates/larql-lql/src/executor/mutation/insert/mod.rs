@@ -60,19 +60,46 @@ impl Session {
             InsertMode::Compose => { /* fallthrough */ }
         }
 
+        // A compose install re-fits the vectors of earlier installs (the
+        // batch refine and the balance passes). Snapshot them first so each
+        // one it changes is recorded as a re-fit, and the recording replays
+        // to exactly this state (Gate B, B3).
+        let prior = self.prior_install_vectors();
         // The V3 compose install: vectors land in the knowledge
         // overlay and reach execution through the operand-source seam.
-        if matches!(self.backend, crate::executor::Backend::Vindex3 { .. }) {
-            return self.exec_insert_compose_v3(
+        let out = if matches!(self.backend, crate::executor::Backend::Vindex3 { .. }) {
+            self.exec_insert_compose_v3(
                 entity,
                 relation,
                 target,
                 layer_hint,
                 confidence,
                 alpha_override,
-            );
-        }
+            )
+        } else {
+            self.exec_insert_compose_v2(
+                entity,
+                relation,
+                target,
+                layer_hint,
+                confidence,
+                alpha_override,
+            )
+        }?;
+        self.record_refits(&prior);
+        Ok(out)
+    }
 
+    /// The VINDEX2 compose install.
+    fn exec_insert_compose_v2(
+        &mut self,
+        entity: &str,
+        relation: &str,
+        target: &str,
+        layer_hint: Option<u32>,
+        confidence: Option<f32>,
+        alpha_override: Option<f32>,
+    ) -> Result<Vec<String>, LqlError> {
         // ALPHA is the dimensionless multiplier on the layer's median
         // down-vector norm — the actual down vector written into the
         // overlay is `target_embed_unit * d_ref * alpha_mul`. The

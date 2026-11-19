@@ -236,6 +236,18 @@ impl FactCatalogue {
                 }
                 *compose_run = Some(key);
             }
+            // A re-fit: a later compose INSERT rewrote this install's vectors
+            // and recorded them (Gate B, B3). Same fact, same target, same
+            // version; not a physical edit of the slot.
+            PatchOp::Update {
+                down_meta: None,
+                gate_vector_b64,
+                up_vector_b64,
+                down_vector_b64,
+                ..
+            } if gate_vector_b64.is_some()
+                || up_vector_b64.is_some()
+                || down_vector_b64.is_some() => {}
             PatchOp::Insert { layer, feature, .. }
             | PatchOp::Update { layer, feature, .. }
             | PatchOp::Delete { layer, feature, .. } => {
