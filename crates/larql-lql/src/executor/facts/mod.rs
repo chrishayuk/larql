@@ -217,7 +217,7 @@ impl Session {
             .count();
         (compose > 0).then(|| {
             format!(
-                "  note: {compose} asserted compose fact(s) lose their identity in the output — it                  keeps their vectors, not their entity and relation, so they read back as                  discovered rows (KNN facts keep theirs in knn_store.bin)"
+                "  note: {compose} asserted compose fact(s) lose their identity in the output — it keeps their vectors, not their entity and relation, so they read back as discovered rows (KNN facts keep theirs in knn_store.bin)"
             )
         })
     }

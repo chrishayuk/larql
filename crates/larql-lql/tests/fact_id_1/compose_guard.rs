@@ -44,7 +44,10 @@ fn compose_facts_are_listed_read_only_and_lose_identity_on_compile() {
         &format!("COMPILE CURRENT INTO VINDEX \"{}\";", lql_path(&compiled)),
     );
     assert!(
-        compile.contains("2 asserted compose fact(s) lose their identity"),
+        compile.contains(
+            "2 asserted compose fact(s) lose their identity in the output — it keeps their \
+             vectors, not their entity and relation, so they read back as discovered rows"
+        ),
         "{compile}"
     );
     let reopened = bound(&compiled);
