@@ -82,7 +82,7 @@ impl Session {
                 if knn_path.exists() {
                     match larql_vindex::KnnStore::load(&knn_path) {
                         Ok(store) => {
-                            patched.knn_store = store;
+                            patched.bind_base_knn(store);
                         }
                         Err(e) => {
                             eprintln!("warning: failed to load knn_store.bin: {e}");

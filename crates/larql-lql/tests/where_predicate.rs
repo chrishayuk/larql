@@ -703,16 +703,23 @@ fn a_mutation_refuses_entity_with_relation_and_changes_nothing() {
     let before = fx.rows();
     let clause = r#"entity = "Paris" AND relation = "capital""#;
 
+    // The exact pair alone addresses an asserted fact (FACT-ID-1). There is
+    // none here, so it is refused without widening to the discovered rows.
     for stmt in [
         format!("DELETE FROM EDGES WHERE {clause};"),
         format!("UPDATE EDGES SET target = \"changed\" WHERE {clause};"),
-        format!("DELETE FROM EDGES WHERE {clause} AND layer = 0 AND feature = 0;"),
     ] {
         let err = try_run(&mut fx.session, &stmt).expect_err(&stmt);
-        assert!(err.contains(REFUSAL), "{stmt}: {err}");
-        assert!(err.contains("`entity` and `relation`"), "{stmt}: {err}");
+        assert!(err.contains("no asserted fact"), "{stmt}: {err}");
+        assert!(err.contains("never discovered rows"), "{stmt}: {err}");
         assert_eq!(fx.rows(), before, "{stmt}: the overlay changed");
     }
+    // Any other clause naming both keeps the gate-walk refusal.
+    let stmt = format!("DELETE FROM EDGES WHERE {clause} AND layer = 0 AND feature = 0;");
+    let err = try_run(&mut fx.session, &stmt).expect_err(&stmt);
+    assert!(err.contains(REFUSAL), "{stmt}: {err}");
+    assert!(err.contains("`entity` and `relation`"), "{stmt}: {err}");
+    assert_eq!(fx.rows(), before, "{stmt}: the overlay changed");
     assert_eq!(fx.recorded_operations(), 0);
 }
 

@@ -53,7 +53,12 @@ pub struct KnowledgeOverlay {
     /// The L0 knowledge the bound container itself carries (its `knn_store.bin`), as it stood when the
     /// container was bound. It is the container's meaning, not an edit: only a difference from it is session
     /// state, and removing a patch replays over it. Set by [`Self::bind_base_knn`].
-    base_knn: KnnStore,
+    pub(super) base_knn: KnnStore,
+    /// The session journal (FACT-ID-1): every knowledge op the session applied
+    /// to this overlay directly, outside `try_apply_patch`, in order. Cleared
+    /// with the rest of the session state by `remove_patch`. See
+    /// [`super::journal`].
+    pub(super) session_ops: Vec<(usize, PatchOp)>,
     /// Patches applied to this session, in application order.
     pub patches: Vec<VindexPatch>,
     /// Feature-meta overrides: `Some(meta)` replaces the base view's
@@ -555,6 +560,7 @@ impl KnowledgeOverlay {
         self.patches.remove(index);
         self.invalidate_live_weights();
         self.knn_store = self.base_knn.clone();
+        self.session_ops.clear();
         self.overrides_meta.clear();
         self.deleted.clear();
         self.overrides_gate.clear();
@@ -593,6 +599,9 @@ impl KnowledgeOverlay {
                 }
                 PatchOp::DeleteKnn { entity } => {
                     self.knn_store.remove_by_entity(entity);
+                }
+                PatchOp::DeleteKnnFact { .. } | PatchOp::UpdateKnnFact { .. } => {
+                    self.knn_store.apply_fact_op(op);
                 }
                 // Stored-weight edits have no slot state: they are read back
                 // from the patch list by `weight_ops`, written into a new
@@ -723,7 +732,10 @@ fn validate_v3_patch(patch: &VindexPatch) -> Result<(), VindexError> {
                     VindexError::Parse(format!("patch op {i}: corrupt key_vector_b64: {e}"))
                 })?;
             }
-            PatchOp::DeleteKnn { .. } | PatchOp::Delete { .. } => {}
+            PatchOp::DeleteKnn { .. }
+            | PatchOp::DeleteKnnFact { .. }
+            | PatchOp::UpdateKnnFact { .. }
+            | PatchOp::Delete { .. } => {}
             PatchOp::WeightDelta(_)
             | PatchOp::StructuredWeight(_)
             | PatchOp::LowRankColumnsWeight(_) => {

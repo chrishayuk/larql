@@ -146,7 +146,7 @@ fn rebalance_after_compose_insert_runs_real_loop() {
 
 #[test]
 fn insert_knn_against_full_fixture_runs() {
-    let (mut session, dir) = full_vindex_session("insert_knn");
+    let (mut session, dir) = knn_full_vindex_session("insert_knn");
     let stmt = parser::parse(
         r#"INSERT INTO EDGES (entity, relation, target)
            VALUES ("[1]", "[2]", "[5]") MODE KNN;"#,
@@ -160,7 +160,7 @@ fn insert_knn_against_full_fixture_runs() {
 fn compact_minor_after_knn_insert_promotes_l0_to_l1() {
     // KNN INSERT writes to L0 (knn_store). COMPACT MINOR then
     // promotes those entries to L1 via compose-mode reinstall.
-    let (mut session, dir) = full_vindex_session("compact_minor_promotes");
+    let (mut session, dir) = knn_full_vindex_session("compact_minor_promotes");
 
     let insert = parser::parse(
         r#"INSERT INTO EDGES (entity, relation, target)
@@ -299,7 +299,7 @@ fn infer_with_canonical_knn_prompt_triggers_override_branch() {
     // prompt forces the cosine match path: the captured residual matches
     // the stored key 1:1, so apply_knn_override returns Some(...) and the
     // formatter renders the override-row branch in infer.rs.
-    let (mut session, dir) = full_vindex_session("infer_canonical_override");
+    let (mut session, dir) = knn_full_vindex_session("infer_canonical_override");
 
     let insert = parser::parse(
         r#"INSERT INTO EDGES (entity, relation, target)
@@ -335,7 +335,7 @@ fn explain_infer_with_canonical_knn_prompt_renders_override_summary() {
     // but for EXPLAIN INFER, which routes through `exec_infer_trace`
     // and renders the override summary line + "Pending retrieval
     // override" note.
-    let (mut session, dir) = full_vindex_session("explain_infer_canonical_override");
+    let (mut session, dir) = knn_full_vindex_session("explain_infer_canonical_override");
 
     let insert = parser::parse(
         r#"INSERT INTO EDGES (entity, relation, target)
@@ -361,7 +361,7 @@ fn infer_after_knn_insert_drives_override_branch() {
     // INSERT KNN writes a residual key into the KnnStore. The next
     // INFER call sees `infer.knn_override = Some(_)` and renders the
     // override-row formatting branch.
-    let (mut session, dir) = full_vindex_session("infer_knn_override");
+    let (mut session, dir) = knn_full_vindex_session("infer_knn_override");
 
     let insert = parser::parse(
         r#"INSERT INTO EDGES (entity, relation, target)

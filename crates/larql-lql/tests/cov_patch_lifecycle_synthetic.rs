@@ -43,6 +43,11 @@ fn apply_then_show_lists_applied_patch() {
     );
     let saved = try_run(&mut session, "SAVE PATCH;").expect("save");
     assert!(saved.join("\n").contains("Saved"), "save output: {saved:?}");
+    // The saved fact is live in this session; APPLY in a fresh one (a
+    // re-asserted fact is refused, FACT-ID-1 I-2).
+    let mut session = Session::new();
+    let path_for_sql = dir_str.replace('\\', "\\\\");
+    try_run(&mut session, &format!(r#"USE "{path_for_sql}";"#)).expect("reopen");
 
     let applied = try_run(&mut session, &format!(r#"APPLY PATCH "{vlp}";"#)).expect("apply");
     assert!(

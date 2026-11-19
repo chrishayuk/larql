@@ -186,6 +186,13 @@ impl Session {
                 "  ({matched} edges match; showing {limit} — raise LIMIT to list them all)"
             ));
         }
+        // FACT-ID-1 §5.2: an asserted fact the clause names by identity is
+        // listed above the discovered rows; otherwise output is unchanged.
+        if nearest.is_none() {
+            if let Some(fact) = self.selected_fact(conditions) {
+                return Ok(crate::executor::facts::with_asserted_block(&fact, out));
+            }
+        }
         Ok(out)
     }
 

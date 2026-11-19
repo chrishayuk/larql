@@ -91,8 +91,10 @@ impl VindexPatch {
                     check_layer(i, *layer, geometry)?;
                     check_vector(i, "key_vector_b64", key_vector_b64, geometry)?;
                 }
-                // Names an entity, not a slot, and carries no vector.
-                PatchOp::DeleteKnn { .. } => {}
+                // Name an entity (and a relation), not a slot, and carry no vector.
+                PatchOp::DeleteKnn { .. }
+                | PatchOp::DeleteKnnFact { .. }
+                | PatchOp::UpdateKnnFact { .. } => {}
                 // Names no slot and carries no residual vector. It is bound
                 // to a container by its own digests: the VINDEX3 overlay
                 // checks those, and the VINDEX2 overlay refuses the op.

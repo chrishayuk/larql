@@ -109,12 +109,12 @@ fn describe_knowledge_and_output_bands_render() {
 
     try_run(
         &mut session,
-        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "Paris") MODE KNN AT LAYER 1;"#,
+        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "[9]") MODE KNN AT LAYER 1;"#,
     )
     .expect("knn insert at layer 1");
     try_run(
         &mut session,
-        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "language", "French") MODE KNN AT LAYER 0;"#,
+        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "language", "[8]") MODE KNN AT LAYER 0;"#,
     )
     .expect("knn insert at layer 0");
 
@@ -142,12 +142,12 @@ fn describe_output_band_brief_cap() {
 
     try_run(
         &mut session,
-        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "Paris") MODE KNN AT LAYER 0;"#,
+        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "[9]") MODE KNN AT LAYER 0;"#,
     )
     .expect("knn insert at layer 0");
     try_run(
         &mut session,
-        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "language", "French") MODE KNN AT LAYER 1;"#,
+        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "language", "[8]") MODE KNN AT LAYER 1;"#,
     )
     .expect("knn insert at layer 1");
 

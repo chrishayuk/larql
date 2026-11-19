@@ -142,10 +142,8 @@ impl Session {
         }
 
         // ── Phase 4: record patch ops + build output summary ──
-        if let Some(ref mut recording) = self.patch_recording {
-            for slot in &installed {
-                recording.operations.push(slot.patch_op.clone());
-            }
+        for slot in &installed {
+            self.record_knowledge_op(slot.patch_op.clone());
         }
 
         Ok(format_insert_summary(

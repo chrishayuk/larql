@@ -176,6 +176,7 @@ use larql_inference::ndarray::Array2;
 mod moe_fixtures;
 mod vindex_fixtures;
 use moe_fixtures::*;
+use single_token_fixtures::*;
 use vindex_fixtures::*;
 
 /// A fresh COMPILE destination *beside* the test vindex at `source`.
@@ -478,6 +479,7 @@ mod compile_into_vindex_integration_tests;
 mod describe_on_moe_router_fixture_try_moe_d;
 mod describe_rich_fixture;
 mod diff_into_patch;
+mod fact_internals;
 mod full_fixture_real_modelweights_safetenso;
 mod full_fixture_tests_real_modelweights_on;
 mod infer_trace_explain_infer_mode_variants;
@@ -488,4 +490,5 @@ mod pipe;
 mod session_patched_overlay_mut_accessor;
 mod session_state_no_backend;
 mod show_stats_verbs;
+mod single_token_fixtures;
 mod weight_backend_tests;

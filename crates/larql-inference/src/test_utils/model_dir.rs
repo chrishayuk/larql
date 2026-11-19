@@ -294,6 +294,14 @@ pub fn write_synthetic_q4k_model_dir_layers(
 /// and whose `pre_tokenizer` is **null** — bracketed forms encode as a
 /// single token. Public so tests can build a matching in-memory
 /// `Tokenizer` without going through `write_synthetic_model_dir`.
+///
+/// A `Strip` normalizer trims surrounding whitespace, so the spaced form a
+/// KNN or compose INSERT encodes (`" [5]"`) is the single token 5, as
+/// `"[5]"` is. Without it every spaced target was `[UNK]`, and a KNN entry
+/// stored its target text beside id 0 — which LQL now refuses (FACT-ID-1
+/// D-5: a KNN target is one token). Only leading and trailing whitespace
+/// is trimmed, so a multi-word prompt encodes as before, and no id gains a
+/// second spelling.
 pub fn synthetic_tokenizer_json(vocab_size: usize) -> String {
     let mut vocab_json = serde_json::Map::new();
     for i in 0..vocab_size as u64 {
@@ -306,7 +314,7 @@ pub fn synthetic_tokenizer_json(vocab_size: usize) -> String {
         "truncation": null,
         "padding": null,
         "added_tokens": [],
-        "normalizer": null,
+        "normalizer": { "type": "Strip", "strip_left": true, "strip_right": true },
         "pre_tokenizer": null,
         "post_processor": null,
         "decoder": null,

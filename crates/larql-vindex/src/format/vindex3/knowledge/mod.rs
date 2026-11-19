@@ -43,6 +43,7 @@
 //! conformance fixtures this rung gates on; lazy/memoised annotation
 //! for large containers is deliberately later, perf-shaped work.
 
+mod journal;
 pub mod live_weights;
 pub mod overlay;
 pub mod postings;

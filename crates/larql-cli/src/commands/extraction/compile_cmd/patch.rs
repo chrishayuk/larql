@@ -22,6 +22,8 @@ fn uncompilable_kind(op: &larql_vindex::PatchOp) -> Option<&'static str> {
         PatchOp::Delete { .. } => Some("delete"),
         PatchOp::InsertKnn { .. } => Some("insert_knn"),
         PatchOp::DeleteKnn { .. } => Some("delete_knn"),
+        PatchOp::DeleteKnnFact { .. } => Some("delete_knn_fact"),
+        PatchOp::UpdateKnnFact { .. } => Some("update_knn_fact"),
         PatchOp::WeightDelta(_) => Some("weight_delta"),
         PatchOp::StructuredWeight(_) => Some("structured_weight"),
         PatchOp::LowRankColumnsWeight(_) => Some("low_rank_columns_weight"),

@@ -469,6 +469,15 @@ fn every_statement_is_sensible_on_a_v3_binding() {
     let begin_patch = format!(r#"BEGIN PATCH "{patch_file}";"#);
     let apply_patch = format!(r#"APPLY PATCH "{patch_file}";"#);
     let remove_patch = format!(r#"REMOVE PATCH "{patch_file}";"#);
+    let empty_file = patch_dir.path().join("empty.vlp");
+    std::fs::write(
+        &empty_file,
+        r#"{"version":1,"base_model":"lql-fixture","created_at":"","operations":[]}"#,
+    )
+    .unwrap();
+    let empty_file = lql_path(empty_file);
+    let apply_empty = format!(r#"APPLY PATCH "{empty_file}";"#);
+    let remove_empty = format!(r#"REMOVE PATCH "{empty_file}";"#);
     let cases: Vec<(String, Expect)> =
         vec![
         // ── Serves on V3 ──
@@ -500,11 +509,12 @@ fn every_statement_is_sensible_on_a_v3_binding() {
         // ── Mutation (V3-LQL-3B): the default KNN insert executes;
         // the compose install refuses until the operand-source seam ──
         (
-            r#"INSERT INTO EDGES (entity, relation, target) VALUES ("a", "b", "c");"#.to_string(),
+            r#"INSERT INTO EDGES (entity, relation, target) VALUES ("a", "b", "[3]");"#.to_string(),
             Ok,
         ),
+        // A second fact: one key is asserted once (FACT-ID-1).
         (
-            r#"INSERT INTO EDGES (entity, relation, target) VALUES ("a", "b", "c") MODE COMPOSE;"#
+            r#"INSERT INTO EDGES (entity, relation, target) VALUES ("a", "c", "c") MODE COMPOSE;"#
                 .to_string(),
             Ok,
         ),
@@ -524,6 +534,11 @@ fn every_statement_is_sensible_on_a_v3_binding() {
         // knowledge overlay ──
         (begin_patch.clone(), Ok),
         (r#"SAVE PATCH;"#.to_string(), Ok), // writes the recording (the INSERT above) to the temp path
+        // The saved facts are still live in the session; applying the file
+        // over them would assert them twice (FACT-ID-1 I-2). Applying and
+        // removing an empty patch resets the session state first.
+        (apply_empty.clone(), Ok),
+        (remove_empty.clone(), Ok),
         (apply_patch.clone(), Ok),          // applies the file SAVE just wrote
         (remove_patch.clone(), Ok),
         // ── Lifecycle that targets other artifacts: any helpful error ──

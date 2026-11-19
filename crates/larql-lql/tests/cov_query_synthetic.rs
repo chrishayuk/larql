@@ -72,8 +72,10 @@ const SEED_TARGETS: &[&str] = &["Alpha", "Bravo", "Charlie", "Delta", "Echo", "F
 /// (×30) installs reliably do.
 fn seed_compose_features(session: &mut Session) {
     for (i, target) in SEED_TARGETS.iter().enumerate() {
-        compose_insert(session, &format!("[{i}]"), &format!("rel{i}"), target, 0);
-        compose_insert(session, &format!("[{i}]"), &format!("rel{i}"), target, 1);
+        // One fact per (entity, relation): a key is asserted once
+        // (FACT-ID-1), so each layer gets its own relation.
+        compose_insert(session, &format!("[{i}]"), &format!("rel{i}a"), target, 0);
+        compose_insert(session, &format!("[{i}]"), &format!("rel{i}b"), target, 1);
     }
 }
 
@@ -115,7 +117,7 @@ fn describe_knn_entry_renders_signal_and_syntax_band() {
     let (mut session, _dir, _) = fresh_session();
     let _ = try_run(
         &mut session,
-        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "Paris") MODE KNN AT LAYER 1;"#,
+        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "[9]") MODE KNN AT LAYER 1;"#,
     )
     .expect("knn insert ok");
     // Default mode renders the row without the `also:` tag suffix; VERBOSE
@@ -132,7 +134,7 @@ fn describe_knn_entry_renders_signal_and_syntax_band() {
         "expected syntax band: {joined}"
     );
     assert!(
-        joined.contains("Paris"),
+        joined.contains("[9]"),
         "expected KNN target rendered: {joined}"
     );
 
@@ -152,14 +154,11 @@ fn describe_verbose_uses_verbose_max_edges() {
     let (mut session, _dir, _) = fresh_session();
     let _ = try_run(
         &mut session,
-        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "Paris") MODE KNN AT LAYER 0;"#,
+        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "[9]") MODE KNN AT LAYER 0;"#,
     )
     .expect("knn insert ok");
     let out = ok(&mut session, r#"DESCRIBE "[1]" VERBOSE;"#);
-    assert!(
-        out.join("\n").contains("Paris"),
-        "verbose describe: {out:?}"
-    );
+    assert!(out.join("\n").contains("[9]"), "verbose describe: {out:?}");
 }
 
 #[test]
@@ -169,7 +168,7 @@ fn describe_brief_and_raw_modes_run() {
     let (mut session, _dir, _) = fresh_session();
     let _ = try_run(
         &mut session,
-        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "Paris") MODE KNN AT LAYER 0;"#,
+        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "[9]") MODE KNN AT LAYER 0;"#,
     )
     .expect("knn insert ok");
     let _ = ok(&mut session, r#"DESCRIBE "[1]" BRIEF;"#);
@@ -184,7 +183,7 @@ fn describe_relations_only_filter_runs() {
     let (mut session, _dir, _) = fresh_session();
     let _ = try_run(
         &mut session,
-        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "Paris") MODE KNN AT LAYER 0;"#,
+        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "[9]") MODE KNN AT LAYER 0;"#,
     )
     .expect("knn insert ok");
     let _ = ok(&mut session, r#"DESCRIBE "[1]" RELATIONS ONLY;"#);

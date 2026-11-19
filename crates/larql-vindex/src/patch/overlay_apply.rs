@@ -51,7 +51,10 @@ fn validate_patch_vectors(patch: &VindexPatch) -> Result<(), VindexError> {
             PatchOp::InsertKnn { key_vector_b64, .. } => {
                 check(i, "key_vector_b64", key_vector_b64)?;
             }
-            PatchOp::Delete { .. } | PatchOp::DeleteKnn { .. } => {}
+            PatchOp::Delete { .. }
+            | PatchOp::DeleteKnn { .. }
+            | PatchOp::DeleteKnnFact { .. }
+            | PatchOp::UpdateKnnFact { .. } => {}
             PatchOp::WeightDelta(_)
             | PatchOp::StructuredWeight(_)
             | PatchOp::LowRankColumnsWeight(_) => {
@@ -122,6 +125,10 @@ impl PatchedVindex {
                 }
                 PatchOp::DeleteKnn { entity } => {
                     self.knn_store.remove_by_entity(entity);
+                    continue;
+                }
+                PatchOp::DeleteKnnFact { .. } | PatchOp::UpdateKnnFact { .. } => {
+                    self.knn_store.apply_fact_op(op);
                     continue;
                 }
                 PatchOp::WeightDelta(_)
@@ -238,6 +245,8 @@ impl PatchedVindex {
                 }
                 PatchOp::InsertKnn { .. }
                 | PatchOp::DeleteKnn { .. }
+                | PatchOp::DeleteKnnFact { .. }
+                | PatchOp::UpdateKnnFact { .. }
                 | PatchOp::WeightDelta(_)
                 | PatchOp::StructuredWeight(_)
                 | PatchOp::LowRankColumnsWeight(_) => {
@@ -263,6 +272,7 @@ impl PatchedVindex {
         self.overrides_gate.clear();
         self.deleted.clear();
         self.knn_store = super::knn_store::KnnStore::default();
+        self.session_ops.clear();
         let patches: Vec<VindexPatch> = std::mem::take(&mut self.patches);
         // Each was checked against this same base when it was admitted, so
         // re-resolving the stack cannot reject one.
