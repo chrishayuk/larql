@@ -87,6 +87,12 @@ references are to `3b5dd3d2`.
   of them. VINDEX2 drops their metadata and gate rows but, before the B2 fix,
   kept their up/down vectors. This is open under B2 pending an owner decision:
   replay them from a session journal, or refuse.
+- **Decision 2026-11-19 (owner): refuse.** REMOVE PATCH refuses, before
+  anything changes, while the session holds a knowledge edit no applied patch
+  holds. Replaying such edits without the removed patch is not defined
+  (apply A, edit B, apply C, remove A). A replay or rebase of session edits
+  would be a separate, explicitly verified operation. Implemented in #884
+  (`crates/larql-lql/tests/gate_b_remove_patch_refusal.rs`).
 
 ### B3: exact replay | FAIL (exec on VINDEX3; VINDEX2 by reading the code at audit time)
 
