@@ -1,0 +1,244 @@
+"""Tests for prec_diag/f64_accuracy_v2.py, the `hf-f64-accuracy/2` test.
+
+The gate runs on synthetic arrays, including constructed controls that must
+fail. The end to end case runs E1 and E2 through the experiment runner's
+synthetic world (fake LARQL, real `hf_oracle.py` on a synthetic checkpoint).
+No real model is used.
+
+Run: python3 -I -m unittest discover -s scripts -p 'test_prec_diag_*.py'
+"""
+
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from prec_diag import evidence as ev  # noqa: E402
+from prec_diag import f64_accuracy as fa  # noqa: E402
+from prec_diag import f64_accuracy_v2 as f2  # noqa: E402
+import test_prec_diag_experiment as tex  # noqa: E402
+
+N = 1040
+BASE = 1e-4
+
+
+def world(x=BASE, a32=BASE):
+    """accuracy[b][i], a32_accuracy[i], agreement[b][i], all constant."""
+    acc = {b: {i: np.full(N, x) for i in f2.INPUTS} for b in f2.BACKENDS}
+    a32 = {i: np.full(N, a32) for i in f2.INPUTS}
+    agr = {b: {i: np.zeros(N) for i in f2.INPUTS} for b in f2.BACKENDS}
+    return acc, a32, agr
+
+
+class Constants(unittest.TestCase):
+    def test_v2_reuses_the_frozen_r1_constants_and_invents_none(self):
+        self.assertEqual((f2.NAME, f2.VERSION, f2.TEST), ("hf-f64-accuracy", 2, "hf-f64-accuracy/2"))
+        self.assertEqual((f2.GATE, f2.EPSILON, f2.TAIL_RATIO), (1e-3, 1e-5, 4.0))
+        self.assertEqual((f2.analysis.R1_COMPARABLE_MEDIAN, f2.analysis.R1_COMPARABLE_P99,
+                          f2.analysis.R1_MATERIAL_COUNT), (2.0, 4.0, 3))
+        self.assertEqual((f2.BACKENDS, f2.INPUTS), (fa.BACKENDS, fa.INPUTS))
+
+
+class Gate(unittest.TestCase):
+    def test_as_accurate_as_a32_everywhere_passes(self):
+        v = f2.verdict(*world())
+        self.assertEqual(v["verdict"], f2.PASS)
+        self.assertEqual(v["backends"]["C"]["r1"]["verdict"], "comparable")
+
+    def test_the_1b_shape_passes_v2_and_still_reports_the_v1_failure(self):
+        # Gemma 3 1B, I_nr1 pos 888: A32 9.88e-4, C 1.082e-3, D 1.22e-4.
+        acc, a32, agr = world()
+        a32["I_nr1"][888] = 9.88e-4
+        acc["C"]["I_nr1"][888] = 1.082e-3
+        acc["D"]["I_nr1"][888] = 1.22e-4
+        v = f2.verdict(acc, a32, agr)
+        self.assertEqual(v["verdict"], f2.PASS)
+        self.assertEqual(len(v["backends"]["C"]["r1"]["material_discrepancies"]), 1)
+        self.assertEqual(v["v1_reported_not_gated"]["verdict"], fa.FAIL)
+        self.assertEqual(v["v1_reported_not_gated"]["failing"], ["C.I_nr1"])
+
+    def test_one_backend_failing_fails_the_test(self):
+        acc, a32, agr = world()
+        acc["D"]["I_rep"][:] = 5 * BASE
+        v = f2.verdict(acc, a32, agr)
+        self.assertEqual((v["verdict"], v["failing"]), (f2.FAIL, ["D"]))
+        self.assertEqual(v["backends"]["C"]["verdict"], f2.PASS)
+
+    def test_median_and_p99_limits_are_inclusive(self):
+        self.assertEqual(f2.verdict(*world(x=2 * BASE))["verdict"], f2.PASS)
+        acc, a32, agr = world()
+        acc["C"]["I_nr2"][:] = 2 * BASE
+        acc["C"]["I_nr2"][: N // 50] = 4 * BASE   # top 2%: p99 = 4 exactly, median 2
+        v = f2.verdict(acc, a32, agr)
+        self.assertEqual(v["backends"]["C"]["r1"]["inputs"]["I_nr2"]["ratio"]["p99"], 4.0)
+        self.assertEqual(v["verdict"], f2.PASS)
+
+    def test_two_material_positions_pass_three_fail_counted_across_inputs(self):
+        # Material: d_X > 1e-3 while A32 <= 1e-3. r = 1.5e-3 / 9e-4 = 1.67, under the tail guard.
+        acc, a32, agr = world()
+        for i, p in (("I_rep", 10), ("I_nr1", 20), ("I_nr2", 30)):
+            a32[i][p] = 9e-4
+        acc["C"]["I_rep"][10] = 1.5e-3
+        acc["C"]["I_nr1"][20] = 1.5e-3
+        self.assertEqual(f2.verdict(acc, a32, agr)["verdict"], f2.PASS)
+        acc["C"]["I_nr2"][30] = 1.5e-3
+        v = f2.verdict(acc, a32, agr)
+        self.assertEqual(v["verdict"], f2.FAIL)
+        self.assertEqual(v["backends"]["C"]["r1"]["verdict"], "materially less accurate")
+
+    def test_one_material_position_far_above_a32_fails_by_the_tail_guard(self):
+        # R1 allows up to 2 material positions whatever their ratio; the tail
+        # guard (approved D2) additionally requires r <= 4 at every d > 1e-3.
+        acc, a32, agr = world()
+        acc["C"]["I_rep"][10] = 1.5e-3           # A32 1e-4: r = 15
+        c = f2.verdict(acc, a32, agr)["backends"]["C"]
+        self.assertEqual((c["r1"]["verdict"], c["verdict"]), ("comparable", f2.FAIL))
+
+
+class Controls(unittest.TestCase):
+    """Constructed perturbations that breach the rule. Each must fail."""
+
+    def test_known_bad_uniform_degradation_fails(self):
+        v = f2.verdict(*world(x=5 * BASE))
+        self.assertEqual(v["verdict"], f2.FAIL)
+        self.assertEqual(v["backends"]["C"]["r1"]["verdict"], "materially less accurate")
+        # v1 alone would pass it: 5e-4 is under 1e-3 everywhere.
+        self.assertEqual(v["v1_reported_not_gated"]["verdict"], fa.PASS)
+
+    def test_known_bad_tail_degradation_fails_on_p99(self):
+        acc, a32, agr = world()
+        acc["D"]["I_rep"][: N // 20] = 6 * BASE    # 5% of positions at 6x A32
+        v = f2.verdict(acc, a32, agr)
+        self.assertEqual(v["verdict"], f2.FAIL)
+        self.assertEqual(v["backends"]["D"]["r1"]["verdict"], "inconclusive")
+
+    def test_a_large_excursion_where_a32_is_also_inaccurate_fails_only_by_the_tail_guard(self):
+        # A32 is itself above the gate at pos 500 (3e-3); C is far worse there
+        # (2e-2, r = 6.7). R1 reads comparable: the position is not material
+        # (A32 > 1e-3) and one position moves neither median nor p99.
+        acc, a32, agr = world()
+        a32["I_rep"][500] = 3e-3
+        acc["C"]["I_rep"][500] = 2e-2
+        v = f2.verdict(acc, a32, agr)
+        c = v["backends"]["C"]
+        self.assertEqual(c["r1"]["verdict"], "comparable")
+        self.assertEqual(c["verdict"], f2.FAIL)
+        self.assertEqual([(t["input"], t["position"]) for t in c["tail_guard"]], [("I_rep", 500)])
+        self.assertEqual(v["verdict"], f2.FAIL)
+
+    def test_the_tail_guard_is_inclusive_at_4_and_ignores_small_d(self):
+        acc, a32, agr = world()
+        a32["I_rep"][500] = 3e-3
+        acc["C"]["I_rep"][500] = 4 * 3e-3          # r = 4 exactly: allowed
+        a32["I_nr1"][7] = 1e-5
+        acc["C"]["I_nr1"][7] = 9e-4                # r = 90 but d under the gate
+        v = f2.verdict(acc, a32, agr)
+        self.assertEqual(v["backends"]["C"]["tail_guard"], [])
+        self.assertEqual(v["verdict"], f2.PASS)
+
+
+class Joint(unittest.TestCase):
+    def test_the_joint_distribution_counts_every_position_once(self):
+        acc, a32, agr = world()
+        j = f2.verdict(acc, a32, agr)["backends"]["C"]["joint"]["I_rep"]
+        self.assertEqual(sum(map(sum, j["counts"])), N)
+        self.assertEqual(len(j["counts"]), len(f2.D_EDGES) - 1)
+        self.assertEqual(len(j["counts"][0]), len(f2.R_EDGES) - 1)
+
+    def test_positions_at_the_epsilon_floor_are_reported(self):
+        acc, a32, agr = world()
+        a32["I_nr2"][[3, 4]] = 0.0
+        acc["C"]["I_nr2"][3] = 5e-5                # r = 5 against the floor
+        acc["C"]["I_nr2"][4] = 1e-6
+        j = f2.verdict(acc, a32, agr)["backends"]["C"]["joint"]["I_nr2"]["eps_floor"]
+        self.assertEqual(j["positions"], 2)
+        self.assertAlmostEqual(j["d_x_max"], 5e-5)
+        self.assertAlmostEqual(j["r_max"], 5.0)
+
+
+class EvidenceClass(unittest.TestCase):
+    def manifest(self, test=f2.TEST, bound=None):
+        files = {f2.SCRIPT_LABEL: {"sha256": bound if bound is not None else f2.own_sha256()}}
+        return {"values": {"admission_test": test} if test else {}, "files": files}
+
+    def test_a_freeze_naming_v2_and_binding_this_script_is_prospective(self):
+        cls, _, problems = f2.evidence_class(self.manifest(), "f", Path("."), None, None)
+        self.assertEqual((cls, problems), (f2.PROSPECTIVE, []))
+
+    def test_a_freeze_made_before_v2_without_an_addendum_is_invalid(self):
+        cls, _, problems = f2.evidence_class(self.manifest(test=None), "f", Path("."), None, None)
+        self.assertIsNone(cls)
+        self.assertTrue(any("retrospective addendum" in p for p in problems))
+
+    def test_a_freeze_binding_another_script_is_not_prospective(self):
+        cls, _, problems = f2.evidence_class(self.manifest(bound="0" * 64), "f", Path("."), None, None)
+        self.assertIsNone(cls)
+        self.assertTrue(any(f2.SCRIPT_LABEL in p for p in problems))
+
+
+class EndToEnd(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.tmp = Path(cls._tmp.name).resolve()
+        cls.w = tex.World(cls.tmp / "w")
+        cls.w.run("E1")
+        cls.w.run("E2")
+        (cls.w.runs / f2.SUMS).write_text("sealed\n")
+        cls.v1 = cls.tmp / "v1.json"
+        fa.run(cls.w.freeze, cls.w.sha, cls.w.runs, cls.v1)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def addendum(self, name):
+        out = self.tmp / name
+        sha = f2.write_addendum(out, f2.make_addendum(self.w.sha, self.w.runs, self.v1))
+        return out, sha
+
+    def test_runs_frozen_before_v2_need_an_addendum(self):
+        r = f2.run(self.w.freeze, self.w.sha, self.w.runs, self.tmp / "no-addendum.json")
+        self.assertEqual((r["verdict"], r["evidence_class"]), (f2.INVALID, None))
+
+    def test_a_retrospective_report_binds_the_addendum_and_carries_v1(self):
+        add, sha = self.addendum("add.json")
+        with self.assertRaisesRegex(ev.EvidenceError, "written once"):
+            f2.write_addendum(add, {})
+        out = self.tmp / "report.json"
+        r = f2.run(self.w.freeze, self.w.sha, self.w.runs, out, add, sha)
+        self.assertIn(r["verdict"], (f2.PASS, f2.FAIL), r.get("problems"))
+        self.assertEqual((r["test"], r["evidence_class"]), ("hf-f64-accuracy/2", f2.RETROSPECTIVE))
+        self.assertEqual(r["v1_sealed_report"]["sha256"], ev.sha256_file(self.v1))
+        self.assertIn("v1_reported_not_gated", r)
+        self.assertEqual(json.loads(out.read_text())["verdict"], r["verdict"])
+        with self.assertRaisesRegex(ev.EvidenceError, "written once"):
+            f2.run(self.w.freeze, self.w.sha, self.w.runs, out, add, sha)
+
+    def test_an_addendum_with_another_digest_is_refused(self):
+        add, _ = self.addendum("add2.json")
+        r = f2.run(self.w.freeze, self.w.sha, self.w.runs, self.tmp / "bad-digest.json", add, "0" * 64)
+        self.assertEqual(r["verdict"], f2.INVALID)
+
+    def test_resealed_runs_invalidate_the_addendum(self):
+        add, sha = self.addendum("add3.json")
+        sums = self.w.runs / f2.SUMS
+        sums.write_text("changed\n")
+        try:
+            r = f2.run(self.w.freeze, self.w.sha, self.w.runs, self.tmp / "resealed.json", add, sha)
+        finally:
+            sums.write_text("sealed\n")
+        self.assertEqual(r["verdict"], f2.INVALID)
+        self.assertIn("addendum runs_sha256sums differs", r["problems"])
+
+    def test_an_addendum_for_another_freeze_is_refused(self):
+        with self.assertRaisesRegex(ev.EvidenceError, "another freeze"):
+            f2.make_addendum("0" * 64, self.w.runs, self.v1)
+
+
+if __name__ == "__main__":
+    unittest.main()
