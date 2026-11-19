@@ -45,7 +45,7 @@ POSITIONS = sorted(set([0, 1, 20, 255, 510, 511, 512, 513, 514, 767, 1022, 1023,
 class World:
     """One freeze over synthetic artifacts, under `root`."""
 
-    def __init__(self, root: Path, doc_text="plan rev 3\n", fake_behaviour=None):
+    def __init__(self, root: Path, doc_text="plan rev 3\n", fake_behaviour=None, extra_files=None, extra_values=None):
         self.root = root
         root.mkdir(parents=True, exist_ok=True)
         self.ckpt = hft.make_checkpoint(root / "ckpt", max_position_embeddings=2 * N)
@@ -93,9 +93,11 @@ class World:
         values = {"larql_commit": "5c375d43", "checkpoint_revision": "synthetic", "packages": ho.packages(),
                   "threads": dict(ex.HF_THREADS), "python": sys.executable,
                   "capture_positions": {"I_rep": POSITIONS, "I_nr1": POSITIONS},
-                  "resource_limits": {"wall_s_per_run": 300, "wall_s_total": {"E1": 7200, "E2": 7200, "E3": 7200}, "rss_bytes": 16 * 10**9,
+                  "resource_limits": {"wall_s_per_run": 300, "wall_s_total": {"E1": 7200, "E2": 7200, "E3": 7200, "N1": 7200}, "rss_bytes": 16 * 10**9,
                                       "capture_bytes_per_run": 2 << 30, "min_free_bytes": 1},
-                  "larql_environment": {"HOME": str(root), "PATH": "/usr/bin:/bin", "RAYON_NUM_THREADS": "16"}}
+                  "larql_environment": {"HOME": str(root), "PATH": "/usr/bin:/bin", "RAYON_NUM_THREADS": "16"},
+                  **(extra_values or {})}
+        files.update({label: str(path) for label, path in (extra_files or {}).items()})
         spec = {"files": files, "container": str(self.container),
                 "checkpoint": {"directory": str(self.ckpt), "revision": "synthetic"}, "values": values}
         self.freeze = root / "FREEZE.json"
@@ -105,6 +107,23 @@ class World:
 
     def run(self, experiment):
         return {r["run_id"]: r for r in ex.run_experiment(self.freeze, self.sha, self.runs, experiment)}
+
+
+class Control(unittest.TestCase):
+    def test_n1_is_a_control_plan_never_read_by_admission(self):
+        runs = ex.plan("N1")
+        self.assertEqual([r["run_id"] for r in runs], [f"N1.Dauto.{i}" for i in ex.INPUTS])
+        self.assertEqual(ex.LARQL_ARMS["Dauto"], ["--backend", "production", "--representation-source", "auto"])
+        self.assertEqual(ex.LARQL_ARMS["D"][-1], "stored")
+        with tempfile.TemporaryDirectory() as d:
+            w = World(Path(d) / "w")
+            keys, _ = ex.runs_and_identities(w.manifest, w.sha, w.runs)
+            self.assertFalse(any(a == "Dauto" for a, _ in keys))
+            cruns, cexp = ex.control_runs(w.manifest, w.sha, w.runs, "N1")
+            self.assertEqual(set(cruns), {("Dauto", i) for i in ex.INPUTS})
+            self.assertEqual(cexp[("Dauto", "I_rep")]["arm"], "Dauto")
+            with self.assertRaises(ValueError):
+                ex.control_runs(w.manifest, w.sha, w.runs, "E2")
 
 
 class Tmp(unittest.TestCase):

@@ -29,10 +29,18 @@ report names how its runs relate to the rule:
   report, whose verdict is carried into the v2 report.
 Anything else is `invalid`.
 
+Controls (`control`): a control experiment (N1: `Dauto`, production CPU from
+the `auto` source) is judged by the same per-backend rule against the same
+A32/A64. The freeze must bind this script and pre-register the expected
+outcome (`values.control_expectation`). The report says whether the outcome
+matched the expectation. A control never admits anything, and its outcome
+never changes a constant.
+
 usage:
   python3 -I f64_accuracy_v2.py addendum --freeze-sha256 SHA --root RUNS --v1-report V1.json --out ADDENDUM.json
   python3 -I f64_accuracy_v2.py run --freeze FREEZE.json --freeze-sha256 SHA --root RUNS --out REPORT.json
          [--addendum ADDENDUM.json --addendum-sha256 SHA]
+  python3 -I f64_accuracy_v2.py control N1 --freeze FREEZE.json --freeze-sha256 SHA --root RUNS --out REPORT.json
 """
 
 from __future__ import annotations
@@ -63,7 +71,9 @@ EPSILON = analysis.EPSILON                  # ratio denominator floor
 TAIL_RATIO = analysis.R1_COMPARABLE_P99     # tail guard reuses R1's p99 limit
 COMPARABLE = "comparable"
 PASS, FAIL, INVALID = v1.PASS, v1.FAIL, v1.INVALID
-PROSPECTIVE, RETROSPECTIVE = "prospective", "retrospective"
+PROSPECTIVE, RETROSPECTIVE, CONTROL = "prospective", "retrospective", "control"
+#: Control arm -> the gated backend whose family (tie tolerance) it shares.
+CONTROL_FAMILY = {"Dauto": "D"}
 ADDENDUM_SCHEMA = "larql.hf-f64-accuracy-2.addendum/1"
 SCRIPT_LABEL = "script.f64_accuracy_v2"
 SUMS = "SHA256SUMS"
@@ -220,6 +230,68 @@ def evaluate(runs: dict, expected: dict, vocab: int) -> dict:
     return verdict(acc, a32acc, agr)
 
 
+def control_problems(manifest: dict, experiment: str) -> list[str]:
+    problems = []
+    exp = manifest["values"].get("control_expectation", {}).get(experiment, {})
+    if exp.get("expected") not in (PASS, FAIL):
+        problems.append(f"freeze pre-registers no expected outcome for control {experiment}")
+    if manifest.get("files", {}).get(SCRIPT_LABEL, {}).get("sha256") != own_sha256():
+        problems.append(f"freeze does not bind this script ({SCRIPT_LABEL})")
+    return problems
+
+
+def evaluate_control(manifest: dict, freeze_sha256: str, root: Path, experiment: str) -> dict:
+    runs, expected = ex.runs_and_identities(manifest, freeze_sha256, root)
+    cruns, cexpected = ex.control_runs(manifest, freeze_sha256, root, experiment)
+    arms = sorted({a for a, _ in cruns})
+    keys = [(r, i) for r in ("A32", "A64") for i in INPUTS]
+    problems = []
+    for k in keys:
+        adm = ev.admit(runs[k], expected.get(k), None)
+        if not adm.admitted:
+            problems.append(f"{k}: not admitted: {adm.reasons}")
+    for k, d in cruns.items():
+        adm = ev.admit(d, cexpected.get(k), None)
+        if not adm.admitted:
+            problems.append(f"{k}: not admitted: {adm.reasons}")
+    for i in INPUTS:
+        problems += v1.audit_problems(runs[("A64", i)])
+    if problems:
+        return {"verdict": INVALID, "problems": problems}
+    vocab = ex.vocab_of(manifest)
+    dx, da = {a: {} for a in arms}, {}
+    for i in INPUTS:
+        a64 = analysis.load_logits(runs[("A64", i)], vocab)
+        da[i] = analysis.position_metrics(a64, analysis.load_logits(runs[("A32", i)], vocab), analysis.FAMILY["A32"])["d"]
+        for a in arms:
+            fam = analysis.FAMILY[CONTROL_FAMILY[a]]
+            dx[a][i] = analysis.position_metrics(a64, analysis.load_logits(cruns[(a, i)], vocab), fam)["d"]
+    per = {a: backend_verdict(dx[a], da) for a in arms}
+    for a in arms:
+        per[a]["d_x_a64_max"] = {i: float(np.max(dx[a][i])) for i in INPUTS}
+    failing = [a for a in arms if per[a]["verdict"] != PASS]
+    return {"verdict": FAIL if failing else PASS, "failing": failing, "arms": per}
+
+
+def run_control(manifest_path: Path, freeze_sha256: str, root: Path, out: Path, experiment: str) -> dict:
+    out = Path(out)
+    if out.exists():
+        raise ev.EvidenceError(f"{out} exists: a report is written once")
+    manifest = ex.load_freeze(manifest_path, freeze_sha256)
+    problems = fz.preflight(manifest_path, freeze_sha256) + control_problems(manifest, experiment)
+    result = {"verdict": INVALID, "problems": problems} if problems else \
+        evaluate_control(manifest, freeze_sha256, root, experiment)
+    exp = manifest["values"].get("control_expectation", {}).get(experiment, {})
+    observed = result["verdict"]
+    report = {"test": TEST, "evidence_class": CONTROL, "admits": False, "control": experiment,
+              "expectation": exp, "observed": observed,
+              "matches_expectation": None if observed == INVALID else observed == exp.get("expected"),
+              "scope": v1.scope(manifest), "freeze_sha256": freeze_sha256, "root": str(root),
+              "script_sha256": own_sha256(), "analysis_sha256": analysis_sha256(), **result}
+    ev.write_atomic(out, ev.canonical_json(report) + b"\n")
+    return report
+
+
 def run(manifest_path: Path, freeze_sha256: str, root: Path, out: Path,
         addendum: Path | None = None, addendum_sha256: str | None = None) -> dict:
     out = Path(out)
@@ -262,7 +334,18 @@ def main(argv=None) -> int:
     r_.add_argument("--out", required=True, type=Path)
     r_.add_argument("--addendum", type=Path)
     r_.add_argument("--addendum-sha256")
+    c_ = sub.add_parser("control", help="judge a control experiment (never admits)")
+    c_.add_argument("experiment", choices=ex.CONTROL_EXPERIMENTS)
+    c_.add_argument("--freeze", required=True, type=Path)
+    c_.add_argument("--freeze-sha256", required=True)
+    c_.add_argument("--root", required=True, type=Path)
+    c_.add_argument("--out", required=True, type=Path)
     a = ap.parse_args(argv)
+    if a.cmd == "control":
+        r = run_control(a.freeze, a.freeze_sha256, a.root, a.out, a.experiment)
+        print(r["test"], CONTROL, a.experiment, "observed", r["observed"], "expected",
+              r["expectation"].get("expected"), "matches", r["matches_expectation"], *r.get("problems", [])[:5])
+        return 0 if r["matches_expectation"] is not None else 2
     if a.cmd == "addendum":
         print("addendum sha256", write_addendum(a.out, make_addendum(a.freeze_sha256, a.root, a.v1_report)))
         return 0

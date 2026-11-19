@@ -240,5 +240,49 @@ class EndToEnd(unittest.TestCase):
             f2.make_addendum("0" * 64, self.w.runs, self.v1)
 
 
+
+class ControlEndToEnd(unittest.TestCase):
+    """N1 through the synthetic world: plumbing, binding and the expectation
+    check. The fake's logits are not a model, so the verdict itself is not
+    asserted, only that it is a verdict and compared with the expectation."""
+
+    EXPECT = {"N1": {"arm": "Dauto", "expected": f2.FAIL, "reason": "load-time Q8 residency"}}
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.tmp = Path(cls._tmp.name).resolve()
+        script = Path(f2.__file__).resolve()
+        cls.w = tex.World(cls.tmp / "w", extra_files={f2.SCRIPT_LABEL: script},
+                          extra_values={"control_expectation": cls.EXPECT})
+        cls.w.run("E1")
+        cls.records = cls.w.run("N1")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def test_n1_runs_production_from_the_auto_source(self):
+        self.assertEqual(sorted(self.records), sorted(f"N1.Dauto.{i}" for i in f2.INPUTS))
+        self.assertTrue(all(r["status"] == "complete" for r in self.records.values()), self.records)
+
+    def test_a_control_report_never_admits_and_compares_with_the_expectation(self):
+        out = self.tmp / "control.json"
+        r = f2.run_control(self.w.freeze, self.w.sha, self.w.runs, out, "N1")
+        self.assertIn(r["observed"], (f2.PASS, f2.FAIL), r.get("problems"))
+        self.assertEqual((r["evidence_class"], r["admits"]), (f2.CONTROL, False))
+        self.assertEqual(r["matches_expectation"], r["observed"] == f2.FAIL)
+        self.assertEqual(set(r["arms"]), {"Dauto"})
+        self.assertEqual(r["expectation"], self.EXPECT["N1"])
+        with self.assertRaisesRegex(ev.EvidenceError, "written once"):
+            f2.run_control(self.w.freeze, self.w.sha, self.w.runs, out, "N1")
+
+    def test_a_control_without_a_preregistered_expectation_is_invalid(self):
+        w = tex.World(self.tmp / "w2", extra_files={f2.SCRIPT_LABEL: Path(f2.__file__).resolve()})
+        r = f2.run_control(w.freeze, w.sha, w.runs, self.tmp / "no-expectation.json", "N1")
+        self.assertEqual((r["observed"], r["matches_expectation"]), (f2.INVALID, None))
+        self.assertTrue(any("expected outcome" in p for p in r["problems"]))
+
+
 if __name__ == "__main__":
     unittest.main()
