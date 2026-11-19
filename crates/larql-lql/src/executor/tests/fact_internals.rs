@@ -85,3 +85,29 @@ fn a_fact_reports_its_key_in_normal_form() {
     assert_eq!(fact.key(), FactKey::new("new york", "located in"));
     assert_eq!(fact.key().fact_id(), fact.id);
 }
+
+/// The KNN insert path refuses a binding with no tokenizer on its own. The
+/// fact check refuses first through the statement surface, so this calls the
+/// path directly: each refusal stands without relying on the other.
+#[test]
+fn the_v3_knn_insert_path_refuses_a_binding_with_no_tokenizer() {
+    let dir = tempfile::tempdir().unwrap();
+    let container =
+        larql_vindex::format::vindex3::fixtures::bf16_container_with_q8_pack(dir.path());
+    let mut session = crate::executor::Session::new();
+    session.set_verifier("");
+    let stmt = format!(
+        "USE \"{}\";",
+        container.display().to_string().replace('\\', "\\\\")
+    );
+    session.execute(&crate::parse(&stmt).unwrap()).unwrap();
+    let err = session
+        .exec_insert_knn_v3("a", "b", "[7]", None, None)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("INSERT needs a tokenizer") && err.contains("no tokenizer.json"),
+        "{err}"
+    );
+    assert!(session.asserted_facts().unwrap().is_empty());
+}
