@@ -92,7 +92,10 @@ impl Session {
             Verb::Update => matches!(fact.status, FactStatus::Active),
             Verb::Delete => matches!(
                 fact.status,
-                FactStatus::Active | FactStatus::MultiToken | FactStatus::Ambiguous
+                FactStatus::Active
+                    | FactStatus::MultiToken
+                    | FactStatus::Unverified
+                    | FactStatus::Ambiguous
             ),
         };
         if allowed {
@@ -116,6 +119,14 @@ impl Session {
                 "fact {} has a multi-token target {:?}, which its KNN entry recalls only the first \
                  token of. DELETE it and INSERT a single-token target",
                 fact.id, fact.target
+            ),
+            FactStatus::Unverified => format!(
+                "fact {} is unverified: this binding has no tokenizer, so its target {:?} cannot \
+                 be checked against token id {}, and a replacement target cannot be tokenized. \
+                 DELETE it, or bind a container with a tokenizer.json",
+                fact.id,
+                fact.target,
+                fact.target_id.unwrap_or_default()
             ),
             FactStatus::Ambiguous => format!(
                 "fact {} has more than one realization. DELETE it (which removes all of them) and \

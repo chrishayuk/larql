@@ -25,9 +25,12 @@ impl Session {
         patch: &VindexPatch,
         name: &str,
     ) -> Result<(), LqlError> {
-        let Ok(ledger) = self.ledger() else {
+        // Only an overlay binding can apply a patch; every other binding
+        // refuses APPLY PATCH below, before anything is applied.
+        if !self.holds_facts() {
             return Ok(());
-        };
+        }
+        let ledger = self.ledger()?;
         let mut catalogue = ledger.catalogue();
         let source = Source::Patch(name.to_string());
         let mut inserted_here: HashSet<FactKey> = HashSet::new();

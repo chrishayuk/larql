@@ -43,6 +43,7 @@ fn every_status_realization_and_durability_has_its_label() {
     let statuses = [
         (FactStatus::Active, "active"),
         (FactStatus::MultiToken, "multi_token"),
+        (FactStatus::Unverified, "unverified"),
         (FactStatus::Ambiguous, "ambiguous"),
         (FactStatus::Inconsistent, "inconsistent"),
         (FactStatus::Compose, "compose"),

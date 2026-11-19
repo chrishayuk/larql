@@ -46,6 +46,10 @@ pub enum FactStatus {
     Active,
     /// One KNN entry whose target text needs more than one token.
     MultiToken,
+    /// One KNN entry whose target text cannot be checked against its token
+    /// id, because the binding has no tokenizer. Nothing is claimed about
+    /// its INFER behaviour; DELETE is allowed, UPDATE is refused.
+    Unverified,
     /// More than one live realization for the key (a legacy ledger).
     Ambiguous,
     /// The ledger and the live KNN store disagree for this key.
@@ -118,6 +122,7 @@ impl FactStatus {
         match self {
             Self::Active => "active",
             Self::MultiToken => "multi_token",
+            Self::Unverified => "unverified",
             Self::Ambiguous => "ambiguous",
             Self::Inconsistent => "inconsistent",
             Self::Compose => "compose",
@@ -156,12 +161,13 @@ impl LedgerView<'_> {
         catalogue
     }
 
-    /// Whether `target` is the single token `target_id`. With no tokenizer it
-    /// cannot be checked, and nothing is claimed against it.
-    pub(crate) fn is_single(&self, target: &str, target_id: u32) -> bool {
+    /// Whether `target` is the single token `target_id`, or `None` when the
+    /// binding has no tokenizer to check it with. An unchecked entry is never
+    /// classified as checked (`docs/fact-id-1.md` §3.4, `unverified`).
+    pub(crate) fn is_single(&self, target: &str, target_id: u32) -> Option<bool> {
         self.tokenizer
             .as_deref()
-            .is_none_or(|tok| single_token_id(tok, target) == Some(target_id))
+            .map(|tok| single_token_id(tok, target) == Some(target_id))
     }
 
     pub(crate) fn tokenizer(&self) -> Option<&Tokenizer> {
@@ -170,6 +176,17 @@ impl LedgerView<'_> {
 }
 
 impl Session {
+    /// Whether the binding has a knowledge overlay, and so a fact ledger.
+    /// Checks that guard fact identity skip only these bindings, which cannot
+    /// apply a patch or insert a fact either; on an overlay binding a ledger
+    /// that cannot be read is an error, never a pass.
+    pub(crate) fn holds_facts(&self) -> bool {
+        matches!(
+            self.backend,
+            Backend::Vindex { .. } | Backend::Vindex3 { .. }
+        )
+    }
+
     /// The ledger of the bound overlay. VINDEX2 and VINDEX3 bindings only.
     pub(crate) fn ledger(&self) -> Result<LedgerView<'_>, LqlError> {
         match &self.backend {
@@ -249,9 +266,10 @@ impl Session {
     ) -> Result<u32, LqlError> {
         // A binding with no knowledge overlay holds no facts; INSERT itself
         // says what it requires.
-        let Ok(ledger) = self.ledger() else {
+        if !self.holds_facts() {
             return Ok(1);
-        };
+        }
+        let ledger = self.ledger()?;
         let catalogue = ledger.catalogue();
         let key = FactKey::new(entity, relation);
         if catalogue.is_live(&key) {
@@ -265,13 +283,19 @@ impl Session {
             return Err(refused(collision(&key, &other)));
         }
         if knn {
-            if let Some(tok) = ledger.tokenizer() {
-                if single_token_id(tok, target).is_none() {
-                    return Err(refused(format!(
-                        "the KNN target {target:?} is not a single token, and a KNN entry recalls one \
-                         token. Use a single-token target"
-                    )));
-                }
+            // Unchecked is not admitted: with no tokenizer the single-token
+            // rule cannot be shown to hold.
+            let Some(tok) = ledger.tokenizer() else {
+                return Err(refused(format!(
+                    "the KNN target {target:?} cannot be checked against the single-token rule: \
+                     this binding has no tokenizer"
+                )));
+            };
+            if single_token_id(tok, target).is_none() {
+                return Err(refused(format!(
+                    "the KNN target {target:?} is not a single token, and a KNN entry recalls one \
+                     token. Use a single-token target"
+                )));
             }
         }
         Ok(catalogue.version(&key) + 1)

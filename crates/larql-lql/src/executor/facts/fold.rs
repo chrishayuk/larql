@@ -106,14 +106,14 @@ impl FactCatalogue {
     pub(crate) fn live(
         &self,
         key: &FactKey,
-        single: &dyn Fn(&str, u32) -> bool,
+        single: &dyn Fn(&str, u32) -> Option<bool>,
     ) -> Option<AssertedFact> {
         let state = self.states.get(key)?;
         state.is_live().then(|| to_fact(key, state, single))
     }
 
     /// Every live fact, ordered by key.
-    pub(crate) fn all_live(&self, single: &dyn Fn(&str, u32) -> bool) -> Vec<AssertedFact> {
+    pub(crate) fn all_live(&self, single: &dyn Fn(&str, u32) -> Option<bool>) -> Vec<AssertedFact> {
         self.states
             .iter()
             .filter(|(_, s)| s.is_live())
@@ -386,7 +386,11 @@ pub(super) fn fold_ledger(
     catalogue
 }
 
-fn to_fact(key: &FactKey, state: &KeyState, single: &dyn Fn(&str, u32) -> bool) -> AssertedFact {
+fn to_fact(
+    key: &FactKey,
+    state: &KeyState,
+    single: &dyn Fn(&str, u32) -> Option<bool>,
+) -> AssertedFact {
     let (realization, target, target_id, confidence, layers, slots) =
         match (&state.compose, state.knn.first()) {
             (Some(c), None) => (
@@ -419,10 +423,12 @@ fn to_fact(key: &FactKey, state: &KeyState, single: &dyn Fn(&str, u32) -> bool) 
         } else {
             FactStatus::Compose
         }
-    } else if !single(&target, target_id.unwrap_or_default()) {
-        FactStatus::MultiToken
     } else {
-        FactStatus::Active
+        match single(&target, target_id.unwrap_or_default()) {
+            Some(true) => FactStatus::Active,
+            Some(false) => FactStatus::MultiToken,
+            None => FactStatus::Unverified,
+        }
     };
     let (durability, origin) = if state.inconsistent {
         (FactDurability::Unknown, "unknown".to_string())

@@ -20,6 +20,14 @@ ops), FACT-GRAPH-1 (edit-site discovery from the graph-walk work).
   conflicts and structured results (§3.5); the session op journal (§3.3),
   because `SAVE PATCH` leaves its edits live in no applied patch (C-10);
   C-10 to C-12 added.
+- **r2 erratum (2026-11-19, review of #880)** — status `unverified` added
+  (§3.4): with no tokenizer bound, a KNN fact's text and token id cannot
+  be checked, and it was classified `active` by default. It is now
+  `unverified`: no INFER behaviour is claimed, UPDATE refuses, DELETE is
+  allowed. The identity checks on INSERT and APPLY PATCH skip only bindings
+  with no knowledge overlay (which refuse both statements anyway); on an
+  overlay binding an unreadable ledger is an error, not a pass. No gate
+  (§9) changes.
 
 ## 1. Purpose
 
@@ -118,6 +126,7 @@ version, so a later INSERT continues from it.
 |---|---|---|---|---|
 | `active` | one KNN entry, target single-token | yes | yes | yes |
 | `multi_token` | one KNN entry whose target text needs more than one token | no | refused | yes |
+| `unverified` | one KNN entry, but the binding has no tokenizer to check its target text against its token id | no | refused | yes |
 | `ambiguous` | more than one live KNN entry for the key (legacy ledgers) | no | refused | yes (removes all) |
 | `inconsistent` | the fold disagrees with the live KNN store for this key (C-11, C-12, or an unknown cause) | no | refused | refused |
 | `compose` | a keyed compose install | no (see FACT-PROMOTE-1) | refused | refused |

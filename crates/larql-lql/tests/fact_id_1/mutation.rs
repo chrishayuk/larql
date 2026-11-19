@@ -159,3 +159,39 @@ fn duplicate_keys_are_refused_and_legacy_duplicates_are_ambiguous() {
     assert!(facts(&session).is_empty());
     assert!(!infer(&mut session, CANONICAL_PROMPT).contains("knn_override"));
 }
+
+/// A KNN fact the binding has no tokenizer to check is `unverified`, never
+/// `active`: its text and token id cannot be shown to agree, so no INFER
+/// behaviour is claimed. UPDATE is refused with the session unchanged, and
+/// DELETE (which does not depend on the target) removes it.
+#[test]
+fn a_fact_with_no_tokenizer_to_check_it_is_unverified() {
+    let container = v3_container();
+    let dir = tempfile::tempdir().unwrap();
+    let mut session = bound(container.path());
+    run(&mut session, INSERT_AB);
+    let compiled = dir.path().join("compiled");
+    run(
+        &mut session,
+        &format!("COMPILE CURRENT INTO VINDEX \"{}\";", lql_path(&compiled)),
+    );
+    std::fs::remove_file(compiled.join("tokenizer.json")).unwrap();
+
+    let mut reopened = bound(&compiled);
+    let fact = only_fact(&reopened);
+    assert_eq!(fact.status, FactStatus::Unverified);
+    assert_eq!(fact.target_id, Some(7));
+    // SELECT is not reachable here: VINDEX3 browse needs the tokenizer
+    // capability. The typed catalogue is the structured result.
+
+    let before = facts(&reopened);
+    let why = refused(&mut reopened, UPDATE_AB);
+    assert!(
+        why.contains("unverified") && why.contains("no tokenizer"),
+        "{why}"
+    );
+    assert_eq!(facts(&reopened), before);
+
+    run(&mut reopened, DELETE_AB);
+    assert!(facts(&reopened).is_empty());
+}
