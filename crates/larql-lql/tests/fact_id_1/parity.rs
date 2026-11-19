@@ -1,8 +1,9 @@
 //! ID-8: VINDEX2 parity. One checkpoint is realised as a VINDEX2 vindex
 //! (real extraction) and a VINDEX3 container; the same fact script gives the
 //! same ids, targets, statuses and versions on both. VINDEX2's REMOVE PATCH
-//! drops the vindex's own KNN facts (docs/fact-id-1.md C-11), and the
-//! catalogue reports them `inconsistent` rather than pretending otherwise.
+//! keeps the vindex's own KNN facts (Gate B, B2, which fixes
+//! docs/fact-id-1.md C-11). A change to the store that no op records is
+//! still listed `inconsistent`, not passed off as the ledger's view.
 
 use larql_lql::FactStatus;
 use larql_vindex::format::vindex3::fixtures::{dense_f32_model, DENSE_VOCAB};
@@ -77,20 +78,26 @@ fn the_same_script_gives_the_same_facts_on_vindex2_and_vindex3() {
     assert_eq!(v2_facts[1].4, 3, "([3], c): insert + delete + insert");
 }
 
-#[test]
-fn vindex2_remove_patch_dropping_container_facts_reads_inconsistent() {
+/// A VINDEX2 vindex compiled with one KNN fact, bound in a fresh session.
+fn compiled_with_one_fact(dir: &Path) -> Session {
     let v2 = v2_vindex();
-    let dir = tempfile::tempdir().unwrap();
     let mut session = bound(v2.path());
     run(&mut session, SCRIPT[0]);
-    let compiled = dir.path().join("compiled");
+    let compiled = dir.join("compiled");
     run(
         &mut session,
         &format!("COMPILE CURRENT INTO VINDEX \"{}\";", lql_path(&compiled)),
     );
-
-    let mut reopened = bound(&compiled);
+    let reopened = bound(&compiled);
     assert_eq!(only_fact(&reopened).status, FactStatus::Active);
+    reopened
+}
+
+#[test]
+fn vindex2_remove_patch_keeps_the_vindexs_own_facts() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut reopened = compiled_with_one_fact(dir.path());
+    let before = observe(&mut reopened);
     let empty = write_patch(
         dir.path(),
         "empty.vlp",
@@ -98,8 +105,21 @@ fn vindex2_remove_patch_dropping_container_facts_reads_inconsistent() {
     );
     run(&mut reopened, &format!("APPLY PATCH \"{empty}\";"));
     run(&mut reopened, &format!("REMOVE PATCH \"{empty}\";"));
-    // VINDEX2 rebuilt its KNN store from empty: the container fact no longer
-    // executes, and the catalogue lists it as inconsistent, not active.
+    assert_eq!(only_fact(&reopened).status, FactStatus::Active);
+    assert_eq!(observe(&mut reopened), before);
+}
+
+#[test]
+fn a_store_change_no_op_records_reads_inconsistent() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut reopened = compiled_with_one_fact(dir.path());
+    // What an unrecorded removal (COMPACT MINOR, docs/fact-id-1.md C-12)
+    // leaves: the entry is gone from the store, and no op says so.
+    reopened
+        .patched_overlay_mut()
+        .expect("a VINDEX2 binding")
+        .knn_store
+        .remove_by_entity("[2]");
     let fact = only_fact(&reopened);
     assert_eq!(fact.status, FactStatus::Inconsistent);
     let why = refused(
