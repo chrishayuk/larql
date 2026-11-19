@@ -81,8 +81,14 @@ references are to `3b5dd3d2`.
   `compile_keeps_edits::an_insert_deleted_before_the_compile_contributes_nothing`).
 - **No LQL DELETE reaches a KNN fact on main.** FACT-ID-1 (#880) adds
   `delete_knn_fact`.
+- **Addendum 2026-11-19 (found while fixing B2):** REMOVE PATCH drops session
+  edits that no applied patch holds, on both backends. Examples are an INSERT
+  made in this session and edits kept live after SAVE PATCH. VINDEX3 drops all
+  of them. VINDEX2 drops their metadata and gate rows but, before the B2 fix,
+  kept their up/down vectors. This is open under B2 pending an owner decision:
+  replay them from a session journal, or refuse.
 
-### B3: exact replay | FAIL (exec), both backends
+### B3: exact replay | FAIL (exec on VINDEX3; VINDEX2 by reading the code at audit time)
 
 - **Mechanism:** the compose refine pass rewrites the gate/up of earlier slots
   at the same layer. Only the op of the current install is refreshed
@@ -95,6 +101,11 @@ references are to `3b5dd3d2`.
   to two decimals, which is exactly why semantic checks alone are not enough.
 - **Control:** `engine_lql::control_single_insert_replays_exactly_and_is_deterministic`
   passes. A single insert replays bit-exact, and the run is deterministic.
+- **Addendum 2026-11-19:** the audit probes ran on VINDEX3 only. The B3 fix
+  PR shows the VINDEX2 case by execution as well, on a vindex extracted from
+  the dense fixture model. The synthetic model of `larql-inference` gives both
+  installs the same gate, so its refine changes nothing. REBALANCE has the same
+  gap across saved patches: it refreshed only ops in the open recording.
 - **Also (read):** COMPACT MINOR removes KNN entries with no recorded op
   (`crates/larql-lql/src/executor/compact.rs`), so a replay holds both the KNN entry and
   the compose slot.
@@ -139,6 +150,9 @@ references are to `3b5dd3d2`.
   directory**. A persist failure there is only a warning.
 - **COMPILE** borrows the session immutably on every path, so a failure cannot
   mutate it. But no test fingerprints the session after a failed COMPILE.
+- **Addendum 2026-11-19 (found while fixing B2):** COMPILE's output is not
+  byte-deterministic. `index.json` writes its checksum map in HashMap order, so
+  compiling the same state twice can give different bytes.
 
 ### B7: verifier closure | FAIL against the FACT-WSP-1 requirements
 
