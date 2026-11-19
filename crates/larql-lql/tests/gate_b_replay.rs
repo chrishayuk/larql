@@ -267,3 +267,100 @@ fn vindex3_rebalance_over_saved_installs_replays_exactly() {
 fn vindex2_rebalance_over_saved_installs_replays_exactly() {
     assert_rebalance_replays_exactly(&v2(), &[V2_A, V2_C], V2_PROMPT);
 }
+
+/// The semantic UPDATE of a fact: what a re-fit must never read as.
+fn semantic_update(insert: &str) -> String {
+    let values = insert.split("VALUES (").nth(1).unwrap();
+    let parts: Vec<&str> = values.split('"').collect();
+    let (entity, relation) = (parts[1], parts[3]);
+    format!(
+        r#"UPDATE EDGES SET target = "[6]" WHERE entity = "{entity}" AND relation = "{relation}";"#
+    )
+}
+
+/// A re-fit in a saved patch is not a fact UPDATE. Every re-fit op is a
+/// vector-only slot `update` (no `down_meta`), never `update_knn_fact`.
+/// Applied in a fresh session, the facts keep status `compose` and version 1,
+/// and a semantic UPDATE is still refused (D-6). A user's physical UPDATE of
+/// the same slot does change the fact: it degrades it. The fold tells the
+/// two apart.
+fn assert_refits_are_not_fact_updates(fx: &Fixture, inserts: &[&str]) {
+    let dir = fx.vindex.parent().unwrap();
+    let mut live = bound(&fx.vindex);
+    let mut files = Vec::new();
+    for (i, stmt) in inserts.iter().enumerate() {
+        let path = dir.join(format!("p{i}.vlp"));
+        run(&mut live, &format!("BEGIN PATCH \"{}\";", lql_path(&path)));
+        run(&mut live, stmt);
+        run(&mut live, "SAVE PATCH;");
+        files.push(path);
+    }
+    let rebalance = dir.join("rebalance.vlp");
+    run(
+        &mut live,
+        &format!("BEGIN PATCH \"{}\";", lql_path(&rebalance)),
+    );
+    run(&mut live, "REBALANCE MAX 5 FLOOR 0.99 CEILING 0.999;");
+    run(&mut live, "SAVE PATCH;");
+    files.push(rebalance);
+
+    let all: Vec<serde_json::Value> = files.iter().flat_map(|f| ops(f)).collect();
+    let refits: Vec<&serde_json::Value> = all.iter().filter(|op| op["op"] == "update").collect();
+    assert!(
+        !refits.is_empty(),
+        "the patches must carry re-fits: {all:?}"
+    );
+    for op in &refits {
+        assert!(op["down_meta"].is_null(), "a re-fit names no target: {op}");
+        assert!(
+            ["gate_vector_b64", "up_vector_b64", "down_vector_b64"]
+                .iter()
+                .any(|k| op[*k].is_string()),
+            "a re-fit carries vectors: {op}"
+        );
+    }
+    assert!(
+        all.iter().all(|op| op["op"] != "update_knn_fact"),
+        "no re-fit is recorded as a fact UPDATE: {all:?}"
+    );
+
+    let mut replay = bound(&fx.vindex);
+    for path in &files {
+        run(&mut replay, &format!("APPLY PATCH \"{}\";", lql_path(path)));
+    }
+    let facts = replay.asserted_facts().unwrap();
+    assert_eq!(facts.len(), inserts.len(), "{facts:?}");
+    for fact in &facts {
+        assert_eq!(fact.status, FactStatus::Compose, "{fact:?}");
+        assert_eq!(fact.version, 1, "{fact:?}");
+    }
+    let stmt = semantic_update(inserts[0]);
+    let why = replay
+        .execute(&parse(&stmt).unwrap())
+        .expect_err("a compose fact refuses semantic UPDATE")
+        .to_string();
+    assert!(why.contains("compose install"), "{why}");
+
+    // The contrast: a physical UPDATE of the first fact's slot degrades it.
+    let first = facts[0].clone();
+    let &(layer, feature) = first.slots.first().expect("a compose fact owns a slot");
+    run(
+        &mut replay,
+        &format!(
+            "UPDATE EDGES SET confidence = 0.5 WHERE layer = {layer} AND feature = {feature};"
+        ),
+    );
+    let after = replay.asserted_facts().unwrap();
+    let edited = after.iter().find(|f| f.id == first.id).unwrap();
+    assert_eq!(edited.status, FactStatus::Degraded, "{edited:?}");
+}
+
+#[test]
+fn vindex3_refits_in_saved_patches_are_not_fact_updates() {
+    assert_refits_are_not_fact_updates(&v3(), &[V3_A, V3_C]);
+}
+
+#[test]
+fn vindex2_refits_in_saved_patches_are_not_fact_updates() {
+    assert_refits_are_not_fact_updates(&v2(), &[V2_A, V2_C]);
+}
