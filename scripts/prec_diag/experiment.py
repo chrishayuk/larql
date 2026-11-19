@@ -43,6 +43,7 @@ if __package__ in (None, ""):
 
 from prec_diag import analysis  # noqa: E402
 from prec_diag import evidence as ev  # noqa: E402
+from prec_diag import families as fam  # noqa: E402
 from prec_diag import freeze as fz  # noqa: E402
 from prec_diag import v0  # noqa: E402
 
@@ -57,7 +58,6 @@ LARQL_ARMS = {"C": ["--backend", "reference"],
 #: `runs_and_identities` (so PREC-DIAG readings and v1/v2 admission never see them).
 CONTROL_EXPERIMENTS = ("N1",)
 #: The modeling file A64 patches, and the thread settings, are the oracle's own constants.
-HF_MODELING_SHA256 = "221f147ccc0b16d7fa0aa007231ee0a6bd40fb37feb79eb9e537290498468aef"
 HF_THREADS = {"torch_num_threads": 8, "torch_num_interop_threads": 1, "OMP_NUM_THREADS": "8"}
 HF_ENVIRONMENT = {"OMP_NUM_THREADS": "8"}
 #: FREEZE.json values this runner needs beyond freeze.REQUIRED_*.
@@ -112,27 +112,27 @@ def load_freeze(path: Path, expected_sha256: str) -> dict:
         raise ev.EvidenceError(f"not a freeze manifest: {manifest.get('schema')!r}")
     missing = [k for k in REQUIRED_VALUES if k not in manifest["values"]]
     missing += [lt for lt in rope_table_labels(manifest) if lt not in manifest["files"]]
+    missing += [label for label in ("script.families",) if label not in manifest["files"]]
     if missing:
         raise ev.EvidenceError(f"FREEZE.json lacks what the runner needs: {missing}")
     return manifest
 
 
+def checkpoint_config(manifest: dict) -> dict:
+    return json.loads((Path(manifest["checkpoint"]["directory"]) / "config.json").read_text())
+
+
 def layer_types(manifest: dict) -> list[str]:
-    config = json.loads((Path(manifest["checkpoint"]["directory"]) / "config.json").read_text())
-    return sorted(set(config_layer_types(config)))
+    return sorted(set(config_layer_types(checkpoint_config(manifest))))
 
 
-def config_layer_types(config: dict) -> list[str]:
-    """Per-layer attention types. An older Gemma 3 config (1B) names only
-    `sliding_window_pattern`; transformers expands it as every
-    `pattern`-th layer full, the rest sliding, and so does this."""
-    if config.get("layer_types"):
-        return list(config["layer_types"])
-    pattern = config.get("sliding_window_pattern") or config.get("_sliding_window_pattern")
-    if not pattern:
-        return []
-    return ["sliding_attention" if (i + 1) % pattern else "full_attention"
-            for i in range(config["num_hidden_layers"])]
+config_layer_types = fam.config_layer_types
+
+
+def modeling_identity(manifest: dict) -> dict:
+    """The transformers modeling file the oracle must find for this checkpoint's family."""
+    family = fam.family_of(checkpoint_config(manifest))
+    return {"family": family, "sha256": fam.FAMILIES[family]["modeling_sha256"]}
 
 
 def rope_table_labels(manifest: dict) -> list[str]:
@@ -173,11 +173,12 @@ def expected_identity(manifest: dict, freeze_sha256: str, run: dict, experiment:
     return {"tool": "hf_oracle", "arm": run["base"], "bind": bind,
             "scripts": {"hf_oracle.py": file_sha(manifest, "script.hf_oracle"),
                         "evidence.py": file_sha(manifest, "script.evidence"),
+                        "families.py": file_sha(manifest, "script.families"),
                         "oracle_loading.py": file_sha(manifest, "script.oracle_loading")},
             "checkpoint": {"config_sha256": manifest["checkpoint"]["config_json_sha256"],
                            "safetensors": manifest["checkpoint"]["safetensors"]},
             "input": {"ids_json_sha256": v0.ids_json_sha256(ids), "length": len(ids)},
-            "positions": positions, "modeling_gemma3_sha256": HF_MODELING_SHA256,
+            "positions": positions, "modeling": modeling_identity(manifest),
             "threads": manifest["values"]["threads"], "environment": HF_ENVIRONMENT,
             "packages": manifest["values"]["packages"]}
 
@@ -195,6 +196,7 @@ def frozen_world_problems(manifest_path: Path, freeze_sha256: str) -> list[str]:
     own = {"script.experiment": here / "experiment.py", "script.v0": here / "v0.py",
            "script.evidence": here / "evidence.py", "script.analysis": here / "analysis.py",
            "script.freeze": here / "freeze.py", "script.hf_oracle": here / "hf_oracle.py",
+           "script.families": here / "families.py",
            "script.oracle_loading": here.parent / "oracle_loading.py",
            "script.equivalence_metrics": here.parent / "equivalence_metrics.py"}
     for label, path in own.items():
@@ -228,6 +230,9 @@ def preflight(manifest_path: Path, freeze_sha256: str, root: Path, experiment: s
     """Before an experiment: the frozen world, plus run-once and disk."""
     problems = frozen_world_problems(manifest_path, freeze_sha256)
     manifest = json.loads(Path(manifest_path).read_bytes())
+    family = fam.family_of(checkpoint_config(manifest))
+    if any(r["capture"] for r in plan(experiment)) and not fam.FAMILIES[family]["captures"]:
+        problems.append(f"{experiment} captures sites, and the oracle maps no sites for {family}")
     if (root / experiment).exists():
         problems.append(f"{root / experiment} exists: an experiment's runs are made once")
     limits = manifest["values"].get("resource_limits", {})

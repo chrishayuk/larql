@@ -34,7 +34,8 @@ FAKE = SCRIPTS / "prec_diag" / "fake_larql.py"
 OWN_SCRIPTS = {"script.hf_oracle": "prec_diag/hf_oracle.py", "script.v0": "prec_diag/v0.py",
                "script.analysis": "prec_diag/analysis.py", "script.evidence": "prec_diag/evidence.py",
                "script.freeze": "prec_diag/freeze.py", "script.experiment": "prec_diag/experiment.py",
-               "script.oracle_loading": "oracle_loading.py", "script.equivalence_metrics": "equivalence_metrics.py"}
+               "script.oracle_loading": "oracle_loading.py", "script.equivalence_metrics": "equivalence_metrics.py",
+               "script.families": "prec_diag/families.py"}
 GEOMETRY = {"vocab": hft.VOCAB, "hidden": hft.HIDDEN, "q_heads": hft.HEADS, "kv_heads": hft.KV,
             "head_dim": hft.HEAD_DIM, "layers": hft.LAYERS}
 POSITIONS = sorted(set([0, 1, 20, 255, 510, 511, 512, 513, 514, 767, 1022, 1023, 1024, 1025, 1026, 1039]
