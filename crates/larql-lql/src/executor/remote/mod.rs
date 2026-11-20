@@ -157,9 +157,8 @@ impl Session {
             session_id,
             model_name,
         };
-        let mut out = vec![banner];
-        out.extend(self.reset_binding_state());
-        Ok(out)
+        self.reset_binding_state();
+        Ok(vec![banner])
     }
 
     /// True iff the active backend is the Remote variant.

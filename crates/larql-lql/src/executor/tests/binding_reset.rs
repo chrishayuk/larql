@@ -1,4 +1,5 @@
-//! Gate B, B1: `reset_binding_state` gives every field the previous binding
+//! Gate B, B1: a bind refuses over unsaved operations, and
+//! `reset_binding_state` gives every field the previous binding
 //! built its fresh value, and keeps the session's own configuration.
 
 use super::*;
@@ -8,13 +9,11 @@ use crate::executor::{InstalledEdge, PatchRecording};
 /// A session whose every binding-derived field holds something.
 fn dirty() -> Session {
     let mut session = Session::new();
+    // An empty anonymous recording: a bind is refused before the reset over
+    // one that holds operations.
     session.patch_recording = Some(PatchRecording {
         path: String::new(),
-        operations: vec![larql_vindex::PatchOp::Delete {
-            layer: 0,
-            feature: 0,
-            reason: None,
-        }],
+        operations: Vec::new(),
     });
     session.auto_patch = true;
     session
@@ -42,11 +41,35 @@ fn the_reset_leaves_the_fingerprint_of_a_new_session() {
     let mut session = dirty();
     let fresh = Session::new().state_fingerprint();
     assert!(!session.state_fingerprint().changed_since(&fresh).is_empty());
-    let line = session.reset_binding_state();
+    session.reset_binding_state();
     assert_eq!(session.state_fingerprint(), fresh);
-    let line = line.expect("an open recording is named");
-    assert!(line.contains("the anonymous recording"), "{line}");
-    assert!(line.contains("1 unsaved operation(s)"), "{line}");
+}
+
+#[test]
+fn a_rebind_is_refused_only_over_unsaved_operations() {
+    let mut session = Session::new();
+    assert!(session.refuse_rebind_over_unsaved_recording("USE").is_ok());
+    session.patch_recording = Some(PatchRecording {
+        path: "named.vlp".into(),
+        operations: Vec::new(),
+    });
+    assert!(session.refuse_rebind_over_unsaved_recording("USE").is_ok());
+    session.patch_recording = Some(PatchRecording {
+        path: String::new(),
+        operations: vec![larql_vindex::PatchOp::Delete {
+            layer: 0,
+            feature: 0,
+            reason: None,
+        }],
+    });
+    let err = session
+        .refuse_rebind_over_unsaved_recording("EXTRACT")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("EXTRACT refused: the anonymous recording holds 1"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -55,12 +78,11 @@ fn the_reset_keeps_the_sessions_own_configuration() {
     session.set_verifier("verifier-path");
     session.contract_violations = 4;
     session.set_representation_source(RepresentationSource::Auto);
-    assert!(session.reset_binding_state().is_some());
+    session.reset_binding_state();
     assert_eq!(
         session.verifier.as_deref(),
         Some(std::path::Path::new("verifier-path"))
     );
     assert_eq!(session.contract_violations, 4);
     assert_eq!(session.representation_source(), RepresentationSource::Auto);
-    assert!(Session::new().reset_binding_state().is_none());
 }

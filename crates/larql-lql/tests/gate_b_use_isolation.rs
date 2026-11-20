@@ -7,8 +7,10 @@
 //! what it gives in a fresh session.
 //!
 //! The other direction: a USE that fails leaves the previous session as it
-//! was, its open recording included. And an open recording a successful USE
-//! discards is named in USE's output, never dropped silently.
+//! was. And a USE, or an EXTRACT (which binds what it builds), refuses while
+//! the open recording holds unsaved operations, before doing anything: the
+//! binding and the recording stay as they were, and SAVE PATCH still writes
+//! it. An empty recording holds nothing to lose and does not block.
 //!
 //! Before the fix, the install caches survived USE, and the compose refine
 //! of the next INSERT Gram-Schmidted against the previous binding's
@@ -43,6 +45,16 @@ fn run(session: &mut Session, stmt: &str) -> Vec<String> {
 
 fn use_stmt(path: &Path) -> String {
     format!("USE \"{}\";", lql_path(path))
+}
+
+/// Runs `stmts` inside BEGIN PATCH / SAVE PATCH to `patch`, so the session
+/// holds them as saved edits with no open recording.
+fn saved(session: &mut Session, patch: &Path, stmts: &[&str]) {
+    run(session, &format!("BEGIN PATCH \"{}\";", lql_path(patch)));
+    for stmt in stmts {
+        run(session, stmt);
+    }
+    run(session, "SAVE PATCH;");
 }
 
 fn bound(path: &Path) -> Session {
@@ -221,7 +233,7 @@ fn assert_reuse_then_apply_is_fresh(fx: &Fixture) {
     run(&mut author, "SAVE PATCH;");
 
     let mut session = bound(&fx.vindex);
-    run(&mut session, fx.a);
+    saved(&mut session, &dir.join("a.vlp"), &[fx.a]);
     run(&mut session, &use_stmt(&fx.vindex));
     run(
         &mut session,
@@ -255,8 +267,8 @@ fn vindex2_reuse_then_apply_is_a_fresh_session() {
 fn use_of_another_vindex_is_a_fresh_session_there() {
     let (on_v2, on_v3) = (v2(), v3());
     let mut session = bound(&on_v2.vindex);
-    run(&mut session, on_v2.a);
-    run(&mut session, on_v2.c);
+    let on_v2_dir = on_v2.vindex.parent().unwrap();
+    saved(&mut session, &on_v2_dir.join("ac.vlp"), &[on_v2.a, on_v2.c]);
     run(&mut session, &use_stmt(&on_v3.vindex));
     run(&mut session, on_v3.a);
     let mut fresh = bound(&on_v3.vindex);
@@ -266,7 +278,8 @@ fn use_of_another_vindex_is_a_fresh_session_there() {
         state(&mut fresh, on_v3.prompt)
     );
 
-    run(&mut session, on_v3.c);
+    let on_v3_dir = on_v3.vindex.parent().unwrap();
+    saved(&mut session, &on_v3_dir.join("c.vlp"), &[on_v3.c]);
     run(&mut session, &use_stmt(&on_v2.vindex));
     run(&mut session, on_v2.a);
     let mut fresh = bound(&on_v2.vindex);
@@ -278,17 +291,15 @@ fn use_of_another_vindex_is_a_fresh_session_there() {
 }
 
 /// A USE that fails changes nothing: the previous binding, its edits, its
-/// install caches and its open recording are all as they were, and SAVE
-/// PATCH still writes the recording.
+/// install caches and its open (empty) recording are all as they were.
 fn assert_failed_use_changes_nothing(fx: &Fixture) {
     let dir = fx.vindex.parent().unwrap();
-    let saved = dir.join("kept.vlp");
     let mut session = bound(&fx.vindex);
+    saved(&mut session, &dir.join("a.vlp"), &[fx.a]);
     run(
         &mut session,
-        &format!("BEGIN PATCH \"{}\";", lql_path(&saved)),
+        &format!("BEGIN PATCH \"{}\";", lql_path(dir.join("next.vlp"))),
     );
-    run(&mut session, fx.a);
     let before = state(&mut session, fx.prompt);
 
     for target in [dir.join("missing.vindex"), dir.join("not-a-vindex")] {
@@ -300,13 +311,6 @@ fn assert_failed_use_changes_nothing(fx: &Fixture) {
         assert!(err.is_err(), "{stmt} must fail");
         assert_eq!(state(&mut session, fx.prompt), before, "{stmt}");
     }
-
-    run(&mut session, "SAVE PATCH;");
-    let patch: serde_json::Value = serde_json::from_slice(&std::fs::read(&saved).unwrap()).unwrap();
-    assert!(
-        !patch["operations"].as_array().unwrap().is_empty(),
-        "the recording survived the failed USE: {patch}"
-    );
 }
 
 #[test]
@@ -319,34 +323,98 @@ fn vindex2_a_failed_use_changes_nothing() {
     assert_failed_use_changes_nothing(&v2());
 }
 
-/// A successful USE over an open recording names what it discards.
-#[test]
-fn use_names_the_open_recording_it_discards() {
-    let fx = v3();
+/// USE, remote USE and EXTRACT refuse over an open recording that holds
+/// unsaved operations, before doing anything, and say how to keep them. The
+/// state is unchanged, the target is not touched, and SAVE PATCH still
+/// writes every operation. Once saved, the same USE goes ahead.
+fn assert_use_refuses_over_unsaved_operations(fx: &Fixture) {
     let dir = fx.vindex.parent().unwrap();
     let mut session = bound(&fx.vindex);
-
-    let quiet = run(&mut session, &use_stmt(&fx.vindex));
-    assert!(
-        !quiet.iter().any(|l| l.contains("Discarded")),
-        "no recording, nothing to name: {quiet:?}"
-    );
-
     run(&mut session, fx.a);
-    let out = run(&mut session, &use_stmt(&fx.vindex)).join("\n");
-    assert!(out.contains("Discarded the anonymous recording"), "{out}");
-    assert!(out.contains("1 unsaved operation(s)"), "{out}");
-    assert!(out.contains("SAVE PATCH"), "{out}");
+    let before = state(&mut session, fx.prompt);
+    let extract_out = dir.join("extracted.vindex");
+    let refused = |session: &mut Session, stmt: &str| {
+        let err = session
+            .execute(&parse(stmt).unwrap())
+            .expect_err(stmt)
+            .to_string();
+        assert_eq!(state(session, fx.prompt), before, "{stmt}");
+        err
+    };
+
+    let use_same = use_stmt(&fx.vindex);
+    let anonymous = "USE refused: the anonymous recording holds 1 unsaved operation(s), and \
+                     binding again would discard them. Nothing was changed. To keep them, name \
+                     it with BEGIN PATCH \"file.vlp\" and run SAVE PATCH, then run USE again.";
+    assert!(refused(&mut session, &use_same).ends_with(anonymous));
+    let remote = refused(&mut session, r#"USE REMOTE "http://127.0.0.1:1";"#);
+    assert!(remote.ends_with(anonymous), "{remote}");
+    let extract = refused(
+        &mut session,
+        &format!(
+            "EXTRACT MODEL \"{}\" INTO \"{}\";",
+            lql_path(dir.join("checkpoint")),
+            lql_path(&extract_out)
+        ),
+    );
+    assert!(
+        extract.ends_with(&anonymous.replace("USE", "EXTRACT")),
+        "{extract}"
+    );
+    assert!(!extract_out.exists(), "EXTRACT refused before writing");
 
     let named = dir.join("named.vlp");
     run(
         &mut session,
         &format!("BEGIN PATCH \"{}\";", lql_path(&named)),
     );
-    let out = run(&mut session, &use_stmt(&fx.vindex)).join("\n");
+    let err = session
+        .execute(&parse(&use_same).unwrap())
+        .expect_err("named recording");
     assert!(
-        out.contains(&format!("the recording for {}", named.display())),
-        "{out}"
+        err.to_string().ends_with(&format!(
+            "USE refused: the recording for {} holds 1 unsaved operation(s), and binding \
+             again would discard them. Nothing was changed. To keep them, run SAVE PATCH, \
+             then run USE again.",
+            named.display()
+        )),
+        "{err}"
     );
-    assert!(out.contains("0 unsaved operation(s)"), "{out}");
+    run(&mut session, "SAVE PATCH;");
+    let patch: serde_json::Value = serde_json::from_slice(&std::fs::read(&named).unwrap()).unwrap();
+    assert_eq!(patch["operations"].as_array().unwrap().len(), 1, "{patch}");
+
+    run(&mut session, &use_same);
+    assert_eq!(
+        state(&mut session, fx.prompt),
+        state(&mut bound(&fx.vindex), fx.prompt)
+    );
+}
+
+#[test]
+fn vindex3_use_refuses_over_unsaved_operations() {
+    assert_use_refuses_over_unsaved_operations(&v3());
+}
+
+#[test]
+fn vindex2_use_refuses_over_unsaved_operations() {
+    assert_use_refuses_over_unsaved_operations(&v2());
+}
+
+/// An open recording with no operations holds nothing to lose: USE goes
+/// ahead, and the session is a fresh one bound there.
+#[test]
+fn use_goes_ahead_over_an_empty_recording() {
+    let fx = v3();
+    let dir = fx.vindex.parent().unwrap();
+    let mut session = bound(&fx.vindex);
+    run(
+        &mut session,
+        &format!("BEGIN PATCH \"{}\";", lql_path(dir.join("empty.vlp"))),
+    );
+    run(&mut session, &use_stmt(&fx.vindex));
+    assert_eq!(
+        state(&mut session, fx.prompt),
+        state(&mut bound(&fx.vindex), fx.prompt)
+    );
 }

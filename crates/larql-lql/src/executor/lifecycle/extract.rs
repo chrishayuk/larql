@@ -49,6 +49,9 @@ impl Session {
         _extract_level: ExtractLevel,
         format: Option<ExtractFormat>,
     ) -> Result<Vec<String>, LqlError> {
+        // EXTRACT binds what it builds, so it refuses up front, before any
+        // bytes move, when that bind would discard unsaved operations.
+        self.refuse_rebind_over_unsaved_recording("EXTRACT")?;
         // Resolve the generation FIRST — the request must be admitted or
         // refused before any model bytes move. `None` is "no preference",
         // resolved by the vindex crate's single policy site (the
@@ -155,7 +158,7 @@ impl Session {
             router,
             memit_store,
         };
-        out.extend(self.reset_binding_state());
+        self.reset_binding_state();
         Ok(out)
     }
 
