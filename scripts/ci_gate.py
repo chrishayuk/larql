@@ -70,11 +70,27 @@ DEADLINE_SECONDS = 170 * 60
 PASS, FAIL, WAIT = "pass", "fail", "wait"
 
 
-def newest_per_workflow(runs, self_run_id):
-    """The newest run of each workflow, without this gate's own run."""
+def own_workflow_path(workflow_ref):
+    """`.github/workflows/ci-gate.yml` from GITHUB_WORKFLOW_REF
+    (`owner/repo/.github/workflows/ci-gate.yml@refs/...`), or None."""
+    if not workflow_ref:
+        return None
+    path = workflow_ref.split("@", 1)[0]
+    marker = ".github/workflows/"
+    return path[path.index(marker):] if marker in path else None
+
+
+def newest_per_workflow(runs, self_run_id, self_path=None):
+    """The newest run of each workflow, without any run of this gate's own
+    workflow. Leaving out only this run is not enough: a re-run at the same head
+    commit (a reopened pull request, or a re-run after main is fixed) would judge
+    the gate's own earlier, failed run for that commit."""
+    own = {run["workflow_id"] for run in runs if run["id"] == self_run_id}
     newest = {}
     for run in runs:
-        if run["id"] == self_run_id:
+        if run["id"] == self_run_id or run["workflow_id"] in own:
+            continue
+        if self_path is not None and run.get("path") == self_path:
             continue
         held = newest.get(run["workflow_id"])
         if held is None or (run["created_at"], run["id"]) > (held["created_at"], held["id"]):
@@ -83,9 +99,9 @@ def newest_per_workflow(runs, self_run_id):
 
 
 def judge(runs, self_run_id, always_present=ALWAYS_PRESENT, advisory=ADVISORY,
-          advisory_paths=ADVISORY_PATHS):
+          advisory_paths=ADVISORY_PATHS, self_path=None):
     """(verdict, lines) for one listing of the head commit's workflow runs."""
-    judged = newest_per_workflow(runs, self_run_id)
+    judged = newest_per_workflow(runs, self_run_id, self_path)
     lines = []
     bad, pending = [], []
     for run in judged:
@@ -130,12 +146,13 @@ def main():
     repo = os.environ["REPO"]
     sha = os.environ["HEAD_SHA"]
     self_run_id = int(os.environ["GITHUB_RUN_ID"])
+    self_path = own_workflow_path(os.environ.get("GITHUB_WORKFLOW_REF"))
 
     started = time.monotonic()
     time.sleep(SETTLE_SECONDS)
     quiet = 0
     while True:
-        verdict, lines = judge(list_runs(repo, sha), self_run_id)
+        verdict, lines = judge(list_runs(repo, sha), self_run_id, self_path=self_path)
         print(f"{sha[:8]} after {int(time.monotonic() - started)}s: {verdict}")
         print("\n".join(lines), flush=True)
 
