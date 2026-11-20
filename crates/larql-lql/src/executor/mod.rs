@@ -506,7 +506,23 @@ impl Session {
                 max_iters,
                 floor,
                 ceiling,
-            } => self.exec_rebalance(*max_iters, *floor, *ceiling),
+            } => {
+                // REBALANCE rescales the down vectors of earlier installs,
+                // which may sit in saved patches: record each change as a
+                // re-fit so the recording replays to this state (Gate B, B3).
+                let prior = self.prior_install_vectors();
+                let rebalanced = self.exec_rebalance(*max_iters, *floor, *ceiling)?;
+                let refits = self.refits_since(&prior);
+                if refits.is_empty() {
+                    return Ok(rebalanced);
+                }
+                let mut out = self.ensure_patch_session();
+                out.extend(rebalanced);
+                for op in refits {
+                    self.record_knowledge_op(op);
+                }
+                Ok(out)
+            }
 
             // ── Patch commands ──
             Statement::BeginPatch { path } => self.exec_begin_patch(path),
