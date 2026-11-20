@@ -6,7 +6,8 @@ answer different questions:
 - `strict-f32` (agreement): does LARQL reproduce transformers' f32 outputs?
 - `hf-f64-accuracy/1` (accuracy): how close is LARQL to the f64 reference (A64)?
 
-The gate: for both LARQL backends (C = reference, D = Metal) on all three
+The gate: for both LARQL backends (C = `--backend reference`, D = `--backend production
+--representation-source stored`, both on CPU) on all three
 1,040-token inputs (I_rep, I_nr1, I_nr2), the full-vocabulary max |Δ logprob|
 against A64 is at most 1e-3, the same value as `strict-f32`. The agreement
 distance to transformers f32 (A32) is reported beside it and never gated, so a
@@ -17,7 +18,8 @@ failed audit as `fault`, which is never admitted. This test also re-reads
 `audit.json`: the f64 operations ran (call totals equal expected) and every
 checkpoint parameter was preserved.
 
-Scope: Gemma 3 270M at the frozen checkpoint, these inputs, the C and D paths,
+Scope: the model the freeze names (`values.model`; Gemma 3 270M when absent)
+at the frozen checkpoint, these inputs, the C and D paths,
 and the environment bound by `FREEZE.json`. A pass shows LARQL is within 1e-3
 of an f64 implementation, which is itself finite precision. It does not show
 that LARQL has no numerical bugs elsewhere.
@@ -47,9 +49,16 @@ VERSION = 1
 GATE = 1e-3
 BACKENDS = ("C", "D")
 INPUTS = ("I_rep", "I_nr1", "I_nr2")
-SCOPE = ("Gemma 3 270M (google/gemma-3-270m-it at the frozen revision); inputs I_rep, I_nr1, I_nr2; "
-         "LARQL C (reference) and D (Metal) cached paths; the environment bound by FREEZE.json. "
+#: The model the frozen world names. A freeze without `values.model` is the
+#: original 270M one.
+DEFAULT_MODEL = "Gemma 3 270M (google/gemma-3-270m-it at the frozen revision)"
+SCOPE = ("{model}; inputs I_rep, I_nr1, I_nr2; "
+         "LARQL C (reference) and D (production CPU, stored representation) cached paths; the environment bound by FREEZE.json. "
          "The reference is the audited transformers f64 oracle, itself finite precision.")
+
+
+def scope(manifest: dict) -> str:
+    return SCOPE.format(model=manifest["values"].get("model", DEFAULT_MODEL))
 PASS, FAIL, INVALID = "pass", "fail", "invalid"
 
 
@@ -123,7 +132,7 @@ def run(manifest_path: Path, freeze_sha256: str, root: Path, out: Path) -> dict:
         runs, expected = ex.runs_and_identities(manifest, freeze_sha256, root)
         result = evaluate(runs, expected, ex.vocab_of(manifest))
     report = {"test": f"{NAME}/{VERSION}", "gate_max_abs_logprob": GATE, "reference": "A64 (audited f64)",
-              "gated": "accuracy_vs_A64", "reported_not_gated": "agreement_vs_A32", "scope": SCOPE,
+              "gated": "accuracy_vs_A64", "reported_not_gated": "agreement_vs_A32", "scope": scope(manifest),
               "freeze_sha256": freeze_sha256, "root": str(root), **result}
     ev.write_atomic(out, ev.canonical_json(report) + b"\n")
     return report

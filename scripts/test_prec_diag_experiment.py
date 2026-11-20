@@ -45,7 +45,7 @@ POSITIONS = sorted(set([0, 1, 20, 255, 510, 511, 512, 513, 514, 767, 1022, 1023,
 class World:
     """One freeze over synthetic artifacts, under `root`."""
 
-    def __init__(self, root: Path, doc_text="plan rev 3\n", fake_behaviour=None):
+    def __init__(self, root: Path, doc_text="plan rev 3\n", fake_behaviour=None, extra_files=None, extra_values=None):
         self.root = root
         root.mkdir(parents=True, exist_ok=True)
         self.ckpt = hft.make_checkpoint(root / "ckpt", max_position_embeddings=2 * N)
@@ -93,9 +93,11 @@ class World:
         values = {"larql_commit": "5c375d43", "checkpoint_revision": "synthetic", "packages": ho.packages(),
                   "threads": dict(ex.HF_THREADS), "python": sys.executable,
                   "capture_positions": {"I_rep": POSITIONS, "I_nr1": POSITIONS},
-                  "resource_limits": {"wall_s_per_run": 300, "wall_s_total": {"E1": 7200, "E2": 7200, "E3": 7200}, "rss_bytes": 16 * 10**9,
+                  "resource_limits": {"wall_s_per_run": 300, "wall_s_total": {"E1": 7200, "E2": 7200, "E3": 7200, "N1": 7200}, "rss_bytes": 16 * 10**9,
                                       "capture_bytes_per_run": 2 << 30, "min_free_bytes": 1},
-                  "larql_environment": {"HOME": str(root), "PATH": "/usr/bin:/bin", "RAYON_NUM_THREADS": "16"}}
+                  "larql_environment": {"HOME": str(root), "PATH": "/usr/bin:/bin", "RAYON_NUM_THREADS": "16"},
+                  **(extra_values or {})}
+        files.update({label: str(path) for label, path in (extra_files or {}).items()})
         spec = {"files": files, "container": str(self.container),
                 "checkpoint": {"directory": str(self.ckpt), "revision": "synthetic"}, "values": values}
         self.freeze = root / "FREEZE.json"
@@ -105,6 +107,23 @@ class World:
 
     def run(self, experiment):
         return {r["run_id"]: r for r in ex.run_experiment(self.freeze, self.sha, self.runs, experiment)}
+
+
+class Control(unittest.TestCase):
+    def test_n1_is_a_control_plan_never_read_by_admission(self):
+        runs = ex.plan("N1")
+        self.assertEqual([r["run_id"] for r in runs], [f"N1.Dauto.{i}" for i in ex.INPUTS])
+        self.assertEqual(ex.LARQL_ARMS["Dauto"], ["--backend", "production", "--representation-source", "auto"])
+        self.assertEqual(ex.LARQL_ARMS["D"][-1], "stored")
+        with tempfile.TemporaryDirectory() as d:
+            w = World(Path(d) / "w")
+            keys, _ = ex.runs_and_identities(w.manifest, w.sha, w.runs)
+            self.assertFalse(any(a == "Dauto" for a, _ in keys))
+            cruns, cexp = ex.control_runs(w.manifest, w.sha, w.runs, "N1")
+            self.assertEqual(set(cruns), {("Dauto", i) for i in ex.INPUTS})
+            self.assertEqual(cexp[("Dauto", "I_rep")]["arm"], "Dauto")
+            with self.assertRaises(ValueError):
+                ex.control_runs(w.manifest, w.sha, w.runs, "E2")
 
 
 class Tmp(unittest.TestCase):
@@ -399,6 +418,27 @@ class EndToEnd(unittest.TestCase):
     def test_readings_are_recorded_once(self):
         with self.assertRaisesRegex(ev.EvidenceError, "recorded once"):
             ex.readings(self.w.freeze, self.w.sha, self.w.runs)
+
+
+class ConfigLayerTypes(unittest.TestCase):
+    """`layer_types` from a config that lists them, or from the older
+    `sliding_window_pattern` form (Gemma 3 1B)."""
+
+    def test_an_explicit_list_is_used_as_it_is(self):
+        types = ["sliding_attention", "full_attention"]
+        self.assertEqual(ex.config_layer_types({"layer_types": types, "sliding_window_pattern": 6}), types)
+
+    def test_the_pattern_form_matches_transformers_expansion(self):
+        types = ex.config_layer_types({"sliding_window_pattern": 6, "num_hidden_layers": 26})
+        self.assertEqual(len(types), 26)
+        self.assertEqual([i for i, t in enumerate(types) if t == "full_attention"], [5, 11, 17, 23])
+
+    def test_the_private_pattern_key_is_read_too(self):
+        types = ex.config_layer_types({"_sliding_window_pattern": 2, "num_hidden_layers": 4})
+        self.assertEqual(types, ["sliding_attention", "full_attention"] * 2)
+
+    def test_no_types_and_no_pattern_names_none(self):
+        self.assertEqual(ex.config_layer_types({"num_hidden_layers": 4}), [])
 
 
 if __name__ == "__main__":

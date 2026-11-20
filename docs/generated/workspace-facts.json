@@ -1971,7 +1971,7 @@
         ],
         "native": [
           "dep:evalexpr",
-          "dep:chrono"
+          "dep:time"
         ],
         "wasm": [
           "dep:wasmtime"

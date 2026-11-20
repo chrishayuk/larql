@@ -271,6 +271,11 @@ fn cached_snapshot_file(
     filename: &str,
 ) -> Option<(PathBuf, u64)> {
     let revision = revision?;
+    if is_commit_id(revision) {
+        if let Some(hit) = commit_snapshot_file(kind, repo_id, revision, filename) {
+            return Some(hit);
+        }
+    }
     let (etag, size) = head_etag_and_size(kind, repo_id, Some(revision), filename)?;
     let repo_dir = hf_cache_repo_dir(kind, repo_id)?;
     let blob_path = repo_dir.join("blobs").join(&etag);
@@ -289,6 +294,43 @@ fn cached_snapshot_file(
         return Some((snap_file, size));
     }
     None
+}
+
+/// A full 40-hex commit id. Unlike a branch or tag, the snapshot it names
+/// can never change, so its cached files need no freshness check.
+fn is_commit_id(revision: &str) -> bool {
+    revision.len() == 40 && revision.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// The pinned commit's own snapshot file, with no network request.
+///
+/// The hub caches create `snapshots/<commit>/<file>` only after the blob
+/// is complete, and a commit's bytes are immutable, so an entry that
+/// resolves to a regular file is the right file. This keeps a fully
+/// cached registry pull working when huggingface.co is slow or
+/// unreachable: before, every file needed a HEAD first, and one HEAD
+/// failing sent the pull to a fresh download that can stall with no
+/// timeout. A link that is missing or dangling falls through to the HEAD
+/// check, exactly as before.
+fn commit_snapshot_file(
+    kind: RepoKind,
+    repo_id: &str,
+    commit: &str,
+    filename: &str,
+) -> Option<(PathBuf, u64)> {
+    let snap_file = hf_cache_repo_dir(kind, repo_id)?
+        .join("snapshots")
+        .join(commit)
+        .join(filename);
+    let meta = std::fs::metadata(&snap_file).ok()?;
+    meta.is_file().then_some((snap_file, meta.len()))
+}
+
+/// A file the repo carries for people, not for LARQL: the model card,
+/// its provenance notes, git attributes. A VINDEX3 pull fetches them when
+/// it can, and does not fail when it cannot.
+fn is_repo_documentation(filename: &str) -> bool {
+    filename == ".gitattributes" || (!filename.contains('/') && filename.ends_with(".md"))
 }
 
 /// Issue a HEAD against HF's file-resolve endpoint for this repo+file
@@ -467,12 +509,13 @@ where
                     if sibling.rfilename == INDEX_JSON {
                         continue;
                     }
-                    fetch(&sibling.rfilename, &sibling.rfilename).ok_or_else(|| {
-                        VindexError::Parse(format!(
+                    let fetched = fetch(&sibling.rfilename, &sibling.rfilename);
+                    if fetched.is_none() && !is_repo_documentation(&sibling.rfilename) {
+                        return Err(VindexError::Parse(format!(
                             "failed to download required VINDEX3 file '{}' from hf://{repo_id}",
                             sibling.rfilename
-                        ))
-                    })?;
+                        )));
+                    }
                 }
                 // Complete is not the same as correct: the segments must
                 // be the bytes this container's own index seals.
