@@ -260,9 +260,10 @@ DIFF "base.vindex" "edited.vindex" INTO PATCH "changes.vlp";
 -- See what changed
 DIFF "gemma3-4b.vindex" CURRENT;
 
--- Bake the patches into a fresh standalone vindex (instant on APFS:
--- weight files hardlinked from source, only down_weights.bin gets the
--- override columns rewritten in place).
+-- Bake the patches into a fresh standalone vindex (fast: unchanged
+-- weight files are hard-linked from the source; a file that gets
+-- override columns is copied first and the copy is patched, so the
+-- source is never written).
 COMPILE CURRENT INTO VINDEX "gemma3-4b-medical.vindex";
 
 -- Use the compiled vindex like any other — INFER produces the new
@@ -285,6 +286,48 @@ export would not contain: any `DELETE`, `UPDATE` or KNN-mode `INSERT`, and
 any compose-mode `INSERT` unless `LARQL_MEMIT_ENABLE=1`. `FORMAT GGUF` is
 refused. The export itself does not currently complete for any source (it
 fails while writing the model); that is tracked separately.
+
+**How an output is published.** `COMPILE … INTO VINDEX`, `COMPILE … INTO
+MODEL` and `COMPACT INTO VINDEX` write their output into a hidden staging
+directory beside the destination, named `.<name>.tmp.<pid>.<n>`. Then:
+
+1. every staged file, and on Unix every staged directory, is synced to disk;
+2. the staged output is reopened and checked: a VINDEX2 vindex's checksums
+   must match its bytes, a VINDEX3 container must open with every segment
+   hashing to its directory entry, and a compacted container must mean
+   exactly what its source means (an empty `DIFF`);
+3. the staging directory is renamed to the destination in one step;
+4. on Unix, the destination's parent directory is synced, so the rename
+   survives a crash.
+
+What this guarantees, and what it does not:
+
+- **Identical inputs give identical bytes.** Two sessions in the same state
+  write byte-identical outputs, every file included.
+- **A failure before the rename changes nothing.** The destination stays as
+  it was, the staging directory is removed, and the source and the session
+  are untouched. If the staging directory cannot be removed either, the
+  error names it so you can delete it.
+- **A failure of the final sync is reported, not undone.** The output is in
+  place and complete, but its durability is not confirmed. The error says
+  "published … but its durability is not confirmed"; nothing is deleted.
+- **The destination must be new.** An existing non-empty directory, a
+  symlink, the source itself, or a path nested with the source is refused
+  before anything is written.
+- **Unchanged files are hard-links.** The output shares those files with the
+  source. No LQL statement writes a shared file in place, so editing or
+  compiling the output later never changes the source.
+- **Platforms.** Durability is complete on Unix local filesystems. On other
+  platforms files are synced, but directories cannot be, so the rename itself
+  is not made durable.
+- **Not a defence against concurrent writers.** The destination is checked,
+  then renamed into. Another process that swaps a parent directory for a
+  symlink in between can redirect the rename. The one race that is closed is
+  a destination that gains contents: the rename then fails rather than
+  deleting them.
+- **An interrupted run** (a crash or a kill) can leave a staging directory
+  behind. It is never published and nothing deletes it automatically; remove
+  it by hand.
 
 ## Residual Stream Trace
 

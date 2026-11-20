@@ -468,3 +468,5 @@ fn a_sourceless_check_still_refuses_a_symlink() {
     let err = check_empty_destination(&link).unwrap_err();
     assert!(refusal_reason(err).contains("symbolic link"));
 }
+
+mod publication;

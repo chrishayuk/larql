@@ -12,7 +12,8 @@ use std::path::PathBuf;
 
 use crate::error::LqlError;
 use crate::executor::{Backend, Session};
-use larql_vindex::format::vindex3::compact::compact_container;
+use larql_vindex::format::vindex3::compact::compact_container_validated;
+use larql_vindex::format::vindex3::diff::{semantic_diff, DiffSide};
 
 impl Session {
     pub(crate) fn exec_compact_into(&mut self, output: &str) -> Result<Vec<String>, LqlError> {
@@ -41,8 +42,12 @@ impl Session {
         }
 
         let out = PathBuf::from(output);
+        // Before publication, the staged container must mean exactly what the
+        // source means: the logical DIFF between them is empty (Gate B, B6
+        // §3.3).
         let report =
-            compact_container(path, &out).map_err(|e| LqlError::exec("compact failed", e))?;
+            compact_container_validated(path, &out, |staged| require_same_meaning(path, staged))
+                .map_err(|e| LqlError::exec("compact failed", e))?;
 
         let mut lines = vec![
             format!("Compacted: {} (VINDEX3)", out.display()),
@@ -64,4 +69,29 @@ impl Session {
         }
         Ok(lines)
     }
+}
+
+/// Gate B, B6 §3.3: the container at `staged` means exactly what the one at
+/// `source` means. The logical DIFF between them is empty, or the error
+/// counts what differs.
+pub(super) fn require_same_meaning(
+    source: &std::path::Path,
+    staged: &std::path::Path,
+) -> Result<(), larql_vindex::VindexError> {
+    let component = crate::executor::vindex3::V3_COMPONENT;
+    let before = DiffSide::open(source, component)?;
+    let after = DiffSide::open(staged, component)?;
+    let diff = semantic_diff(&before, &after)?;
+    if diff.is_empty() {
+        return Ok(());
+    }
+    Err(larql_vindex::VindexError::Parse(format!(
+        "the compacted container does not mean what the source means: {} knowledge edge(s) \
+         added, {} removed, {} feature(s), {} tensor(s) and {} metadata item(s) differ",
+        diff.knowledge_added.len(),
+        diff.knowledge_removed.len(),
+        diff.features.len(),
+        diff.changed_tensors.len(),
+        diff.metadata.len(),
+    )))
 }

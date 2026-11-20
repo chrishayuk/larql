@@ -15,8 +15,15 @@
 //! check_fresh_destination(source, out)      refuse before any write
 //!     → create an exclusive sibling staging directory
 //!     → work(staging)                       all writes land here
+//!     → sync every staged file and directory
+//!     → validate(staging)                   reopen and check the result
 //!     → promote: rename staging → out       the only step touching `out`
+//!     → sync out's parent directory
 //! ```
+//!
+//! The sequence and its two failure classes (before the rename: nothing
+//! changed; the final sync: published, durability not confirmed) are
+//! Gate B, B6 §3.6 (`docs/gate-b-b6.md`).
 //!
 //! What it refuses (fail closed):
 //!
@@ -34,11 +41,15 @@
 //! deletes — if the directory gained contents after the check.
 
 //!
-//! Two limits, stated so they are not mistaken for guarantees:
+//! What it guarantees, and its limits, stated so they are not mistaken for
+//! more:
 //!
-//! - **Atomic, not durable.** Promotion is one `rename`, so a reader
-//!   never sees a partial directory. Nothing is `fsync`ed: after a power
-//!   loss the output may be absent or incomplete.
+//! - **Atomic and durable on Unix local filesystems.** Promotion is one
+//!   `rename` on one filesystem, so a reader never sees a partial
+//!   directory, and every staged file and directory is synced before it
+//!   and the parent after it, so a successful return survives a crash.
+//!   On other platforms files are synced but directories cannot be, so
+//!   the rename itself is not made durable there.
 //! - **Not a defence against a concurrent adversary.** The check and the
 //!   promotion are separate steps. Paths are resolved through symlinks
 //!   at check time; a process that swaps a parent directory for a
@@ -75,6 +86,8 @@ const STEP_REMOVE_EMPTY_OUT: &str = "remove the empty output directory";
 const STEP_PROMOTE: &str = "promote the staging dir to";
 const STEP_RESOLVE: &str = "resolve";
 const STEP_INSPECT: &str = "inspect";
+const STEP_SYNC: &str = "sync";
+const STEP_INJECTED: &str = "publish";
 
 fn refuse(out: &Path, reason: impl Into<String>) -> VindexError {
     VindexError::UnsafeOutputDestination {
@@ -238,16 +251,28 @@ struct StagingGuard {
     armed: bool,
 }
 
-impl Drop for StagingGuard {
-    fn drop(&mut self) {
-        if !self.armed {
-            return;
-        }
-        if !self.staging.as_os_str().is_empty() {
-            let _ = std::fs::remove_dir_all(&self.staging);
-        }
+impl StagingGuard {
+    /// Remove the staging directory and the parents created for it, and
+    /// disarm. Returns the error if the staging directory could not be
+    /// removed (it is then left on disk).
+    fn clean_up(&mut self) -> std::io::Result<()> {
+        self.armed = false;
+        let removed = match take_fault(PublishFault::CleanUp) {
+            Some(fault) => Err(fault.io_error()),
+            None if self.staging.as_os_str().is_empty() => Ok(()),
+            None => std::fs::remove_dir_all(&self.staging),
+        };
         for parent in &self.created_parents {
             let _ = std::fs::remove_dir(parent);
+        }
+        removed
+    }
+}
+
+impl Drop for StagingGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = self.clean_up();
         }
     }
 }
@@ -327,28 +352,221 @@ fn promote(staging: &Path, out: &Path) -> Result<(), VindexError> {
     std::fs::rename(staging, out).map_err(|e| staging_error(STEP_PROMOTE, out, e))
 }
 
-/// Run `work` against a staging directory and promote the result to
+/// Run `work` against a staging directory and publish the result to
 /// `out`, provided `out` is a safe destination for something derived
-/// from `source`.
-///
-/// On any failure — a refusal, an error from `work`, a failed promotion —
-/// `out` is exactly as it was, and the staging directory and any parent
-/// directories created for it are removed.
+/// from `source`. [`write_fresh_directory_validated`] with no validation
+/// beyond the sync.
 pub fn write_fresh_directory<T, E>(
     source: &Path,
     out: &Path,
     work: impl FnOnce(&Path) -> Result<T, E>,
 ) -> Result<T, E>
 where
-    E: From<VindexError>,
+    E: From<VindexError> + std::fmt::Display,
+{
+    write_fresh_directory_validated(source, out, work, |_, _| Ok(()))
+}
+
+/// Run `work` against a staging directory, then publish it to `out` by
+/// the sequence of Gate B, B6 §3.6:
+///
+/// ```text
+/// work(staging)                 write every staged file
+/// sync every file               contents and the metadata to read them
+/// sync every staged directory
+/// validate(staging, &value)     reopen and check the staged output
+/// rename staging → out          the only step touching `out`
+/// sync out's parent directory
+/// ```
+///
+/// A failure before the rename leaves `out` exactly as it was, and the
+/// staging directory and any parent directories created for it are
+/// removed. If that removal fails too, the error is
+/// [`VindexError::StagingLeftBehind`], naming the leftover.
+///
+/// A failure of the final sync is different: the rename has happened, so
+/// the output may already be visible. It is not rolled back. The error is
+/// [`VindexError::PublishedNotDurable`].
+///
+/// Directory syncs need a directory handle, which only Unix offers; on
+/// other platforms files are synced and directories are not.
+pub fn write_fresh_directory_validated<T, E>(
+    source: &Path,
+    out: &Path,
+    work: impl FnOnce(&Path) -> Result<T, E>,
+    validate: impl FnOnce(&Path, &T) -> Result<(), E>,
+) -> Result<T, E>
+where
+    E: From<VindexError> + std::fmt::Display,
 {
     let out = without_trailing_separator(out);
     let out = out.as_path();
     check_fresh_destination(source, out)?;
     let mut guard = create_staging(out)?;
 
-    let value = work(&guard.staging)?;
-    promote(&guard.staging, out)?;
+    let staged = (|| {
+        inject(PublishFault::AfterStagingCreated)?;
+        let value = work(&guard.staging)?;
+        inject(PublishFault::AfterWork)?;
+        sync_tree(&guard.staging)?;
+        inject(PublishFault::Validate)?;
+        validate(&guard.staging, &value)?;
+        inject(PublishFault::Rename)?;
+        promote(&guard.staging, out)?;
+        Ok(value)
+    })();
+
+    let value = match staged {
+        Ok(value) => value,
+        Err(cause) => {
+            return Err(match guard.clean_up() {
+                Ok(()) => cause,
+                Err(cleanup) => E::from(VindexError::StagingLeftBehind {
+                    cause: cause.to_string(),
+                    staging: guard.staging.clone(),
+                    cleanup,
+                }),
+            });
+        }
+    };
     guard.armed = false;
+
+    sync_parent(out).map_err(|source| VindexError::PublishedNotDurable {
+        out: out.to_path_buf(),
+        source,
+    })?;
     Ok(value)
+}
+
+// ── Durability ──────────────────────────────────────────────────────────
+
+/// Sync every file under `dir`, then every directory, deepest first, so a
+/// directory is synced after the entries it lists.
+fn sync_tree(dir: &Path) -> Result<(), VindexError> {
+    let mut files = Vec::new();
+    let mut dirs = vec![dir.to_path_buf()];
+    let mut next = 0;
+    while next < dirs.len() {
+        let current = dirs[next].clone();
+        next += 1;
+        let entries =
+            std::fs::read_dir(&current).map_err(|e| staging_error(STEP_SYNC, &current, e))?;
+        for entry in entries {
+            let path = entry
+                .map_err(|e| staging_error(STEP_SYNC, &current, e))?
+                .path();
+            let kind = path
+                .symlink_metadata()
+                .map_err(|e| staging_error(STEP_SYNC, &path, e))?
+                .file_type();
+            if kind.is_dir() {
+                dirs.push(path);
+            } else if kind.is_file() {
+                files.push(path);
+            }
+        }
+    }
+
+    inject(PublishFault::SyncFile)?;
+    for file in &files {
+        sync_file(file).map_err(|e| staging_error(STEP_SYNC, file, e))?;
+    }
+    inject(PublishFault::SyncStagingDir)?;
+    for dir in dirs.iter().rev() {
+        sync_dir(dir).map_err(|e| staging_error(STEP_SYNC, dir, e))?;
+    }
+    Ok(())
+}
+
+fn sync_file(path: &Path) -> std::io::Result<()> {
+    // Windows flushes a file only through a handle with write access;
+    // opening one changes nothing in the file.
+    #[cfg(not(unix))]
+    let file = std::fs::OpenOptions::new().write(true).open(path)?;
+    #[cfg(unix)]
+    let file = std::fs::File::open(path)?;
+    file.sync_all()
+}
+
+#[cfg(unix)]
+fn sync_dir(path: &Path) -> std::io::Result<()> {
+    std::fs::File::open(path)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_dir(_path: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+/// Sync the directory that now lists `out`, making the rename durable.
+fn sync_parent(out: &Path) -> std::io::Result<()> {
+    take_fault(PublishFault::SyncParent).map_or(Ok(()), |fault| Err(fault.io_error()))?;
+    let parent = out
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    sync_dir(parent)
+}
+
+// ── Fault injection ─────────────────────────────────────────────────────
+
+/// A step of publication at which a test can make it fail (Gate B, B6
+/// §4). Arm one with [`arm_publish_fault`]; the next publication on this
+/// thread fails there, once. With none armed, publication runs exactly
+/// its normal steps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PublishFault {
+    /// The staging directory exists; nothing is written into it yet.
+    AfterStagingCreated,
+    /// `work` has written its files into staging.
+    AfterWork,
+    /// Syncing the staged files.
+    SyncFile,
+    /// Syncing the staged directories.
+    SyncStagingDir,
+    /// Validating the staged output.
+    Validate,
+    /// Renaming staging to the destination.
+    Rename,
+    /// Removing the staging directory after a failure. Arm it with another
+    /// point to make that failure's cleanup fail too.
+    CleanUp,
+    /// Syncing the destination's parent after the rename.
+    SyncParent,
+}
+
+impl PublishFault {
+    fn io_error(self) -> std::io::Error {
+        std::io::Error::other(format!("injected publish fault: {self:?}"))
+    }
+}
+
+thread_local! {
+    static ARMED: std::cell::RefCell<Vec<PublishFault>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Arm `faults` for the next publication on this thread; each fires once.
+/// An empty slice disarms every fault.
+pub fn arm_publish_fault(faults: &[PublishFault]) {
+    ARMED.with(|armed| *armed.borrow_mut() = faults.to_vec());
+}
+
+/// Remove and return `point` if it is armed.
+fn take_fault(point: PublishFault) -> Option<PublishFault> {
+    ARMED.with(|armed| {
+        let mut armed = armed.borrow_mut();
+        let at = armed.iter().position(|f| *f == point)?;
+        Some(armed.remove(at))
+    })
+}
+
+fn inject(point: PublishFault) -> Result<(), VindexError> {
+    match take_fault(point) {
+        Some(fault) => Err(staging_error(
+            STEP_INJECTED,
+            Path::new(""),
+            fault.io_error(),
+        )),
+        None => Ok(()),
+    }
 }

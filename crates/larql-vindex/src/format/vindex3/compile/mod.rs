@@ -114,11 +114,19 @@ pub fn bake_container_with(
     out: &Path,
     finish: impl FnOnce(&Path) -> Result<(), VindexError>,
 ) -> Result<BakeReport, VindexError> {
-    crate::format::fresh_output::write_fresh_directory(src, out, |staging| {
-        let report = bake_into(src, overrides, staging)?;
-        finish(staging)?;
-        Ok(report)
-    })
+    crate::format::fresh_output::write_fresh_directory_validated(
+        src,
+        out,
+        |staging| {
+            let report = bake_into(src, overrides, staging)?;
+            finish(staging)?;
+            Ok(report)
+        },
+        // Before publication, the staged container must open, and every
+        // segment, the hard-linked ones included, must hash to what its
+        // directory entry seals (Gate B, B6 §3.4).
+        |staging, _| crate::format::vindex3::verify::check_container_structure(staging, true),
+    )
 }
 
 /// The bake itself, writing into a directory that already exists and is

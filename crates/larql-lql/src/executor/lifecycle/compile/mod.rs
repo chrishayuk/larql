@@ -12,6 +12,8 @@ mod into_model;
 mod into_vindex;
 mod into_vindex_v3;
 mod source_files;
+#[cfg(test)]
+mod tests;
 mod unexported;
 
 impl Session {
