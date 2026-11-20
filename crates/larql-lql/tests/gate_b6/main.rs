@@ -3,6 +3,7 @@
 
 mod determinism;
 mod hard_links;
+mod into_model;
 mod publish_faults;
 mod replay;
 mod support;

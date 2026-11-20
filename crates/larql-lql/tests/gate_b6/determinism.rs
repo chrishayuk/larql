@@ -8,8 +8,9 @@
 //!
 //! `COMPILE INTO MODEL` is not covered: on `741ecdab` it fails for every
 //! input before it writes (its weight writer expects an `index.json` in the
-//! fresh output directory), so there is no output to compare. Its handling
-//! awaits an owner decision under B6.
+//! fresh output directory), so there is no output to compare. By owner
+//! ruling a successful export is out of B6's scope; its failure must change
+//! nothing, which `into_model.rs` checks.
 
 use crate::support::*;
 

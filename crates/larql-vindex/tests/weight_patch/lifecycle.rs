@@ -110,6 +110,37 @@ fn compacting_a_container_whose_named_ledger_is_missing_is_refused() {
     assert!(!out.exists());
 }
 
+/// A ledger that is present but cannot be read is refused before
+/// publication (Gate B, B6 §3.3): compaction copies it as bytes, so only the
+/// staged container's structural check catches it. Before B6 the copy was
+/// published as it stood. Nothing is left beside the destination either.
+#[test]
+fn compacting_a_container_whose_named_ledger_cannot_be_read_is_refused() {
+    let src = source_with_pack();
+    let container = patched(&src);
+    std::fs::write(container.join(LEDGER), "not a ledger").unwrap();
+    let out = src.out("compacted.vindex3");
+    let parent = out.parent().unwrap();
+    let before: Vec<_> = std::fs::read_dir(parent)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+
+    let err = compact_container(&container, &out).unwrap_err();
+
+    assert!(err.to_string().contains("weight-patch ledger"), "{err}");
+    assert!(!out.exists());
+    let after: Vec<_> = std::fs::read_dir(parent)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(
+        after.len(),
+        before.len(),
+        "an entry was left beside the destination: {after:?}"
+    );
+}
+
 #[test]
 fn a_bake_that_leaves_the_patched_weights_alone_carries_the_ledger() {
     let src = source_with_pack();
