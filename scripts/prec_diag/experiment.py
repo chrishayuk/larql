@@ -57,6 +57,8 @@ LARQL_ARMS = {"C": ["--backend", "reference"],
 #: Control experiments: run on demand, read only by `control_runs`, never by
 #: `runs_and_identities` (so PREC-DIAG readings and v1/v2 admission never see them).
 CONTROL_EXPERIMENTS = ("N1",)
+#: The experiments `runs_and_identities` reads unless told otherwise.
+READING_EXPERIMENTS = ("E1", "E2", "E3")
 #: The modeling file A64 patches, and the thread settings, are the oracle's own constants.
 HF_THREADS = {"torch_num_threads": 8, "torch_num_interop_threads": 1, "OMP_NUM_THREADS": "8"}
 HF_ENVIRONMENT = {"OMP_NUM_THREADS": "8"}
@@ -158,6 +160,16 @@ def file_sha(manifest: dict, label: str) -> str:
     return manifest["files"][label]["sha256"]
 
 
+def capture_positions_of(manifest: dict, run: dict) -> list[int]:
+    """The frozen capture positions of a capture run, refused (never guessed)
+    when the freeze names none for its input."""
+    positions = manifest["values"]["capture_positions"].get(run["input"])
+    if positions is None:
+        raise ev.EvidenceError(f"{run['run_id']}: FREEZE.json values.capture_positions names no positions for "
+                               f"{run['input']}, so this capture run has no identity")
+    return positions
+
+
 def expected_identity(manifest: dict, freeze_sha256: str, run: dict, experiment: str) -> dict:
     """Every identity field a run must carry, derived from the freeze alone."""
     ids = ids_of(manifest, run["input"])
@@ -169,7 +181,7 @@ def expected_identity(manifest: dict, freeze_sha256: str, run: dict, experiment:
                 "input_ids_json_sha256": v0.ids_json_sha256(ids),
                 "environment": manifest["values"]["larql_environment"], "rope_angles": run["rope_angles"],
                 "mode": run["mode"], "capture": run["capture"]}
-    positions = manifest["values"]["capture_positions"][run["input"]] if run["capture"] else None
+    positions = capture_positions_of(manifest, run) if run["capture"] else None
     return {"tool": "hf_oracle", "arm": run["base"], "bind": bind,
             "scripts": {"hf_oracle.py": file_sha(manifest, "script.hf_oracle"),
                         "evidence.py": file_sha(manifest, "script.evidence"),
@@ -260,7 +272,7 @@ def larql_argv(manifest: dict, run: dict, run_dir: Path, ids: list[int]) -> list
     else:
         argv += ["--logit-dump", str(run_dir / v0.LOGITS)]
     if run["capture"]:
-        positions = manifest["values"]["capture_positions"][run["input"]]
+        positions = capture_positions_of(manifest, run)
         argv += ["--capture-sites", str(run_dir / v0.SITES_DIR), "--capture-positions",
                  ",".join(map(str, positions)),
                  "--capture-budget-bytes", str(manifest["values"]["resource_limits"]["capture_bytes_per_run"])]
@@ -391,11 +403,20 @@ def run_experiment(manifest_path: Path, freeze_sha256: str, root: Path, experime
 
 # --------------------------------------------------------------- readings
 
-def runs_and_identities(manifest: dict, freeze_sha256: str, root: Path) -> tuple[dict, dict]:
+def runs_and_identities(manifest: dict, freeze_sha256: str, root: Path,
+                        experiments: tuple[str, ...] = READING_EXPERIMENTS) -> tuple[dict, dict]:
     """Analysis's two inputs, keyed `(arm, input)`: the run directories
-    where each run should be, and the identity each must carry."""
+    where each run should be, and the identity each must carry.
+
+    `experiments` names which experiments to read. PREC-DIAG readings read all
+    three (the default). A report whose test reads only some of them names
+    those, so an experiment outside its scope (E3 for `hf-f64-accuracy`) is
+    never looked at. A named experiment that cannot be identified is refused."""
+    unknown = [e for e in experiments if e not in READING_EXPERIMENTS]
+    if unknown or not experiments:
+        raise ValueError(f"experiments must be a non-empty subset of {READING_EXPERIMENTS}: {experiments!r}")
     runs, expected = {}, {}
-    for experiment in ("E1", "E2", "E3"):
+    for experiment in experiments:
         for run in plan(experiment):
             if run["arm"] == "A32-rep2":
                 continue  # consumed by the repeatability reading, not by analysis

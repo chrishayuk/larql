@@ -241,6 +241,148 @@ class EndToEnd(unittest.TestCase):
 
 
 
+class E1E2OnlyFreeze(unittest.TestCase):
+    """A prospective E1/E2 freeze with no capture positions (Qwen3-0.6B's shape):
+    the report reads E1 and E2 only and proceeds to evaluation."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.tmp = Path(cls._tmp.name).resolve()
+        cls.w = tex.World(cls.tmp / "w", extra_files={f2.SCRIPT_LABEL: Path(f2.__file__).resolve()},
+                          extra_values={"capture_positions": {}, "admission_test": f2.TEST})
+        cls.w.run("E1")
+        cls.w.run("E2")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def test_the_report_scope_is_e1_and_e2(self):
+        self.assertEqual(f2.REPORT_EXPERIMENTS, ("E1", "E2"))
+
+    def test_an_e1_e2_freeze_with_empty_capture_positions_reaches_a_verdict(self):
+        r = f2.run(self.w.freeze, self.w.sha, self.w.runs, self.tmp / "report.json")
+        self.assertIn(r["verdict"], (f2.PASS, f2.FAIL), r.get("problems"))
+        self.assertEqual(r["evidence_class"], f2.PROSPECTIVE)
+        self.assertIn("backends", r)
+
+    def test_missing_e1_or_e2_evidence_is_invalid_not_omitted(self):
+        for run_id, key in (("E2.D.I_nr2", "('D', 'I_nr2')"), ("E1.A64.I_rep", "('A64', 'I_rep')")):
+            exp = run_id.split(".")[0]
+            d = self.w.runs / exp / run_id
+            aside = self.w.runs / f"{run_id}.aside"
+            d.rename(aside)
+            try:
+                r = f2.run(self.w.freeze, self.w.sha, self.w.runs, self.tmp / f"missing-{run_id}.json")
+            finally:
+                aside.rename(d)
+            self.assertEqual(r["verdict"], f2.INVALID)
+            self.assertTrue(any(p.startswith(key) for p in r["problems"]), r["problems"])
+
+    def test_a_freeze_binding_the_tooling_running_now_needs_no_repair(self):
+        (self.w.runs / f2.SUMS).write_text("sealed\n")
+        attempt = self.tmp / "attempt.err"
+        attempt.write_text("traceback\n")
+        with self.assertRaisesRegex(ev.EvidenceError, "nothing to repair"):
+            f2.make_repair_addendum(self.w.freeze, self.w.sha, self.w.runs, [attempt], 1, "a" * 40, "scope")
+
+
+class ReportingRepair(unittest.TestCase):
+    """A prospective freeze whose bound report script could not read the runs:
+    a repair addendum binds the corrected tooling without rewriting the freeze."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.tmp = Path(cls._tmp.name).resolve()
+        frozen = cls.tmp / "f64_accuracy_v2.frozen.py"
+        frozen.write_text(Path(f2.__file__).read_text() + "\n# the tooling the freeze bound\n")
+        cls.w = tex.World(cls.tmp / "w", extra_files={f2.SCRIPT_LABEL: frozen},
+                          extra_values={"capture_positions": {}, "admission_test": f2.TEST})
+        cls.w.run("E1")
+        cls.w.run("E2")
+        (cls.w.runs / f2.SUMS).write_text("sealed\n")
+        cls.attempt = cls.tmp / "REPORT-ATTEMPT-1.md"
+        cls.attempt.write_text("KeyError: 'I_rep'\n")
+        cls.n = 0
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def addendum(self, **over):
+        type(self).n += 1
+        args = {"failed_attempts": [self.attempt], "pr": 893, "merge_commit": "b" * 40,
+                "statement": "run discovery only", **over}
+        a = f2.make_repair_addendum(self.w.freeze, self.w.sha, self.w.runs, **args)
+        out = self.tmp / f"repair-{self.n}.json"
+        return out, f2.write_addendum(out, a)
+
+    def test_without_an_addendum_the_report_is_invalid(self):
+        r = f2.run(self.w.freeze, self.w.sha, self.w.runs, self.tmp / "bare.json")
+        self.assertEqual((r["verdict"], r["evidence_class"]), (f2.INVALID, None))
+        self.assertTrue(any(f2.SCRIPT_LABEL in p for p in r["problems"]))
+
+    def test_a_repaired_report_is_classed_as_such_and_binds_the_repair(self):
+        add, sha = self.addendum()
+        a = json.loads(add.read_text())
+        self.assertEqual(a["frozen_tooling"][f2.SCRIPT_LABEL], ev.sha256_file(self.tmp / "f64_accuracy_v2.frozen.py"))
+        self.assertEqual(a["corrected_tooling"], f2.tooling_sha256())
+        self.assertNotEqual(a["frozen_tooling"], a["corrected_tooling"])
+        out = self.tmp / "repaired.json"
+        r = f2.run(self.w.freeze, self.w.sha, self.w.runs, out, add, sha)
+        self.assertIn(r["verdict"], (f2.PASS, f2.FAIL), r.get("problems"))
+        self.assertEqual(r["evidence_class"], f2.REPAIRED)
+        self.assertEqual(r["addendum_sha256"], sha)
+        self.assertEqual(r["reporting_repair"]["repair"]["pr"], 893)
+        self.assertEqual(r["reporting_repair"]["meaning"], f2.REPAIRED_MEANING)
+        self.assertEqual(r["reporting_repair"]["failed_attempts"][0]["sha256"], ev.sha256_file(self.attempt))
+        with self.assertRaisesRegex(ev.EvidenceError, "written once"):
+            f2.run(self.w.freeze, self.w.sha, self.w.runs, out, add, sha)
+
+    def test_a_changed_failed_attempt_record_invalidates_the_repair(self):
+        add, sha = self.addendum()
+        before = self.attempt.read_text()
+        self.attempt.write_text("rewritten\n")
+        try:
+            r = f2.run(self.w.freeze, self.w.sha, self.w.runs, self.tmp / "changed-attempt.json", add, sha)
+        finally:
+            self.attempt.write_text(before)
+        self.assertEqual(r["verdict"], f2.INVALID)
+        self.assertTrue(any("failed attempt" in p for p in r["problems"]), r["problems"])
+
+    def test_resealed_runs_invalidate_the_repair(self):
+        add, sha = self.addendum()
+        sums = self.w.runs / f2.SUMS
+        sums.write_text("changed\n")
+        try:
+            r = f2.run(self.w.freeze, self.w.sha, self.w.runs, self.tmp / "resealed.json", add, sha)
+        finally:
+            sums.write_text("sealed\n")
+        self.assertEqual(r["verdict"], f2.INVALID)
+        self.assertIn("addendum runs_sha256sums differs", r["problems"])
+
+    def test_a_repair_with_another_digest_is_refused(self):
+        add, _ = self.addendum()
+        r = f2.run(self.w.freeze, self.w.sha, self.w.runs, self.tmp / "digest.json", add, "0" * 64)
+        self.assertEqual(r["verdict"], f2.INVALID)
+
+    def test_a_repair_must_name_its_attempts_pr_commit_and_scope(self):
+        for over in ({"failed_attempts": []}, {"failed_attempts": [self.tmp / "absent"]}, {"pr": 0},
+                     {"merge_commit": "abc"}, {"merge_commit": "B" * 40}, {"statement": " "}):
+            with self.assertRaises(ev.EvidenceError, msg=over):
+                self.addendum(**over)
+
+    def test_a_repair_is_only_for_a_freeze_naming_v2(self):
+        w = tex.World(self.tmp / "pre-v2", extra_files={f2.SCRIPT_LABEL: self.tmp / "f64_accuracy_v2.frozen.py"},
+                      extra_values={"capture_positions": {}})
+        (w.runs).mkdir(exist_ok=True)
+        (w.runs / f2.SUMS).write_text("sealed\n")
+        with self.assertRaisesRegex(ev.EvidenceError, "prospective freeze"):
+            f2.make_repair_addendum(w.freeze, w.sha, w.runs, [self.attempt], 1, "a" * 40, "scope")
+
+
 class ControlEndToEnd(unittest.TestCase):
     """N1 through the synthetic world: plumbing, binding and the expectation
     check. The fake's logits are not a model, so the verdict itself is not
