@@ -18,7 +18,7 @@
 //! insert, and ranking by raw cosine descending (`gate_knn` ranks by
 //! `|score|` merged with base hits — different statistic, same kernel).
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use ndarray::Array1;
 use serde::{Deserialize, Serialize};
@@ -54,7 +54,7 @@ pub struct KnnEntry {
 #[derive(Debug, Default, Clone)]
 pub struct KnnStore {
     /// layer -> Vec<KnnEntry>
-    entries: HashMap<usize, Vec<KnnEntry>>,
+    entries: BTreeMap<usize, Vec<KnnEntry>>,
     /// The unified retrieval structure (shared kernel with
     /// `PatchedVindex::gate_knn`): L2-normalized keys as rows keyed
     /// `(layer, entry_index)`.
@@ -260,7 +260,7 @@ impl KnnStore {
     }
 
     /// Direct access to entries.
-    pub fn entries(&self) -> &HashMap<usize, Vec<KnnEntry>> {
+    pub fn entries(&self) -> &BTreeMap<usize, Vec<KnnEntry>> {
         &self.entries
     }
 
@@ -273,7 +273,7 @@ impl KnnStore {
     /// Construct from a fully-populated entries map. Used by
     /// `super::knn_store_io::load`. Keys are assumed already
     /// normalized (they were normalized on the original `add`).
-    pub(super) fn from_entries(entries: HashMap<usize, Vec<KnnEntry>>) -> Self {
+    pub(super) fn from_entries(entries: BTreeMap<usize, Vec<KnnEntry>>) -> Self {
         let mut keys = GateOverlay::default();
         for (&layer, layer_entries) in &entries {
             for (idx, entry) in layer_entries.iter().enumerate() {

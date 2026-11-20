@@ -5,7 +5,7 @@
 //! round-2 cleanup. Aggregates types from sibling modules
 //! (`quantization`, `compliance`, `model`).
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +26,7 @@ pub struct VindexConfig {
     pub source: Option<VindexSource>,
     /// SHA256 checksums of each binary file for integrity verification.
     #[serde(default)]
-    pub checksums: Option<HashMap<String, String>>,
+    pub checksums: Option<BTreeMap<String, String>>,
     /// Number of layers.
     pub num_layers: usize,
     /// Hidden dimension.

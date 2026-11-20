@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 
 use larql_inference::test_utils::write_synthetic_model_dir;
 use larql_lql::{parse, Session};
-use larql_vindex::format::filenames::INDEX_JSON;
 
 const INSERT: &str = r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "capital", "[2]") AT LAYER 0 MODE COMPOSE;"#;
 const PROMPT: &str = "[1] capital";
@@ -121,15 +120,9 @@ fn removing_a_compose_patch_gives_back_the_unpatched_infer_and_compile() {
         got.iter().map(|(n, _)| n).collect::<Vec<_>>(),
         want.iter().map(|(n, _)| n).collect::<Vec<_>>()
     );
+    // Every file byte for byte, `index.json` included: its checksum map is
+    // written in key order (Gate B, B6, D4).
     for ((name, got), (_, want)) in got.iter().zip(&want) {
-        if name == INDEX_JSON {
-            // COMPILE writes the checksum map in HashMap order, which varies
-            // from run to run whatever the state, so this one file is
-            // compared as JSON. Its checksums still cover every other byte.
-            let parse = |b: &[u8]| serde_json::from_slice::<serde_json::Value>(b).unwrap();
-            assert_eq!(parse(got), parse(want), "{name} differs after REMOVE PATCH");
-        } else {
-            assert!(got == want, "{name} differs after REMOVE PATCH");
-        }
+        assert!(got == want, "{name} differs after REMOVE PATCH");
     }
 }

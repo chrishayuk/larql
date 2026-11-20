@@ -225,7 +225,7 @@ fn collect_loader_extras(cfg: &VindexConfig) -> serde_json::Map<String, serde_js
 mod tests {
     use super::*;
     use crate::config::quantization::QuantFormat;
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     fn minimal_cfg() -> VindexConfig {
         VindexConfig {
@@ -288,7 +288,7 @@ mod tests {
     fn cfg_with_checksums(source: VindexSource) -> VindexConfig {
         let mut cfg = minimal_cfg();
         cfg.source = Some(source);
-        let mut checks = HashMap::new();
+        let mut checks = BTreeMap::new();
         checks.insert("gate_vectors.bin".into(), "c".repeat(64));
         cfg.checksums = Some(checks);
         cfg
