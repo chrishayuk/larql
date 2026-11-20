@@ -1,6 +1,6 @@
 # Gate B, B6: COMPACT and COMPILE acceptance contract
 
-**Status:** **FROZEN r2** (2026-11-20). The owner ruled on D1 to D4 (§7).
+**Status:** **FROZEN r3** (2026-11-20). The owner ruled on D1 to D5 (§7).
 Changing this contract needs an owner-approved revision.
 **Implementation hold:** no B6 branch opens until #884, #885, #888 and #891
 have cleared required CI. B6-COMPACT also waits for #891 to merge.
@@ -16,6 +16,8 @@ have cleared required CI. B6-COMPACT also waits for #891 to merge.
   - D3 = durable publication. The sync sequence is defined. Failures before
     publication and durability failures after it are reported differently.
   - D4 = an empty allowlist, checked over the whole output tree.
+- **r3** (2026-11-20) — owner ruling D5 on COMPILE INTO MODEL scope (§7,
+  §8). Nothing else in r2 changes.
 **Parent documents:** [`gate-b.md`](gate-b.md) r1 (frozen) defines the gate.
 [`gate-b-audit-2026-11-18.md`](gate-b-audit-2026-11-18.md) records the B6
 finding.
@@ -382,3 +384,48 @@ is PASS on each group of §1.
 | D2, COMPACT MAJOR | **Refuse** before any work. No session-only exception. | §3.2 |
 | D3, durability | **Require fsync**, by the sequence in §3.6. Failures before and after publication are reported differently. | §3.6 |
 | D4, nondeterminism | **Empty allowlist**, over the whole output tree. An amendment is needed before acceptance; no runtime exclusions. | §2, §3.5 |
+| D5, COMPILE INTO MODEL | A successful export is **out of B6 scope**; its failure must be atomic and reported. See §8. | §3.4, §8 |
+
+## 8. Acceptance record
+
+### 8.1 COMPILE INTO MODEL (ruling D5)
+
+On `741ecdab` the export fails for every input before it writes: its weight
+writer expects an `index.json` in the fresh output directory. Making it work
+is feature work, not mutation safety, so it stays outside B6.
+
+| Requirement | COMPILE INTO MODEL |
+|---|---|
+| Successful export | Out of B6 scope |
+| Failure leaves the source unchanged | Required |
+| Failure leaves the session unchanged | Required |
+| No partial publication at the destination | Required |
+| Deterministic successful output (R1) | Not applicable until the export works |
+| Replay of a successful output (R5) | Not applicable until the export works |
+| The export defect itself | Open, tracked separately |
+
+The exclusion applies to INTO MODEL only. COMPILE INTO VINDEX and COMPACT
+INTO VINDEX work, and must meet every B6 requirement that applies to them.
+
+A regression test runs the failing export on both backends and checks the
+source, the session, the destination and the destination's parent. When the
+export is fixed that test fails, and R1 and R5 then apply in full.
+
+### 8.2 Coverage exception
+
+`crates/larql-lql/src/executor/lifecycle/compile/into_model.rs` is below the
+90% per-file floor (77.7% on the B6-COMPILE head). The exception is narrow:
+- it covers only the lines after the export's existing failure point, which
+  no input reaches;
+- the lines B6 changed in that file (publication through the validated
+  staging path) are covered;
+- it does not make the file compliant, and it ends when the export is fixed.
+
+No other file in B6 has a coverage exception.
+
+### 8.3 COMPACT INTO and an unreadable ledger
+
+Before B6, COMPACT INTO copied a weight-patch ledger as bytes and published
+whatever it found. Since B6 the staged container's structural check refuses
+one that cannot be read, before publication. A missing ledger and an
+unreadable one are each covered by their own negative test.
