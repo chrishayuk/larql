@@ -1,8 +1,21 @@
 # Gate B, B6: COMPACT and COMPILE acceptance contract
 
-**Status:** DRAFT r1, for owner review. Nothing here is frozen yet. §7 lists
-the decisions the owner has to make before the freeze.
+**Status:** **FROZEN r2** (2026-11-20). The owner ruled on D1 to D4 (§7).
+Changing this contract needs an owner-approved revision.
+**Implementation hold:** no B6 branch opens until #884, #885, #888 and #891
+have cleared required CI. B6-COMPACT also waits for #891 to merge.
 **Base:** `origin/main` `cce18787` (2026-11-20).
+
+### Revision log
+
+- **r1** — draft for review. Listed decisions D1 to D4.
+- **r2** — the owner's rulings, frozen:
+  - D1 = P, with promotion atomic at statement level, a set of required
+    tests, and a fact-catalogue comparison.
+  - D2 = refuse COMPACT MAJOR before any work.
+  - D3 = durable publication. The sync sequence is defined. Failures before
+    publication and durability failures after it are reported differently.
+  - D4 = an empty allowlist, checked over the whole output tree.
 **Parent documents:** [`gate-b.md`](gate-b.md) r1 (frozen) defines the gate.
 [`gate-b-audit-2026-11-18.md`](gate-b-audit-2026-11-18.md) records the B6
 finding.
@@ -31,8 +44,10 @@ VINDEX3 form.
 - How good MEMIT is as a solver. B6 judges only what COMPACT MAJOR writes and
   when.
 - FACT-PROMOTE-1, which is VINDEX3 promotion and has its own contract.
-- Any change to the `.vlp` op set beyond what §3.1 option P uses. It uses
-  only existing ops.
+- Any change to the `.vlp` op set. B6 adds no patch-format op. §3.1 uses only
+  existing ops.
+- A ledger-backed MEMIT op. That needs a contract of its own before COMPACT
+  MAJOR can run again.
 
 **Relation to FACT-WSP-1.** FACT-WSP-1 is VINDEX3 only. `COMPACT MINOR`,
 `COMPACT MAJOR` and VINDEX2 COMPILE are not on its execution path. Gate B
@@ -52,11 +67,15 @@ that neither is taken as standing in for the other.
   4. The output's parent directory, listed, so that a leftover staging
      directory shows.
 - **Permitted nondeterministic metadata** is a closed list of manifest fields
-  that may differ between two runs on identical input. The list **starts
-  empty**. A field is added only by an owner-approved revision of this
-  document, which names the field and why it cannot be fixed. Wall-clock
-  timestamps are not added by default. Where one is written, the first choice
-  is to copy it from the source or derive it from the input.
+  that may differ between two runs on identical input. The list is **empty**
+  (D4). A field is added only by an owner-approved revision of this document,
+  made before acceptance. The revision names the field and why it cannot be
+  made deterministic. No test may skip, mask or normalise a field to make it
+  pass. Where a timestamp is written, it is copied from the source or derived
+  from the input.
+- **Fact catalogue** is FACT-ID-1's asserted-fact catalogue
+  (`Session::asserted_facts`): for each fact, its id, key, target, status and
+  representation.
 - **Independent replay** means a fresh `Session` that runs `USE` on the same
   base, then `APPLY` on each saved patch file in order, then the same
   statement.
@@ -87,7 +106,28 @@ that FACT-ID-1 I-2 says is live. A patch saved from it is refused at APPLY.
 The KNN removal is in no record. FACT-ID-1 C-12 already marks the effect: the
 catalogue flags the fact `inconsistent`.
 
-**Required whatever §7 D1 decides:**
+**Ruling D1 = P: promote and record.** For each fact K, the recording holds
+`delete_knn_fact(K)` followed by the keyed compose `Insert` op(s) for K, plus
+any B3 re-fits. FACT-ID-1 I-2 accepts a delete followed by an insert of the
+same key.
+
+- **One atomic promotion.** The delete and the install form one promotion,
+  and the whole statement is one transaction. No observable state ever shows
+  K gone from KNN but not yet installed as compose. That covers the session
+  state, the recording and the catalogue, both after the statement and after
+  any failure. Atomicity comes from B5's statement-level snapshot, widened to
+  the KNN store. No new op is added.
+- **Engine order equals recorded order.** The engine removes the KNN entry
+  and then installs. The live state is therefore produced by the same
+  sequence a replay runs, and the install's capture never sees the old KNN
+  override.
+- **Identity and provenance.** K keeps its fact id. The only declared change
+  is its representation, from `knn` to `compose`.
+- **COMPILE loses compose identity.** FACT-ID-1 C-9 still holds: a compose
+  fact's identity does not survive COMPILE. The COMPACT MINOR output names the
+  promoted facts and says so.
+
+**Further requirements:**
 - **R3.** One statement is one transaction. If any entry cannot be promoted,
   the whole statement refuses. The refusal names the entry and the reason. No
   "N failed" success text remains.
@@ -103,26 +143,40 @@ catalogue flags the fact `inconsistent`.
   `inconsistent`). Promoting those would carry a known defect into the
   compose representation.
 - An empty L0 stays a successful no-op that records nothing.
+- There is no undo statement. Rollback is by not applying the patch, or by
+  REMOVE PATCH under B2's rules.
 
-**Choice (owner decision D1):**
-- **Option P: promote, recorded.** For each fact K the recording holds
-  `delete_knn_fact(K)` followed by the keyed compose `Insert` op(s) for K,
-  plus any B3 re-fits. FACT-ID-1 I-2 accepts a delete followed by an insert
-  of the same key.
-  - The engine runs in recorded order: remove the KNN entry, then install. The
-    live state is therefore produced by the same sequence a replay runs, and
-    the install's capture never sees the old KNN override.
-  - The fact keeps its id. Its catalogue origin changes from `knn` to
-    `compose`, and the adjacent ops in one recording record that transition.
-  - There is no undo statement. To roll back, do not apply the patch, or
-    REMOVE PATCH. B2's refusal rules apply as they do to any other edit.
-  - FACT-ID-1 C-9 still holds: a compose fact's identity does not survive
-    COMPILE. Promotion therefore trades the durable identity of the KNN
-    representation for a compose install. The COMPACT output must say so,
-    naming the facts.
-- **Option R: refuse.** COMPACT MINOR refuses whenever L0 is non-empty and
-  points to FACT-PROMOTE-1. That retires the verb on VINDEX2 until a
-  promotion contract exists.
+**Catalogue comparison.** This is a second check, separate from comparing
+vectors. Compare the fact catalogue before and after a successful COMPACT
+MINOR. The two must be identical except that each promoted fact's
+representation changes from `knn` to `compose`. No fact may:
+- disappear;
+- gain a second id;
+- change key or target;
+- become `ambiguous`, `inconsistent` or `degraded`.
+
+The same comparison holds between the live session and an independent replay
+of its saved patch.
+
+**Required tests** (permanent, fail before and pass after where the defect
+exists on main):
+1. **Identity:** the fact id, key and target are the same before and after
+   promotion, by the catalogue comparison.
+2. **Replay:** live and replayed states are bit-identical: session
+   fingerprint, override bits and KNN store.
+3. **A failure between delete and install** restores the whole previous
+   state. This uses fault points after the KNN removal and after the k-th
+   promotion (§4).
+4. **APPLY:** the saved patch applies to a fresh session bound to the same
+   base without an I-2 refusal.
+5. **REMOVE PATCH** of the promotion patch restores the original KNN
+   representation, by catalogue and by KNN store. The fixture's KNN fact sits
+   in the container or in an earlier applied patch, so B2 does not refuse the
+   removal.
+6. **Second attempt:** promoting the same fact again never duplicates it.
+   Once promoted, K is not in L0, so a second COMPACT MINOR records nothing
+   for K. If K is somehow live in both representations (an `inconsistent`
+   or `ambiguous` status), COMPACT MINOR refuses before any change.
 
 ### 3.2 COMPACT MAJOR (VINDEX2)
 
@@ -135,26 +189,20 @@ catalogue flags the fact `inconsistent`.
 - The epoch advances.
 - No `.vlp` op records the cycle, so R5 cannot hold: no replay reproduces it.
 
-**Required whatever §7 D2 decides:**
-- **Never write into the bound container.** No file under the bound
-  directory is created, changed or removed. Requirement 2 of §2 is checked
-  before and after, on success and on failure.
-- **A failed write is a failure.** No "complete" text accompanies it, and the
-  session MEMIT store is left as it was (R2, R3).
+**Ruling D2 = refuse.**
 
-**Choice (owner decision D2):**
-- **Option M-refuse (recommended).** COMPACT MAJOR refuses before any work.
-  The text says MEMIT cycles have no ledger representation, so the result
-  could not be reconstructed (R5). MEMIT is outside FACT-WSP-1 and has no
-  verifier coverage. Refusing is the one behaviour that meets R1 to R5 today.
+- COMPACT MAJOR refuses before any work: before loading weights, before the
+  solve, and before any filesystem write, epoch advance, MEMIT store change or
+  recording change.
+- The refusal text says that a MEMIT cycle has no ledger representation, so
+  its result could not be replayed or reconstructed (R5). It also says that
+  restoring the verb needs a ledger-backed MEMIT op under its own contract.
+- No session-only exception is allowed.
+- The test pins the full refusal text. It checks that all four parts of §2's
+  observable state are unchanged, the bound directory's file hashes included.
   The existing tests of a successful MAJOR become refusal tests.
-- **Option M-session.** The cycle stays in the session only and is written
-  only into a COMPILE output, through §3.4's staging. That removes the source
-  write, but R5 still fails until a cycle is a ledger op. B6 would have to
-  record that as an explicit, owner-accepted exception.
-
-Either way, a `memit_store.json` already in a vindex is still read on `USE`.
-B6 does not change rehydration.
+- A `memit_store.json` already in a vindex is still read on `USE`. B6 does
+  not change rehydration.
 
 ### 3.3 COMPACT INTO VINDEX (VINDEX3)
 
@@ -166,9 +214,10 @@ Required:
   byte-identical trees.
 - **R2:** the session fingerprint and the source tree are unchanged on success
   and on every injected failure (§4).
-- **R4:** the staged output is validated before promotion. It must reopen as
-  a container, and the logical DIFF against the source must be empty. A
-  validation failure removes the staging and leaves no output.
+- **R4:** publication follows §3.6. The staged output is validated before the
+  rename. It must reopen as a container, and the logical DIFF against the
+  source must be empty. A validation failure removes the staging and leaves
+  no output.
 - **R5:** the reopened output answers the existing DIFF and INFER oracles in
   `tests/vindex3_compact.rs` the same as the source.
 
@@ -187,7 +236,7 @@ Required:
 - **R1:** compiling the same state twice, into two destinations, gives
   byte-identical trees. A pass needs two separate sessions, not one session
   compiled twice. This covers every file, `index.json` included (§3.5).
-- **R2:** after a failure at any fault point in §4:
+- **R2:** after a failure at any fault point in §4 before the rename (§3.6):
   - the destination is as it was;
   - no staging directory is left, except when the injected fault is the
     cleanup itself (then the error names the leftover path);
@@ -196,7 +245,8 @@ Required:
 
   COMPILE borrows the session immutably today. The test pins that, so a later
   change that mutates the session fails it.
-- **R4:** a validation step runs before promotion. The staged output must
+- **R4:** publication follows §3.6. A validation step runs before the rename.
+  The staged output must
   reopen with the backend's loader, and every checksum in its manifest must
   match its bytes. On VINDEX3 it must also show that each hard-linked segment
   is byte-equal to its source. The validation is new; on main nothing reopens
@@ -211,18 +261,51 @@ Required:
   file must replace it by rename. Otherwise the hard links are replaced by
   copies. An in-place write would change the source as a side effect, which
   the owner's MAJOR point forbids.
-- **Publication guarantees** must be stated in user-facing docs, not only in
-  module docs:
-  - Atomic on one filesystem. The staging directory is a sibling of the
-    destination, so the rename never crosses filesystems.
-  - On Unix, the rename replaces an empty destination atomically and fails on
-    a non-empty one.
-  - Elsewhere, the empty destination is removed and then renamed into. A
-    crash between the two leaves no output, never a partial one.
-  - An interrupted run leaves a hidden staging sibling, recognisable by
-    `STAGING_INFIX`. It is never promoted, and nothing deletes it
-    automatically. Recovery is to delete it by hand.
-  - Durability against power loss is D3.
+- **Publication** follows §3.6. Its guarantees must be stated in user-facing
+  docs, not only in module docs.
+
+### 3.6 Durable publication (ruling D3)
+
+These rules apply to COMPACT INTO and to every COMPILE target, on supported
+local filesystems. The supported set is named in the user-facing docs; macOS
+APFS and Linux ext4/xfs at minimum.
+
+**Sequence:**
+1. Write every staged file.
+2. `fsync` each file, flushing its contents and the metadata needed to read
+   it.
+3. `fsync` the staging directory and every directory inside it.
+4. Validate the staged output (the R4 checks above).
+5. Atomically rename staging to the destination. The staging directory is a
+   sibling of the destination, so the rename never crosses filesystems.
+   - On Unix the rename replaces an empty destination atomically and fails on
+     a non-empty one.
+   - Elsewhere the empty destination is first removed non-recursively. A crash
+     between the removal and the rename leaves no output, never a partial one.
+6. `fsync` the destination's parent directory.
+
+**Return values.** Success means all six steps completed. Failures fall into
+two classes, and the error says which:
+- **Before publication (steps 1 to 5 fail).** The destination is as it was,
+  the staging directory is removed, and the source and session are unchanged.
+  This is R2 in full.
+- **After publication (step 6 fails).** The rename has happened, so the
+  destination may already be visible. B6 does **not** claim a rollback here.
+  The error says that the output was published at `<path>` but its
+  durability is not confirmed. Nothing is deleted. Recovery is to re-run the
+  parent sync, or remove the output by hand. The test injects this fault and
+  asserts that exact outcome, not "destination absent".
+
+**Interrupted runs.** An interrupted run leaves a hidden staging sibling,
+recognisable by `STAGING_INFIX`. It is never promoted, and nothing deletes it
+automatically. Recovery is to delete it by hand.
+
+**Limits that remain documented**, unless an implementation closes them:
+- `write_fresh_directory` does not defend against concurrent writers.
+- The destination check and the rename are separate steps. A process that
+  swaps a parent directory for a symlink in between can redirect the rename.
+  The one race that is closed is a destination that gains contents: the
+  promotion then fails rather than deleting them.
 
 ### 3.5 Canonical manifests
 
@@ -232,7 +315,10 @@ Required:
   VINDEX3 manifest and segment tables, and `memit_store.json` if D2 keeps it).
 - **Test, independent of insertion order.** Build logically identical
   manifests by inserting the same entries in several different orders. They
-  must serialize to identical bytes. Add a compile-time or unit check that
+  must serialize to identical bytes.
+- **Whole-tree digests.** R1 is judged over the whole output tree, not
+  `index.json` alone. Every corresponding file in two outputs must have the
+  same SHA-256, and the two trees must list the same files. Add a compile-time or unit check that
   lists the map types in each manifest struct, so that a new `HashMap` field
   fails it. This is the owner's "fix the field, miss the next collection"
   guard.
@@ -241,18 +327,24 @@ Required:
 
 A test-only fault hook, like B5's `InstallFaultPoint`, at these points:
 
-| Point | COMPACT MINOR | COMPACT MAJOR (if D2 = M-session) | COMPACT INTO / COMPILE |
-|---|---|---|---|
-| before any work | yes | yes | yes |
-| after the k-th promotion (k = 1, last) | yes | n/a | n/a |
-| after staging is created | n/a | yes | yes |
-| after a partial write into staging | n/a | yes | yes |
-| validation fails | n/a | yes | yes |
-| promotion (`rename`) fails | n/a | yes | yes |
-| cleanup after failure fails | n/a | yes | yes |
+COMPACT MAJOR refuses (D2), so it has only the refusal test of §3.2.
 
-At each point the test asserts §2's observable state against the snapshot
-taken before the statement. It then runs a retry with the fault removed and
+| Point | COMPACT MINOR | COMPACT INTO / COMPILE | Expected outcome |
+|---|---|---|---|
+| before any work | yes | yes | unchanged |
+| after a KNN removal, before its install | yes | n/a | unchanged |
+| after the k-th promotion (k = 1, last) | yes | n/a | unchanged |
+| after staging is created | n/a | yes | unchanged |
+| after a partial write into staging | n/a | yes | unchanged |
+| a file sync fails (step 2) | n/a | yes | unchanged |
+| the staging directory sync fails (step 3) | n/a | yes | unchanged |
+| validation fails (step 4) | n/a | yes | unchanged |
+| the rename fails (step 5) | n/a | yes | unchanged |
+| cleanup after a failure fails | n/a | yes | unchanged except the named staging leftover |
+| the parent sync fails (step 6) | n/a | yes | published, durability-unconfirmed error (§3.6) |
+
+"Unchanged" means the test asserts §2's observable state against the
+snapshot taken before the statement. It then runs a retry with the fault removed and
 asserts that the result is identical to that of a session that never failed
 (the B5 retry property).
 
@@ -274,29 +366,19 @@ asserts that the result is identical to that of a session that never failed
 
 | PR | Contents | Depends on |
 |---|---|---|
-| B6-COMPILE | §3.4, §3.5, §4 for COMPILE and COMPACT INTO | none (larql-vindex manifest plus lql compile) |
-| B6-COMPACT | §3.1, §3.2 | the B5 snapshot (#891, merged first) |
+| B6-COMPILE | §3.3 to §3.6, and §4 for COMPILE and COMPACT INTO: deterministic manifests, validated staging, durable publication, exact replay, VINDEX3 hard-link safety | none (larql-vindex manifest and `fresh_output`, plus lql compile) |
+| B6-COMPACT | §3.1, §3.2: atomic recorded promotion, truthful refusals, fact identity, refusal of COMPACT MAJOR | the B5 snapshot (#891, merged first) |
 
-The two surfaces share only `fresh_output` (read, not changed, by
-B6-COMPACT) and the session snapshot (B5). Either PR may land first once #891
-is merged. B6 closes when both have merged and the B6 row of the audit ledger
+The two surfaces share only `fresh_output` (changed by B6-COMPILE, not used
+by B6-COMPACT) and the session snapshot (B5). Neither opens until the current
+Gate B PRs have cleared CI. B6 closes when both have merged and the B6 row of the audit ledger
 is PASS on each group of §1.
 
-## 7. Owner decisions before the freeze
+## 7. Owner rulings (2026-11-20)
 
-- **D1, COMPACT MINOR:** option P (promote, recorded as `delete_knn_fact`
-  then the keyed `Insert`) or option R (refuse, defer to FACT-PROMOTE-1).
-  - Recommendation: **P**. It keeps the verb, uses only existing ops, keeps
-    the fact id, and is replayable under I-2.
-  - Choose R if promotion on VINDEX2 is not worth the C-9 identity loss at
-    COMPILE.
-- **D2, COMPACT MAJOR:** M-refuse or M-session.
-  - Recommendation: **M-refuse**. It is the one option that meets R5.
-- **D3, durability:** whether B6 requires `fsync` of the staged files and
-  directory before the rename, and of the parent after it, or keeps "atomic,
-  not durable" as a documented limit.
-  - Recommendation: **require it**. The cost is one sync per file at the end
-    of a compile.
-- **D4, permitted nondeterministic metadata:** confirm the list starts empty.
-  The first B6-COMPILE test reports any field that differs. Each such field
-  comes back to the owner as an amendment, not a silent exception.
+| Decision | Ruling | Where |
+|---|---|---|
+| D1, COMPACT MINOR | **P**: promote and record as `delete_knn_fact(K)` then the keyed `Insert(K)`. The pair is one atomic promotion at statement level. No new op. | §3.1 |
+| D2, COMPACT MAJOR | **Refuse** before any work. No session-only exception. | §3.2 |
+| D3, durability | **Require fsync**, by the sequence in §3.6. Failures before and after publication are reported differently. | §3.6 |
+| D4, nondeterminism | **Empty allowlist**, over the whole output tree. An amendment is needed before acceptance; no runtime exclusions. | §2, §3.5 |
