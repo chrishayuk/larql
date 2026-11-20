@@ -10,8 +10,12 @@
 //! - [`StateFingerprint`]: [`Session::state_fingerprint`] hashes every part of the session an
 //!   install touches, by named component, so a test can say *which* part a failed install changed.
 //!
-//! This is instrumentation only. It adds no rollback: whatever a failed install leaves behind, it
-//! leaves, and the fingerprint reports it.
+//! This is instrumentation only. The rollback that makes a failed install leave the session as it
+//! found it (Gate B, B5) is in `mutation::insert::snapshot`; the fingerprint is how it is measured.
+//!
+//! The points fire on both backends. On VINDEX2 the slot is staged and the layer refined in one step,
+//! so [`InstallFaultPoint::AfterSlotStaged`] and [`InstallFaultPoint::AfterRefine`] both fire after
+//! it.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -257,6 +261,18 @@ impl Session {
         counters.usize(self.mutations_since_minor);
         counters.usize(self.mutations_since_major);
         c.insert("session.counters", counters.finish());
+
+        // The synonym resolver cache: whether one is built, and for which path.
+        let mut resolver = Hasher::new();
+        match &*self.relation_resolver.borrow() {
+            Some((path, built)) => {
+                resolver.usize(1);
+                resolver.bytes(path.to_string_lossy().as_bytes());
+                resolver.usize(usize::from(built.is_some()));
+            }
+            None => resolver.usize(0),
+        }
+        c.insert("session.relation_resolver", resolver.finish());
 
         StateFingerprint { components: c }
     }

@@ -478,6 +478,7 @@ fn every_statement_is_sensible_on_a_v3_binding() {
     let empty_file = lql_path(empty_file);
     let apply_empty = format!(r#"APPLY PATCH "{empty_file}";"#);
     let remove_empty = format!(r#"REMOVE PATCH "{empty_file}";"#);
+    let rebind = format!(r#"USE "{}";"#, lql_path(container.path()));
     let cases: Vec<(String, Expect)> =
         vec![
         // ── Serves on V3 ──
@@ -534,9 +535,13 @@ fn every_statement_is_sensible_on_a_v3_binding() {
         // knowledge overlay ──
         (begin_patch.clone(), Ok),
         (r#"SAVE PATCH;"#.to_string(), Ok), // writes the recording (the INSERT above) to the temp path
-        // The saved facts are still live in the session; applying the file
-        // over them would assert them twice (FACT-ID-1 I-2). Applying and
-        // removing an empty patch resets the session state first.
+        // The saved facts are still live in the session and no applied
+        // patch holds them, so REMOVE PATCH refuses rather than drop them
+        // (Gate B, B2). Applying the file over them would assert them twice
+        // (FACT-ID-1 I-2): binding the container again resets the session.
+        (apply_empty.clone(), Ok),
+        (remove_empty.clone(), Err),
+        (rebind.clone(), Ok),
         (apply_empty.clone(), Ok),
         (remove_empty.clone(), Ok),
         (apply_patch.clone(), Ok),          // applies the file SAVE just wrote

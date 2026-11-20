@@ -127,6 +127,56 @@ class Control(unittest.TestCase):
                 ex.control_runs(w.manifest, w.sha, w.runs, "E2")
 
 
+
+class RunDiscovery(unittest.TestCase):
+    """`runs_and_identities` reads the experiments it is asked for (a report's
+    scope), and refuses, never guesses, a capture run the freeze cannot identify."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.w = World(Path(cls._tmp.name) / "w")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def test_the_default_still_reads_e1_e2_and_e3(self):
+        self.assertEqual(ex.READING_EXPERIMENTS, ("E1", "E2", "E3"))
+        runs, expected = ex.runs_and_identities(self.w.manifest, self.w.sha, self.w.runs)
+        want = {(r["arm"], r["input"]) for e in ("E1", "E2", "E3") for r in ex.plan(e) if r["arm"] != "A32-rep2"}
+        self.assertEqual(set(runs), want)
+        self.assertEqual(set(expected), want)
+        self.assertEqual(expected[("C-capture", "I_rep")]["capture"], True)
+
+    def test_a_scoped_read_gives_the_same_identities_for_the_runs_it_reads(self):
+        full = ex.runs_and_identities(self.w.manifest, self.w.sha, self.w.runs)
+        runs, expected = ex.runs_and_identities(self.w.manifest, self.w.sha, self.w.runs, ("E1", "E2"))
+        self.assertEqual(set(runs), {(r["arm"], r["input"]) for e in ("E1", "E2") for r in ex.plan(e)
+                                     if r["arm"] != "A32-rep2"})
+        self.assertFalse(any(a.endswith("-capture") for a, _ in runs))
+        for k in runs:
+            self.assertEqual((runs[k], expected[k]), (full[0][k], full[1][k]))
+
+    def test_an_unknown_or_empty_scope_is_refused(self):
+        for scope in ((), ("E4",), ("N1",)):
+            with self.assertRaises(ValueError):
+                ex.runs_and_identities(self.w.manifest, self.w.sha, self.w.runs, scope)
+
+    def test_e3_with_no_capture_positions_is_refused_explicitly(self):
+        m = json.loads(json.dumps(self.w.manifest))
+        m["values"]["capture_positions"] = {}
+        with self.assertRaisesRegex(ev.EvidenceError, "capture_positions names no positions for I_rep"):
+            ex.runs_and_identities(m, self.w.sha, self.w.runs)
+        with self.assertRaisesRegex(ev.EvidenceError, "capture_positions"):
+            ex.runs_and_identities(m, self.w.sha, self.w.runs, ("E3",))
+        runs, _ = ex.runs_and_identities(m, self.w.sha, self.w.runs, ("E1", "E2"))
+        self.assertEqual(len(runs), 3 * 4 + 3 * 6)
+        capture = next(r for r in ex.plan("E3") if r["kind"] == "larql")
+        with self.assertRaisesRegex(ev.EvidenceError, "capture_positions"):
+            ex.larql_argv(m, capture, self.w.runs, [1, 2, 3])
+
+
 class Tmp(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

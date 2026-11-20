@@ -19,6 +19,7 @@ mod predicate;
 pub(crate) mod query;
 mod relation_resolver;
 mod remote;
+mod remove_refusal;
 mod trace;
 pub(crate) mod tuning;
 mod verify;
@@ -166,6 +167,88 @@ impl Session {
             model_resolver: None,
             representation_source: DEFAULT_REPRESENTATION_SOURCE,
         }
+    }
+
+    /// Refuses a statement that would bind something new while the open
+    /// recording holds unsaved operations (Gate B, B1). Binding again resets
+    /// the recording with the rest of the session, so going ahead would lose
+    /// work the user has not authorised losing. Checked before the statement
+    /// does anything, so a refusal leaves the binding and the recording as
+    /// they were. A recording with no operations holds nothing to lose.
+    pub(crate) fn refuse_rebind_over_unsaved_recording(&self, verb: &str) -> Result<(), LqlError> {
+        let Some(recording) = &self.patch_recording else {
+            return Ok(());
+        };
+        let pending = recording.operations.len();
+        if pending == 0 {
+            return Ok(());
+        }
+        let (held_by, keep) = if recording.path.is_empty() {
+            (
+                "the anonymous recording".to_string(),
+                "name it with BEGIN PATCH \"file.vlp\" and run SAVE PATCH",
+            )
+        } else {
+            (
+                format!("the recording for {}", recording.path),
+                "run SAVE PATCH",
+            )
+        };
+        Err(LqlError::Execution(format!(
+            "{verb} refused: {held_by} holds {pending} unsaved operation(s), and binding again \
+             would discard them. Nothing was changed. To keep them, {keep}, then run {verb} again."
+        )))
+    }
+
+    /// After a successful bind (`USE`, or EXTRACT's auto-bind): give every
+    /// piece of state that derives from the previous binding its fresh value,
+    /// so the session is as one created and bound there (Gate B, B1). Run
+    /// only once the new backend is in place: a bind that fails leaves the
+    /// previous session as it was. The statement has already refused if the
+    /// open recording held anything
+    /// ([`Self::refuse_rebind_over_unsaved_recording`]), so the recording
+    /// this drops is empty.
+    ///
+    /// The destructuring is exhaustive, so a field added to `Session` does
+    /// not compile until it is classified here.
+    pub(crate) fn reset_binding_state(&mut self) {
+        debug_assert!(
+            self.patch_recording
+                .as_ref()
+                .is_none_or(|r| r.operations.is_empty()),
+            "a bind reached the reset with unsaved operations"
+        );
+        let Session {
+            // Kept: the new binding itself, and the session's own
+            // configuration and counts, which no binding derives.
+            backend: _,
+            profile: _,
+            verifier: _,
+            contract_violations: _,
+            balance_trace: _,
+            install_fault: _,
+            model_resolver: _,
+            representation_source: _,
+            // Reset: everything the previous binding's statements built.
+            patch_recording,
+            auto_patch,
+            decoy_residual_cache,
+            raw_install_residuals,
+            installed_edges,
+            relation_resolver,
+            epoch,
+            mutations_since_minor,
+            mutations_since_major,
+        } = Session::new();
+        self.patch_recording = patch_recording;
+        self.auto_patch = auto_patch;
+        self.decoy_residual_cache = decoy_residual_cache;
+        self.raw_install_residuals = raw_install_residuals;
+        self.installed_edges = installed_edges;
+        self.relation_resolver = relation_resolver;
+        self.epoch = epoch;
+        self.mutations_since_minor = mutations_since_minor;
+        self.mutations_since_major = mutations_since_major;
     }
 
     /// Choose where a VINDEX3 container bound by a LATER `USE` may take its execution representation from.
@@ -444,16 +527,22 @@ impl Session {
                     target,
                     matches!(mode, crate::ast::InsertMode::Knn),
                 )?;
+                // The recording must be open for the install to record into,
+                // but a refused or failed INSERT must not leave one it
+                // opened (Gate B, B5).
+                let opened = self.patch_recording.is_none();
                 let mut out = self.ensure_patch_session();
-                out.extend(self.exec_insert(
-                    entity,
-                    relation,
-                    target,
-                    *layer,
-                    *confidence,
-                    *alpha,
-                    *mode,
-                )?);
+                match self.exec_insert(entity, relation, target, *layer, *confidence, *alpha, *mode)
+                {
+                    Ok(lines) => out.extend(lines),
+                    Err(e) => {
+                        if opened {
+                            self.patch_recording = None;
+                            self.auto_patch = false;
+                        }
+                        return Err(e);
+                    }
+                }
                 out.push(format!(
                     "  fact {} (v{version})",
                     larql_vindex::FactKey::new(entity, relation).fact_id()
@@ -505,7 +594,23 @@ impl Session {
                 max_iters,
                 floor,
                 ceiling,
-            } => self.exec_rebalance(*max_iters, *floor, *ceiling),
+            } => {
+                // REBALANCE rescales the down vectors of earlier installs,
+                // which may sit in saved patches: record each change as a
+                // re-fit so the recording replays to this state (Gate B, B3).
+                let prior = self.prior_install_vectors();
+                let rebalanced = self.exec_rebalance(*max_iters, *floor, *ceiling)?;
+                let refits = self.refits_since(&prior);
+                if refits.is_empty() {
+                    return Ok(rebalanced);
+                }
+                let mut out = self.ensure_patch_session();
+                out.extend(rebalanced);
+                for op in refits {
+                    self.record_knowledge_op(op);
+                }
+                Ok(out)
+            }
 
             // ── Patch commands ──
             Statement::BeginPatch { path } => self.exec_begin_patch(path),

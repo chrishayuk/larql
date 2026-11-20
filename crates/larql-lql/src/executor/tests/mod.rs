@@ -473,6 +473,7 @@ fn make_rich_test_vindex_dir(tag: &str) -> std::path::PathBuf {
 }
 
 mod architecture_b_knn_store_tests_unified_i;
+mod binding_reset;
 mod compact_major_persistence_backend_vindex;
 mod compile_into_model;
 mod compile_into_vindex_integration_tests;
@@ -487,6 +488,7 @@ mod inferenceweights_format_dispatch;
 mod memit_fact_collection;
 mod mutation_recording;
 mod pipe;
+mod remove_refusal_text;
 mod session_patched_overlay_mut_accessor;
 mod session_state_no_backend;
 mod show_stats_verbs;

@@ -63,17 +63,17 @@ pub struct KnowledgeOverlay {
     pub patches: Vec<VindexPatch>,
     /// Feature-meta overrides: `Some(meta)` replaces the base view's
     /// annotation, a pinned `None` (from DELETE) hides it.
-    overrides_meta: HashMap<(usize, usize), Option<FeatureMeta>>,
+    pub(super) overrides_meta: HashMap<(usize, usize), Option<FeatureMeta>>,
     /// Tombstoned feature slots — excluded from every read path until
     /// an UPDATE resurrects them.
-    deleted: HashSet<(usize, usize)>,
+    pub(super) deleted: HashSet<(usize, usize)>,
     /// Compose-install vector state (V3-LQL-3B compose): per-slot gate
     /// and up **rows** and down **columns**, in f32. Browse merges the
     /// gate rows into its scan; execution observes all three through
     /// the operand-source seam ([`Self::operand_overrides`]).
-    overrides_gate: HashMap<(usize, usize), Vec<f32>>,
-    overrides_up: HashMap<(usize, usize), Vec<f32>>,
-    overrides_down: HashMap<(usize, usize), Vec<f32>>,
+    pub(super) overrides_gate: HashMap<(usize, usize), Vec<f32>>,
+    pub(super) overrides_up: HashMap<(usize, usize), Vec<f32>>,
+    pub(super) overrides_down: HashMap<(usize, usize), Vec<f32>>,
     /// Stored-weight edits staged directly in the session, outside any
     /// patch. Each is bound to the container it was staged against.
     /// `remove_patch` leaves these alone: it replays only the patch list.

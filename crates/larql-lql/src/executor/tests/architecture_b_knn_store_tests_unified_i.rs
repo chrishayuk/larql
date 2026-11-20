@@ -133,12 +133,15 @@ fn knn_store_compile_saves_and_loads() {
         "knn_store.bin should be in compiled vindex"
     );
 
-    // Load the compiled vindex and verify KNN store survives round-trip
+    // Load the compiled vindex in a new session, so the fact can only come
+    // from the compiled bytes. (This session's recording still holds the
+    // INSERT, so a USE here is refused: Gate B, B1.)
+    let mut reloaded = Session::new();
     let stmt = parser::parse(&format!(r#"USE "{}";"#, lql_path(&output))).unwrap();
-    session.execute(&stmt).expect("USE compiled vindex");
+    reloaded.execute(&stmt).expect("USE compiled vindex");
 
     // Check the KNN store is loaded with the fact
-    let overlay = session.patched_overlay_mut().expect("vindex");
+    let overlay = reloaded.patched_overlay_mut().expect("vindex");
     let entries = overlay.knn_store.entries_for_entity("Atlantis");
     assert_eq!(
         entries.len(),

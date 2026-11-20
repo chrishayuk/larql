@@ -157,9 +157,7 @@ impl Session {
             session_id,
             model_name,
         };
-        self.patch_recording = None;
-        self.auto_patch = false;
-
+        self.reset_binding_state();
         Ok(vec![banner])
     }
 

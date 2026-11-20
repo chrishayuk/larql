@@ -281,40 +281,10 @@ fn v2_and_v3_compose_installs_agree() {
     assert_eq!(p2.operations.len(), p3.operations.len(), "op counts");
 
     for (a, b) in p2.operations.iter().zip(&p3.operations) {
-        let larql_vindex::PatchOp::Insert {
-            layer: l2,
-            feature: f2,
-            entity: e2,
-            target: t2,
-            gate_vector_b64: g2,
-            up_vector_b64: u2,
-            down_vector_b64: d2,
-            down_meta: m2,
-            ..
-        } = a
-        else {
-            panic!("V2 arm emitted a non-Insert op: {a:?}")
-        };
-        let larql_vindex::PatchOp::Insert {
-            layer: l3,
-            feature: f3,
-            entity: e3,
-            target: t3,
-            gate_vector_b64: g3,
-            up_vector_b64: u3,
-            down_vector_b64: d3,
-            down_meta: m3,
-            ..
-        } = b
-        else {
-            panic!("V3 arm emitted a non-Insert op: {b:?}")
-        };
-        assert_eq!((l2, f2, e2, t2), (l3, f3, e3, t3), "slot identity");
-        assert_eq!(
-            m2.as_ref().map(|m| m.top_token_id),
-            m3.as_ref().map(|m| m.top_token_id),
-            "target id"
-        );
+        let (l2, f2, e2, m2, [g2, u2, d2]) = op_parts(a);
+        let (l3, f3, e3, m3, [g3, u3, d3]) = op_parts(b);
+        assert_eq!((l2, f2, &e2), (l3, f3, &e3), "slot identity");
+        assert_eq!(m2, m3, "target id");
         for (name, min_cos, x, y) in [
             ("gate", 1.0f32 - 1e-5, g2, g3),
             ("up", 1.0 - 1e-5, u2, u3),
@@ -337,6 +307,47 @@ fn v2_and_v3_compose_installs_agree() {
                 "stage 3: {name} magnitude diverges for {e2}: {nx} vs {ny}"
             );
         }
+    }
+}
+
+/// The slot, label, target id and gate/up/down of an install's own op, or of
+/// the re-fit a later install records for an earlier one (Gate B, B3).
+fn op_parts(
+    op: &larql_vindex::PatchOp,
+) -> (usize, usize, String, Option<u32>, [&Option<String>; 3]) {
+    match op {
+        larql_vindex::PatchOp::Insert {
+            layer,
+            feature,
+            entity,
+            target,
+            gate_vector_b64,
+            up_vector_b64,
+            down_vector_b64,
+            down_meta,
+            ..
+        } => (
+            *layer,
+            *feature,
+            format!("insert {entity} → {target}"),
+            down_meta.as_ref().map(|m| m.top_token_id),
+            [gate_vector_b64, up_vector_b64, down_vector_b64],
+        ),
+        larql_vindex::PatchOp::Update {
+            layer,
+            feature,
+            gate_vector_b64,
+            up_vector_b64,
+            down_vector_b64,
+            down_meta: None,
+        } => (
+            *layer,
+            *feature,
+            format!("re-fit L{layer}F{feature}"),
+            None,
+            [gate_vector_b64, up_vector_b64, down_vector_b64],
+        ),
+        other => panic!("a compose install emitted {other:?}"),
     }
 }
 
