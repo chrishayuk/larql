@@ -1,19 +1,24 @@
-//! What a failed COMPOSE install leaves in the session, measured by forcing the failure.
+//! INSERT atomicity (Gate B, B5): an INSERT that fails, at any point, leaves
+//! the session exactly as it found it, on both backends.
 //!
-//! **These tests record a known defect, not a desired behaviour.** A failed install is expected to
-//! leave the session exactly as it found it, and today it does not: the install writes the decoy
-//! cache, the fact's raw residual and the overlay slot, and rewrites every other slot at the layer,
-//! before the steps that can fail. Only a fault before the first write changes nothing.
+//! The install is forced to fail at every fault point, with and without an
+//! earlier install at the layer. After the failure, everything an install can
+//! write is compared with what it was before: every state fingerprint
+//! component, the VINDEX2 override vectors as bits, the asserted facts, and
+//! INFER on several prompts. Then the effective state is checked a second
+//! way: the INSERT that failed, run again, writes exactly what it writes in a
+//! session where it never failed.
 //!
-//! Fixing that is a separate change, with its own review. When it lands, the tables below must
-//! become empty and `a_failed_install_changes_nothing` must pass for every point; until then they
-//! state the truth, so that nothing about the experiment depends on an assumption.
+//! Before the fix, these tables were the defect: the decoy cache, the raw
+//! residual, the slot and every refined slot at the layer survived the
+//! failure, and after a fault just before recording, the overlay held an edit
+//! the saved patch lacked. A refused INSERT also opened an automatic
+//! recording.
 
 use larql_lql::install_fault::InstallFaultPoint as P;
+use larql_lql::Session;
 
 use crate::support::*;
-
-const PROMPTS: [&str; 3] = ["The a of is", "The c of is", "a b c"];
 
 const POINTS: [P; 8] = [
     P::BeforeInstall,
@@ -26,232 +31,219 @@ const POINTS: [P; 8] = [
     P::BeforeRecord,
 ];
 
-/// The components a failed install changes today, per fault point, when no earlier install exists
-/// at the layer (so the decoy cache is new).
-const CHANGED_FIRST: [&[&str]; 8] = [
-    &[],
-    &[
-        "session.decoy_residual_cache",
-        "session.raw_install_residuals",
-    ],
-    &[
-        "overlay.counts",
-        "overlay.vectors",
-        "session.decoy_residual_cache",
-        "session.raw_install_residuals",
-    ],
-    &[
-        "overlay.counts",
-        "overlay.vectors",
-        "session.decoy_residual_cache",
-        "session.raw_install_residuals",
-    ],
-    &[
-        "overlay.counts",
-        "overlay.vectors",
-        "session.decoy_residual_cache",
-        "session.raw_install_residuals",
-    ],
-    &[
-        "overlay.counts",
-        "overlay.vectors",
-        "session.decoy_residual_cache",
-        "session.raw_install_residuals",
-    ],
-    &[
-        "overlay.counts",
-        "overlay.vectors",
-        "session.decoy_residual_cache",
-        "session.raw_install_residuals",
-    ],
-    &[
-        "overlay.counts",
-        "overlay.vectors",
-        "session.decoy_residual_cache",
-        "session.installed_edges",
-        "session.raw_install_residuals",
-    ],
-];
+const V3_PROMPTS: [&str; 3] = ["The a of is", "The c of is", "a b c"];
+const V2_PROMPTS: [&str; 3] = ["The [7] of [3] is", "The [7] of [4] is", "[1] [2] [3]"];
 
-/// The same, when an earlier install already cached the layer's decoys.
-const CHANGED_SECOND: [&[&str]; 8] = [
-    &[],
-    &["session.raw_install_residuals"],
-    &[
-        "overlay.counts",
-        "overlay.vectors",
-        "session.raw_install_residuals",
-    ],
-    &[
-        "overlay.counts",
-        "overlay.vectors",
-        "session.raw_install_residuals",
-    ],
-    &[
-        "overlay.counts",
-        "overlay.vectors",
-        "session.raw_install_residuals",
-    ],
-    &[
-        "overlay.counts",
-        "overlay.vectors",
-        "session.raw_install_residuals",
-    ],
-    &[
-        "overlay.counts",
-        "overlay.vectors",
-        "session.raw_install_residuals",
-    ],
-    &[
-        "overlay.counts",
-        "overlay.vectors",
-        "session.installed_edges",
-        "session.raw_install_residuals",
-    ],
-];
-
-fn predictions(session: &mut larql_lql::Session) -> Vec<Vec<String>> {
-    PROMPTS.iter().map(|p| infer(session, p)).collect()
+/// One backend's fixture, statements and prompts.
+struct Case {
+    name: &'static str,
+    session: Box<dyn Fn() -> Session>,
+    recording: std::path::PathBuf,
+    insert: &'static str,
+    insert_second: &'static str,
+    prompts: [&'static str; 3],
+    _keep: Box<dyn std::any::Any>,
 }
 
-/// A session in a patch recording, optionally with one earlier install, an armed fault, and the
-/// result of the install that hits it.
-struct Failed {
-    changed: Vec<&'static str>,
-    predictions_changed: bool,
-    error: String,
+fn v3() -> Case {
+    let fx = std::rc::Rc::new(Fixture::new());
+    let f = fx.clone();
+    Case {
+        name: "VINDEX3",
+        session: Box::new(move || f.session()),
+        recording: fx.path("recording.vlp"),
+        insert: INSERT,
+        insert_second: INSERT_SECOND,
+        prompts: V3_PROMPTS,
+        _keep: Box::new(fx),
+    }
 }
 
-fn fail_at(fixture: &Fixture, point: P, earlier_install: bool) -> Failed {
-    let mut session = fixture.session();
+fn v2() -> Case {
+    let fx = std::rc::Rc::new(V2Fixture::new());
+    let f = fx.clone();
+    Case {
+        name: "VINDEX2",
+        session: Box::new(move || f.session()),
+        recording: fx.path("recording.vlp"),
+        insert: V2_INSERT,
+        insert_second: V2_INSERT_SECOND,
+        prompts: V2_PROMPTS,
+        _keep: Box::new(fx),
+    }
+}
+
+/// The state and the predictions on every prompt.
+fn observe(case: &Case, session: &mut Session) -> String {
+    let predictions: Vec<Vec<String>> = case.prompts.iter().map(|p| infer(session, p)).collect();
+    format!("{}\n--\n{predictions:?}", state(session))
+}
+
+/// A session in a named recording, with an earlier install if asked.
+fn prepared(case: &Case, earlier_install: bool) -> Session {
+    let mut session = (case.session)();
     run(
         &mut session,
-        &format!("BEGIN PATCH \"{}\";", q(&fixture.path("recording.vlp"))),
+        &format!("BEGIN PATCH \"{}\";", q(&case.recording)),
     );
     if earlier_install {
-        run(&mut session, INSERT);
+        run(&mut session, case.insert);
     }
-    let before = session.state_fingerprint();
-    let predictions_before = predictions(&mut session);
-    session.set_install_fault(Some(point));
-    let error = try_run(
-        &mut session,
-        if earlier_install {
-            INSERT_SECOND
-        } else {
-            INSERT
-        },
-    )
-    .unwrap_err();
-    Failed {
-        changed: session.state_fingerprint().changed_since(&before),
-        predictions_changed: predictions_before != predictions(&mut session),
-        error,
+    session
+}
+
+fn the_install(case: &Case, earlier_install: bool) -> &'static str {
+    if earlier_install {
+        case.insert_second
+    } else {
+        case.insert
     }
 }
 
-#[test]
-fn a_fault_before_the_install_writes_anything_changes_nothing() {
-    let fixture = Fixture::new();
-    for earlier in [false, true] {
-        let failed = fail_at(&fixture, P::BeforeInstall, earlier);
-        assert!(
-            failed.error.contains("injected fault at before-install"),
-            "{}",
-            failed.error
-        );
-        assert!(failed.changed.is_empty(), "{:?}", failed.changed);
-        assert!(!failed.predictions_changed);
-    }
-}
-
-/// KNOWN DEFECT: see the module comment.
-#[test]
-fn known_defect_a_failed_install_leaves_the_session_changed_after_its_first_write() {
-    let fixture = Fixture::new();
-    for (earlier, table) in [(false, CHANGED_FIRST), (true, CHANGED_SECOND)] {
-        for (point, expected) in POINTS.iter().zip(table) {
-            let failed = fail_at(&fixture, *point, earlier);
-            assert!(
-                failed.error.contains(&format!("injected fault at {point}")),
-                "{}",
-                failed.error
-            );
-            assert_eq!(
-                failed.changed,
-                expected.to_vec(),
-                "earlier install: {earlier}, fault at {point}"
-            );
-        }
-    }
-}
-
-/// The requirement the defect violates. It fails today, so it is ignored; the fix makes it pass and
-/// removes the attribute.
-#[test]
-#[ignore = "known defect: a failed COMPOSE install is not atomic; see the module comment"]
-fn a_failed_install_changes_nothing() {
-    let fixture = Fixture::new();
+/// Every fault point, with and without an earlier install: the INSERT fails
+/// with the injected fault, and the session is exactly as before.
+fn assert_a_failed_install_changes_nothing(case: &Case) {
     for earlier in [false, true] {
         for point in POINTS {
-            let failed = fail_at(&fixture, point, earlier);
+            let mut session = prepared(case, earlier);
+            let before = observe(case, &mut session);
+            session.set_install_fault(Some(point));
+            let error = try_run(&mut session, the_install(case, earlier)).unwrap_err();
             assert!(
-                failed.changed.is_empty(),
-                "earlier install: {earlier}, fault at {point}: {:?}",
-                failed.changed
+                error.contains(&format!("injected fault at {point}")),
+                "{}, fault at {point}: {error}",
+                case.name
             );
-            assert!(
-                !failed.predictions_changed,
-                "earlier install: {earlier}, fault at {point}"
+            assert_eq!(
+                observe(case, &mut session),
+                before,
+                "{}, earlier install: {earlier}, fault at {point}",
+                case.name
             );
         }
     }
 }
 
 #[test]
-fn known_defect_a_failed_install_can_change_predictions() {
-    let fixture = Fixture::new();
-    // With no earlier install, the half-written slot is already live in the forward pass.
-    for point in [
-        P::AfterSlotStaged,
-        P::AfterRefine,
-        P::DuringBalance { iteration: 0 },
-        P::AfterBalance,
-        P::BeforeRecord,
-    ] {
-        let failed = fail_at(&fixture, point, false);
-        assert!(
-            failed.predictions_changed,
-            "fault at {point} left predictions unchanged"
-        );
-    }
-    for point in [P::BeforeInstall, P::AfterCachesCommitted] {
-        let failed = fail_at(&fixture, point, false);
-        assert!(!failed.predictions_changed, "fault at {point}");
+fn vindex3_a_failed_install_changes_nothing() {
+    assert_a_failed_install_changes_nothing(&v3());
+}
+
+#[test]
+fn vindex2_a_failed_install_changes_nothing() {
+    assert_a_failed_install_changes_nothing(&v2());
+}
+
+/// The effective state, checked by what the session does next: after a
+/// failure at any point, the same INSERT run again writes exactly what it
+/// writes in a session where it never failed, and the session ends equal to
+/// that one.
+fn assert_the_retried_install_is_what_it_would_have_been(case: &Case) {
+    for earlier in [false, true] {
+        let mut clean = prepared(case, earlier);
+        run(&mut clean, the_install(case, earlier));
+        let want = observe(case, &mut clean);
+        for point in POINTS {
+            let mut session = prepared(case, earlier);
+            session.set_install_fault(Some(point));
+            try_run(&mut session, the_install(case, earlier)).unwrap_err();
+            run(&mut session, the_install(case, earlier));
+            assert_eq!(
+                observe(case, &mut session),
+                want,
+                "{}, earlier install: {earlier}, fault at {point}",
+                case.name
+            );
+        }
     }
 }
 
-/// KNOWN DEFECT: after a fault just before the patch operation is recorded, the slot is live in
-/// the overlay and registered for later checks, yet the active recording has no operation for it.
-/// `SAVE PATCH` would write a patch without an edit the session is still running.
 #[test]
-fn known_defect_the_overlay_can_hold_an_edit_the_saved_patch_lacks() {
-    let fixture = Fixture::new();
-    let mut session = fixture.session();
-    let patch = fixture.path("recording.vlp");
-    run(&mut session, &format!("BEGIN PATCH \"{}\";", q(&patch)));
-    let before = session.state_fingerprint();
-    session.set_install_fault(Some(P::BeforeRecord));
-    try_run(&mut session, INSERT).unwrap_err();
-    let changed = session.state_fingerprint().changed_since(&before);
-    assert!(changed.contains(&"overlay.vectors") && changed.contains(&"session.installed_edges"));
-    assert!(!changed.contains(&"session.patch_recording"));
+fn vindex3_the_retried_install_is_what_it_would_have_been() {
+    assert_the_retried_install_is_what_it_would_have_been(&v3());
+}
 
-    run(&mut session, "SAVE PATCH;");
-    let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&patch).unwrap()).unwrap();
-    assert_eq!(
-        saved["operations"].as_array().unwrap().len(),
-        0,
-        "the saved patch has no operation"
+#[test]
+fn vindex2_the_retried_install_is_what_it_would_have_been() {
+    assert_the_retried_install_is_what_it_would_have_been(&v2());
+}
+
+/// After a fault just before the patch operation is recorded, the overlay
+/// holds no edit the recording lacks: SAVE PATCH writes a patch with no
+/// operation, and the session it leaves is a session that never inserted.
+#[test]
+fn a_failed_install_leaves_no_edit_the_saved_patch_lacks() {
+    for case in [v3(), v2()] {
+        let mut session = prepared(&case, false);
+        let before = observe(&case, &mut session);
+        session.set_install_fault(Some(P::BeforeRecord));
+        try_run(&mut session, case.insert).unwrap_err();
+        assert_eq!(observe(&case, &mut session), before, "{}", case.name);
+        run(&mut session, "SAVE PATCH;");
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&case.recording).unwrap()).unwrap();
+        assert_eq!(
+            saved["operations"].as_array().unwrap().len(),
+            0,
+            "{}: {saved}",
+            case.name
+        );
+    }
+}
+
+/// A failed INSERT with no recording open does not leave one: SAVE PATCH
+/// still says there is none. With an anonymous recording already open, the
+/// failure keeps it and its operations as they were.
+#[test]
+fn a_failed_insert_opens_no_recording_and_keeps_an_open_one() {
+    for case in [v3(), v2()] {
+        let mut session = (case.session)();
+        let before = observe(&case, &mut session);
+        session.set_install_fault(Some(P::AfterRefine));
+        try_run(&mut session, case.insert).unwrap_err();
+        assert_eq!(observe(&case, &mut session), before, "{}", case.name);
+        let save = try_run(&mut session, "SAVE PATCH;").unwrap_err();
+        assert!(
+            save.contains("no active patch session"),
+            "{}: {save}",
+            case.name
+        );
+
+        run(&mut session, case.insert);
+        let before = observe(&case, &mut session);
+        session.set_install_fault(Some(P::AfterRefine));
+        try_run(&mut session, case.insert_second).unwrap_err();
+        assert_eq!(observe(&case, &mut session), before, "{}", case.name);
+        let save = try_run(&mut session, "SAVE PATCH;").unwrap_err();
+        assert!(
+            save.contains("anonymous patch session with 1 pending operation(s)"),
+            "{}: {save}",
+            case.name
+        );
+    }
+}
+
+/// The audit probe (`engine_lql::b5a_refused_insert_leaves_no_auto_patch`):
+/// an INSERT refused for a real reason, with no fault armed, on a container
+/// with no tokenizer. The session is unchanged and no recording is open.
+#[test]
+fn a_refused_insert_leaves_no_automatic_recording() {
+    let checkpoint = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    larql_vindex::format::vindex3::fixtures::encode_fixture_container(
+        larql_vindex::format::vindex3::fixtures::miniature_glimmer,
+        checkpoint.path(),
+        dir.path(),
+        "tokless",
+    );
+    let mut session = Session::new();
+    run(&mut session, &format!("USE \"{}\";", q(dir.path())));
+    let before = state(&mut session);
+    try_run(&mut session, INSERT).expect_err("no tokenizer: the INSERT is refused");
+    assert_eq!(state(&mut session), before);
+    let save = try_run(&mut session, "SAVE PATCH;").unwrap_err();
+    assert!(
+        save.contains("no active patch session"),
+        "a refused INSERT opened a recording: {save}"
     );
 }

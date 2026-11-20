@@ -444,16 +444,22 @@ impl Session {
                     target,
                     matches!(mode, crate::ast::InsertMode::Knn),
                 )?;
+                // The recording must be open for the install to record into,
+                // but a refused or failed INSERT must not leave one it
+                // opened (Gate B, B5).
+                let opened = self.patch_recording.is_none();
                 let mut out = self.ensure_patch_session();
-                out.extend(self.exec_insert(
-                    entity,
-                    relation,
-                    target,
-                    *layer,
-                    *confidence,
-                    *alpha,
-                    *mode,
-                )?);
+                match self.exec_insert(entity, relation, target, *layer, *confidence, *alpha, *mode)
+                {
+                    Ok(lines) => out.extend(lines),
+                    Err(e) => {
+                        if opened {
+                            self.patch_recording = None;
+                            self.auto_patch = false;
+                        }
+                        return Err(e);
+                    }
+                }
                 out.push(format!(
                     "  fact {} (v{version})",
                     larql_vindex::FactKey::new(entity, relation).fact_id()

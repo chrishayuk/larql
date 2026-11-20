@@ -13,6 +13,7 @@
 pub mod fact_key;
 pub mod format;
 pub(crate) mod gate_overlay;
+pub mod install_snapshot;
 pub mod knn_store;
 pub mod knn_store_io;
 pub mod overlay;
