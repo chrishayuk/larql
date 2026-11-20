@@ -278,8 +278,9 @@ class A64AuditCatchesEachMissingPatch(Fixture):
         model, _ = ho.load(self.ckpt, "A64", BOUNDARY)
         if tamper:
             tamper(model)
-        audit = ho.A64Audit(model)
-        with ho.SiteCapture(model, None), ho.a64_patches(model, audit, skip), ho.module_dtype_hooks(model, audit):
+        family = ho.Family("gemma3_text")
+        audit = ho.A64Audit(model, family)
+        with ho.SiteCapture(model, None, family), ho.a64_patches(model, audit, skip), ho.module_dtype_hooks(model, audit):
             with torch.no_grad():
                 logits = model(torch.tensor([IDS]), use_cache=False).logits[0]
         return audit.finish(logits, LAYERS), ho.audit_parameters(model, self.ckpt)
@@ -436,7 +437,7 @@ class Refusals(Fixture):
         import contextlib
 
         @contextlib.contextmanager
-        def not_injected(tables, record):
+        def not_injected(tables, record, family):
             record.update({"injected_calls": 0, "bit_identical_to_files": True})
             yield record
 

@@ -1,5 +1,9 @@
 """PREC-DIAG-1 transformers-side oracle: arms A32, A32s, A32r and A64 (B1).
 
+Families (`families.py`): Gemma 3 text, and Qwen3 dense (logits only). The
+family is the checkpoint's `model_type`; A64 patches that family's modeling
+file, and the audit's call counts are that family's.
+
 One process runs one arm over one input:
 - it writes logits at every position;
 - with `--positions`, it also writes captures at E0a's 13 sites;
@@ -10,8 +14,10 @@ One process runs one arm over one input:
   A32r  A32 with LARQL's own cos/sin tables injected into the rotary
         embedding (one value per pair, used for both halves); the rotation
         itself stays transformers' f32 rotate-half
-  A64   float64 throughout, with the five f32 forcings of transformers 5.5.0's
-        `modeling_gemma3.py` patched to f64, and the four-part audit:
+  A64   float64 throughout, with the f32 forcings of transformers 5.5.0's
+        modeling file patched to f64 (Gemma 3: RMSNorm, rotary, eager
+        softmax, scaled embedding; Qwen3: RMSNorm, rotary, eager softmax),
+        and the four-part audit:
           1. parameters: every parameter is float64 and equals the
              checkpoint's BF16 value widened exactly (compared against the
              safetensors bytes);
@@ -25,7 +31,7 @@ One process runs one arm over one input:
           4. logits are float64.
         A failed audit makes the run `fault`: A64 is never admitted unaudited.
 
-Captures go into `sites/`. They use E0a's names and layout:
+Captures go into `sites/` (Gemma 3 only; a Qwen3 capture is refused). They use E0a's names and layout:
 - `[positions, width]` row-major;
 - q and k are per head, head-major (`[heads, seq, hd]` -> `[seq, heads*hd]`);
 - A32* planes are `<f4`, A64 planes `<f8`.
@@ -63,15 +69,15 @@ import numpy as np  # noqa: E402
 import torch  # noqa: E402
 import transformers  # noqa: E402
 import transformers.models.gemma3.modeling_gemma3 as G  # noqa: E402
+import transformers.models.qwen3.modeling_qwen3 as Q  # noqa: E402
 from safetensors.torch import load_file  # noqa: E402
 from transformers import AutoConfig, AutoModelForCausalLM  # noqa: E402
 
 import oracle_loading  # noqa: E402
 from prec_diag import evidence as ev  # noqa: E402
+from prec_diag import families as fam  # noqa: E402
 
 ARMS = ("A32", "A32s", "A32r", "A64")
-#: transformers 5.5.0's modeling_gemma3.py, the file whose f32 forcings A64 patches.
-FROZEN_MODELING_SHA256 = "221f147ccc0b16d7fa0aa007231ee0a6bd40fb37feb79eb9e537290498468aef"
 #: The protocol's thread settings (rev 3 [C8]).
 THREADS = {"torch_num_threads": 8, "torch_num_interop_threads": 1, "OMP_NUM_THREADS": "8"}
 #: An f64 computation agrees with its numpy f64 recomputation far below this;
@@ -111,15 +117,63 @@ class AuditFailure(Exception):
     """A64's audit failed (recorded as `fault`)."""
 
 
+# --------------------------------------------------------------- families
+
+class Family:
+    """The torch side of one `families.FAMILIES` entry: which classes A64
+    patches, how its norm and rotary compute, and how often each runs."""
+
+    def __init__(self, name: str):
+        self.name = name
+        self.facts = fam.FAMILIES[name]
+        if name == "gemma3_text":
+            self.module, self.norm_offset = G, 1.0
+            self.rms_cls, self.rot_cls, self.emb_cls = (G.Gemma3RMSNorm, G.Gemma3RotaryEmbedding,
+                                                        G.Gemma3TextScaledWordEmbedding)
+        elif name == "qwen3":
+            self.module, self.norm_offset = Q, 0.0
+            self.rms_cls, self.rot_cls, self.emb_cls = Q.Qwen3RMSNorm, Q.Qwen3RotaryEmbedding, None
+        else:
+            raise Refused(f"no oracle patches for family {name!r}")
+
+    @classmethod
+    def of(cls, ckpt: Path) -> "Family":
+        config = json.loads((Path(ckpt) / "config.json").read_text())
+        try:
+            fam.config_layer_types(config)  # refuses a layout no patch covers
+            return cls(fam.family_of(config))
+        except fam.UnsupportedFamily as e:
+            raise Refused(str(e)) from None
+
+    def eps(self, norm) -> float:
+        return norm.eps if self.name == "gemma3_text" else norm.variance_epsilon
+
+    def theta(self, config, layer_type) -> float:
+        params = config.rope_parameters
+        return params[layer_type]["rope_theta"] if self.name == "gemma3_text" else params["rope_theta"]
+
+    def rotary_calls(self, num_layers: int) -> int:
+        """Gemma 3 builds cos/sin per layer; Qwen3 once per forward."""
+        return num_layers if self.name == "gemma3_text" else 1
+
+    def expected_calls(self, num_layers: int) -> dict:
+        """Gemma 3: input, post-attention, pre- and post-FFN norms plus q/k
+        norms per layer, and the final norm. Qwen3: input and post-attention
+        norms plus q/k norms per layer, and the final norm."""
+        if self.name == "gemma3_text":
+            return {"rmsnorm": 6 * num_layers + 1, "rotary": num_layers, "softmax": num_layers, "embedding": 1}
+        return {"rmsnorm": 4 * num_layers + 1, "rotary": 1, "softmax": num_layers}
+
+
 # ------------------------------------------------------------- identity
 
-def modeling_sha256() -> str:
-    return ev.sha256_file(Path(G.__file__))
+def modeling_sha256(family: Family | None = None) -> str:
+    return ev.sha256_file(Path((family.module if family else G).__file__))
 
 
 def script_digests() -> dict:
     here = Path(__file__).resolve().parent
-    return {name: ev.sha256_file(here / name) for name in ("hf_oracle.py", "evidence.py")} | {
+    return {name: ev.sha256_file(here / name) for name in ("hf_oracle.py", "evidence.py", "families.py")} | {
         "oracle_loading.py": ev.sha256_file(here.parent / "oracle_loading.py")}
 
 
@@ -164,9 +218,10 @@ def load(ckpt: Path, arm: str, boundary: dict) -> tuple[torch.nn.Module, dict]:
     """The model for `arm` and its loading facts (gate as harness 2.1.0)."""
     config = AutoConfig.from_pretrained(ckpt)
     if getattr(config, "text_config", None) is not None:
-        raise Refused("composite config: this oracle loads text-only Gemma 3 checkpoints")
+        raise Refused("composite config: this oracle loads text-only checkpoints")
     rope = getattr(config, "rope_parameters", None) or {}
-    for layer_type, params in rope.items():
+    per_type = rope.items() if all(isinstance(v, dict) for v in rope.values()) else [("all", rope)]
+    for layer_type, params in per_type:
         if params and params.get("rope_type", "default") != "default":
             raise Refused(f"rope_type {params.get('rope_type')!r} for {layer_type}: only default is patched")
     dtype = torch.float64 if arm == "A64" else torch.float32
@@ -201,8 +256,8 @@ def _first(o):
 class SiteCapture:
     """Hooks for E0a's 13 sites. Values are kept for `positions` only."""
 
-    def __init__(self, model, positions: list[int] | None):
-        self.model, self.positions = model, positions
+    def __init__(self, model, positions: list[int] | None, family: Family):
+        self.model, self.positions, self.family = model, positions, family
         self.planes: dict[tuple[str, int | None], np.ndarray] = {}
         self._handles = []
         self._rotary_calls = 0
@@ -219,6 +274,10 @@ class SiteCapture:
     def __enter__(self):
         m = self.model.model
         h = self._handles
+        self._orig_rotary = self.family.module.apply_rotary_pos_emb
+        self._install_rotary()
+        if self.positions is None:
+            return self
         h.append(m.embed_tokens.register_forward_hook(lambda mod, i, o: self._put("embedding", None, o[0])))
         h.append(m.norm.register_forward_hook(lambda mod, i, o: self._put("head_input", None, o[0])))
         for L, layer in enumerate(m.layers):
@@ -235,8 +294,9 @@ class SiteCapture:
                   layer.mlp.register_forward_hook(out("ffn_output")),
                   layer.post_feedforward_layernorm.register_forward_hook(out("ffn_delta")),
                   layer.register_forward_hook(out("residual"))]
-        self._orig_rotary = G.apply_rotary_pos_emb
+        return self
 
+    def _install_rotary(self):
         def rotary(q, k, cos, sin, *args, **kwargs):
             qo, ko = self._orig_rotary(q, k, cos, sin, *args, **kwargs)
             layer = self._rotary_calls
@@ -245,13 +305,12 @@ class SiteCapture:
             self._put("key_positioned", layer, _heads_to_rows(ko))
             return qo, ko
 
-        G.apply_rotary_pos_emb = rotary
-        return self
+        self.family.module.apply_rotary_pos_emb = rotary
 
     def __exit__(self, *exc):
         for handle in self._handles:
             handle.remove()
-        G.apply_rotary_pos_emb = self._orig_rotary
+        self.family.module.apply_rotary_pos_emb = self._orig_rotary
         return False
 
     def check_complete(self, num_layers: int) -> None:
@@ -284,14 +343,15 @@ def load_tables(table_dirs: dict[str, Path], positions: int, head_dim: int) -> d
 
 
 @contextlib.contextmanager
-def larql_tables(tables: dict, record: dict):
+def larql_tables(tables: dict, record: dict, family: Family):
     """Replace the rotary embedding's output with LARQL's tables, each value
-    used for both halves, exactly as LARQL applies them."""
-    orig = G.Gemma3RotaryEmbedding.forward
+    used for both halves, exactly as LARQL applies them. A family whose
+    rotary takes no layer type (Qwen3) is all full attention."""
+    orig = family.rot_cls.forward
     record.update({"injected_calls": 0, "bit_identical_to_files": True})
 
     def forward(self, x, position_ids, layer_type=None):
-        t = tables[layer_type]
+        t = tables[layer_type or "full_attention"]
         pos = position_ids[0].numpy()
         cos = torch.from_numpy(np.concatenate([t["cos"][pos]] * 2, axis=-1))[None]
         sin = torch.from_numpy(np.concatenate([t["sin"][pos]] * 2, axis=-1))[None]
@@ -303,11 +363,11 @@ def larql_tables(tables: dict, record: dict):
         record["injected_calls"] += 1
         return cos.to(x.dtype), sin.to(x.dtype)
 
-    G.Gemma3RotaryEmbedding.forward = forward
+    family.rot_cls.forward = forward
     try:
         yield record
     finally:
-        G.Gemma3RotaryEmbedding.forward = orig
+        family.rot_cls.forward = orig
 
 
 # -------------------------------------------------------------------- A64
@@ -319,10 +379,10 @@ def _rel(a: np.ndarray, b: np.ndarray) -> float:
 class A64Audit:
     """Parts 2 and 3 of the audit, collected during the forward."""
 
-    def __init__(self, model):
-        self.model = model
+    def __init__(self, model, family: Family):
+        self.model, self.family = model, family
         self.problems: list[str] = []
-        self.calls: dict[str, dict] = {"rmsnorm": {}, "rotary": {}, "softmax": {}, "embedding": {}}
+        self.calls: dict[str, dict] = {k: {} for k in family.expected_calls(1)}
         self.witness: dict[str, float] = {}
         self.module_tensors = 0
         names = {id(mod): name for name, mod in model.named_modules()}
@@ -345,7 +405,7 @@ class A64Audit:
             self.problems.append(f"{kind}: f64 witness relative error {rel:.3e} > {F64_WITNESS_REL}")
 
     def expected_calls(self, num_layers: int) -> dict:
-        return {"rmsnorm": 6 * num_layers + 1, "rotary": num_layers, "softmax": num_layers, "embedding": 1}
+        return self.family.expected_calls(num_layers)
 
     def finish(self, logits: torch.Tensor, num_layers: int) -> dict:
         self.check("logits", logits)
@@ -353,7 +413,7 @@ class A64Audit:
         expected = self.expected_calls(num_layers)
         if totals != expected:
             self.problems.append(f"patched-function call counts {totals} != {expected}")
-        for kind in ("rmsnorm", "rotary", "softmax", "embedding"):
+        for kind in expected:
             if kind not in self.witness:
                 self.problems.append(f"{kind}: no f64 witness taken")
         return {"pass": not self.problems, "problems": self.problems[:50],
@@ -396,11 +456,15 @@ def audit_parameters(model, ckpt: Path) -> dict:
 
 @contextlib.contextmanager
 def a64_patches(model, audit: A64Audit, skip: frozenset = frozenset()):
-    """The five f32 forcings, patched to f64. `skip` exists for the tests
+    """The family's f32 forcings, patched to f64. `skip` exists for the tests
     that prove the audit catches a missing patch; a real run passes none."""
-    saved = {"rms": G.Gemma3RMSNorm.forward, "rot": G.Gemma3RotaryEmbedding.forward,
-             "eager": G.eager_attention_forward, "emb": G.Gemma3TextScaledWordEmbedding.forward}
+    family = audit.family
+    M = family.module
+    saved = {"rms": family.rms_cls.forward, "rot": family.rot_cls.forward, "eager": M.eager_attention_forward}
+    if family.emb_cls is not None:
+        saved["emb"] = family.emb_cls.forward
     names = audit.names
+    offset = family.norm_offset
     hidden = model.config.hidden_size
 
     def layer_of(name: str) -> str:
@@ -409,24 +473,25 @@ def a64_patches(model, audit: A64Audit, skip: frozenset = frozenset()):
 
     def rms(self, x):
         audit.check(f"rmsnorm in {names.get(id(self))}", x, self.weight)
-        out = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-        out = out * (1.0 + self.weight)
+        eps = family.eps(self)
+        out = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps)
+        out = out * (offset + self.weight)
         audit.check(f"rmsnorm out {names.get(id(self))}", out)
         audit.count("rmsnorm", layer_of(names.get(id(self), "")))
         xd = x.detach().numpy()
-        want = xd / np.sqrt(np.mean(xd * xd, axis=-1, keepdims=True) + self.eps) * (1.0 + self.weight.detach().numpy())
+        want = xd / np.sqrt(np.mean(xd * xd, axis=-1, keepdims=True) + eps) * (offset + self.weight.detach().numpy())
         audit.witness_once("rmsnorm", out, want)
         return out
 
     def rot(self, x, position_ids, layer_type=None):
-        base = self.config.rope_parameters[layer_type]["rope_theta"]
+        base = family.theta(self.config, layer_type)
         dim = getattr(self.config, "head_dim", None) or self.config.hidden_size // self.config.num_attention_heads
         inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float64) / dim))
         angles = position_ids[0].to(torch.float64)[:, None] * inv_freq[None, :]
         emb = torch.cat((angles, angles), dim=-1)[None]
         cos, sin = emb.cos(), emb.sin()
         audit.check(f"rotary {layer_type}", inv_freq, angles, cos, sin)
-        audit.count("rotary", layer_type)
+        audit.count("rotary", layer_type or "full_attention")
         p = position_ids[0].numpy().astype(np.float64)
         f = 1.0 / (float(base) ** (np.arange(0, dim, 2, dtype=np.float64) / dim))
         audit.witness_once("rotary", cos[0, :, : dim // 2], np.cos(p[:, None] * f[None, :]))
@@ -435,8 +500,8 @@ def a64_patches(model, audit: A64Audit, skip: frozenset = frozenset()):
     def eager(module, query, key, value, attention_mask, dropout=0.0, scaling=None, softcap=None, **kw):
         if scaling is None:
             scaling = module.head_dim ** -0.5
-        k = G.repeat_kv(key, module.num_key_value_groups)
-        v = G.repeat_kv(value, module.num_key_value_groups)
+        k = M.repeat_kv(key, module.num_key_value_groups)
+        v = M.repeat_kv(value, module.num_key_value_groups)
         scores = torch.matmul(query, k.transpose(2, 3)) * scaling
         if softcap is not None:
             scores = torch.tanh(scores / softcap) * softcap
@@ -461,20 +526,21 @@ def a64_patches(model, audit: A64Audit, skip: frozenset = frozenset()):
         return out
 
     if "rmsnorm" not in skip:
-        G.Gemma3RMSNorm.forward = rms
+        family.rms_cls.forward = rms
     if "rotary" not in skip:
-        G.Gemma3RotaryEmbedding.forward = rot
+        family.rot_cls.forward = rot
     if "softmax" not in skip:
-        G.eager_attention_forward = eager
-    if "embedding" not in skip:
-        G.Gemma3TextScaledWordEmbedding.forward = emb
+        M.eager_attention_forward = eager
+    if family.emb_cls is not None and "embedding" not in skip:
+        family.emb_cls.forward = emb
     try:
         yield audit
     finally:
-        G.Gemma3RMSNorm.forward = saved["rms"]
-        G.Gemma3RotaryEmbedding.forward = saved["rot"]
-        G.eager_attention_forward = saved["eager"]
-        G.Gemma3TextScaledWordEmbedding.forward = saved["emb"]
+        family.rms_cls.forward = saved["rms"]
+        family.rot_cls.forward = saved["rot"]
+        M.eager_attention_forward = saved["eager"]
+        if family.emb_cls is not None:
+            family.emb_cls.forward = saved["emb"]
 
 
 @contextlib.contextmanager
@@ -507,16 +573,17 @@ def module_dtype_hooks(model, audit: A64Audit):
 
 # -------------------------------------------------------------------- run
 
-def forward(model, ids: list[int], arm: str, positions, tables=None, ckpt=None) -> dict:
+def forward(model, ids: list[int], arm: str, positions, tables=None, ckpt=None, family: Family | None = None) -> dict:
     """One forward for `arm`; returns logits, planes and the arm's records."""
+    family = family or Family("gemma3_text")
     num_layers = model.config.num_hidden_layers
     out: dict = {"records": {}}
     with contextlib.ExitStack() as stack:
-        cap = stack.enter_context(SiteCapture(model, positions))
+        cap = stack.enter_context(SiteCapture(model, positions, family))
         if arm == "A32r":
-            stack.enter_context(larql_tables(tables, out["records"].setdefault("tables", {})))
+            stack.enter_context(larql_tables(tables, out["records"].setdefault("tables", {}), family))
         if arm == "A64":
-            audit = A64Audit(model)
+            audit = A64Audit(model, family)
             stack.enter_context(a64_patches(model, audit))
             stack.enter_context(module_dtype_hooks(model, audit))
         with torch.no_grad():
@@ -527,7 +594,7 @@ def forward(model, ids: list[int], arm: str, positions, tables=None, ckpt=None) 
                                    **audit.finish(logits, num_layers)}
     if arm == "A32r":
         t = out["records"]["tables"]
-        if t["injected_calls"] != num_layers or not t["bit_identical_to_files"]:
+        if t["injected_calls"] != family.rotary_calls(num_layers) or not t["bit_identical_to_files"]:
             raise RuntimeError(f"A32r table injection: {t}")
     out["logits"], out["planes"] = logits.detach().numpy(), cap.planes
     return out
@@ -566,7 +633,7 @@ def write_outputs(run_dir: Path, result: dict, arm: str, positions, model) -> li
 
 
 def run(*, arm: str, ckpt: Path, ids: list[int], positions: list[int] | None, out_dir: Path,
-        boundary: dict, table_dirs: dict | None = None, expected_modeling_sha256: str = FROZEN_MODELING_SHA256,
+        boundary: dict, table_dirs: dict | None = None, expected_modeling_sha256: str | None = None,
         require_threads: bool = True, bind: dict | None = None) -> dict:
     """One arm over one input under the lifecycle. Returns the final record.
 
@@ -575,16 +642,26 @@ def run(*, arm: str, ckpt: Path, ids: list[int], positions: list[int] | None, ou
     freeze is never admitted under another."""
     if arm not in ARMS:
         raise ValueError(f"unknown arm {arm!r}")
+    try:
+        family = Family.of(ckpt)
+    except Refused:
+        family = None  # refused below, once the record exists
     identity = {"tool": "hf_oracle", "scripts": script_digests(), "arm": arm,
                 "checkpoint": checkpoint_identity(ckpt), "input": ids_digests(ids) | {"length": len(ids)},
-                "positions": positions, "modeling_gemma3_sha256": modeling_sha256(),
+                "positions": positions,
+                "modeling": ({"family": family.name, "sha256": modeling_sha256(family)} if family else None),
                 "threads": thread_state(), "environment": ev.numeric_environment(dict(os.environ)),
                 "packages": packages(), "machine": platform.machine(), "os": platform.platform(),
                 "bind": bind}
     rr = ev.RunRecord.begin(out_dir, (bind or {}).get("run_id", arm), "hf-oracle", identity)
     try:
-        if identity["modeling_gemma3_sha256"] != expected_modeling_sha256:
-            raise Refused("modeling_gemma3.py differs from the frozen file")
+        if family is None:
+            Family.of(ckpt)  # raises the refusal with its reason
+        frozen = expected_modeling_sha256 or family.facts["modeling_sha256"]
+        if identity["modeling"]["sha256"] != frozen:
+            raise Refused(f"modeling_{family.facts['modeling']}.py differs from the frozen file")
+        if positions is not None and not family.facts["captures"]:
+            raise Refused(f"site captures are not mapped for {family.name}")
         if require_threads and identity["threads"] != THREADS:
             raise Refused(f"threads {identity['threads']} != {THREADS}")
         if positions is not None and (positions != sorted(set(positions)) or positions[-1] >= len(ids)):
@@ -598,7 +675,7 @@ def run(*, arm: str, ckpt: Path, ids: list[int], positions: list[int] | None, ou
             tables = load_tables(table_dirs, len(ids), model.config.head_dim)
             identity["tables"] = {lt: {k: v for k, v in t.items() if k.endswith("sha256")}
                                   for lt, t in tables.items()}
-        result = forward(model, ids, arm, positions, tables, ckpt)
+        result = forward(model, ids, arm, positions, tables, ckpt, family)
         if arm == "A64":
             audit = result["records"]["audit"]
             if not (audit["pass"] and audit["parameters"]["pass"]):
