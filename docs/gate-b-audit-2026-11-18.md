@@ -24,6 +24,31 @@ Result on `3b5dd3d2` (2026-11-19), every probe as recorded below:
 | `engine_lql` | `b1_reuse_same_path_then_insert_equals_fresh_session`, `b3_two_compose_inserts_same_layer_replay_exactly`, `b3_split_across_two_patches_replay_exactly`, `b4_knn_reinsert_same_key_takes_effect`, `b5a_refused_insert_leaves_no_auto_patch` | `control_single_insert_replays_exactly_and_is_deterministic` (control) |
 | `server_overlay` | `s_insert_survives_or_vanishes_whole_after_an_unrelated_remove`, `s_update_set_confidence_takes_effect`, `s_update_does_not_resurrect_a_deleted_slot` | `s_slot_the_chooser_can_pick_a_model_feature` (characterisation) |
 
+### Probe retirement (2026-11-20, main `741ecdab`)
+
+On 2026-11-20 every probe was re-run on main `741ecdab`, after #884, #885,
+#888 and #891 had merged. Each engine probe is now covered by a permanent test
+in the owning crate, or its assertion was replaced by an owner decision. Both
+engine files are therefore deleted.
+
+| Probe | On `741ecdab` | Covered by | Why deleted |
+|---|---|---|---|
+| `engine_overlay::edit9_remove_patch_restores_up_down` | passes | larql-vindex `remove_patch_exact::a_removed_inserts_up_and_down_vectors_do_not_survive` (#884) | fixed; the permanent test checks the same failure |
+| `engine_overlay::v2_remove_patch_keeps_base_knn` | fails, but only as written | larql-vindex `remove_patch_exact::removing_an_unrelated_patch_keeps_the_vindexs_own_knn_entries` (#884) | The probe fills `knn_store` directly, which was USE's wiring before the fix. USE now calls `bind_base_knn`, and so does the permanent test, so the probe no longer exercises what USE does. |
+| `engine_overlay::knn_duplicate_key_first_insert_wins` | fails | FACT-ID-1 ID-12 and ID-13 (#880) | B4 is closed by refusal, not by replacement (§B4). The probe asserts "replace", which is not the rule. |
+| `engine_lql::b4_knn_reinsert_same_key_takes_effect` | fails | FACT-ID-1 ID-12 and ID-13 (#880) | as above; it now also hits D-5's single-token refusal |
+| `engine_lql::b1_reuse_same_path_then_insert_equals_fresh_session` | fails | larql-lql `gate_b_use_isolation`, 10 tests (#888) | Owner decision for B1: USE refuses over unsaved operations. The probe expects USE to go ahead. The permanent tests check the decided behaviour, including that saving and then running USE equals a fresh session. |
+| `engine_lql::b3_two_compose_inserts_same_layer_replay_exactly` | passes | larql-lql `gate_b_replay::vindex{3,2}_two_installs_in_one_patch_replay_exactly` (#885) | fixed; the permanent tests cover it on both backends |
+| `engine_lql::b3_split_across_two_patches_replay_exactly` | passes | larql-lql `gate_b_replay::vindex{3,2}_two_installs_in_two_patches_replay_exactly` (#885) | fixed; the permanent tests cover it on both backends |
+| `engine_lql::control_single_insert_replays_exactly_and_is_deterministic` | passes (control) | the `gate_b_replay` suite | The control belonged to the deleted engine file. The replay suite's fixtures cover a single install. |
+| `engine_lql::b5a_refused_insert_leaves_no_auto_patch` | passes | larql-lql `install_fault::atomicity::a_refused_insert_leaves_no_automatic_recording` (#891) | fixed; the permanent test checks the same failure |
+
+`server_overlay` is kept. Gate S is tracked separately, and none of its rows
+is closed. On `741ecdab`, `s_insert_survives_or_vanishes_whole_after_an_unrelated_remove`
+now passes. That is presumably a side effect of #884's REMOVE PATCH rebuild.
+It is a single overlay-level observation, not a Gate S fix: remote INSERT
+still writes no patch (S-INSERT). The other two Gate S probes still fail.
+
 Grades follow `gate-b.md` §2: PASS needs code plus a test that would fail;
 "exec" means shown by running code, "read" means shown by reading the code. File
 references are to `3b5dd3d2`.
