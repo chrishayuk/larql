@@ -26,9 +26,11 @@ mod knn;
 pub(crate) use compose_v3::probe_target_prob;
 mod knn_v3;
 mod plan;
+mod snapshot;
 
 use crate::ast::InsertMode;
 use crate::error::LqlError;
+use crate::executor::install_fault::InstallFaultPoint;
 use crate::executor::tuning::DEFAULT_INSERT_ALPHA_MUL;
 use crate::executor::Session;
 
@@ -42,8 +44,38 @@ impl Session {
     // parameter is a distinct AST field destructured by the dispatcher
     // in `executor::execute`. Bundling them into a struct would just
     // push the destructuring onto the caller.
+    /// Runs an INSERT atomically (Gate B, B5): if it fails, everything it
+    /// wrote is put back, so the session is as it found it. See
+    /// [`snapshot`].
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn exec_insert(
+        &mut self,
+        entity: &str,
+        relation: &str,
+        target: &str,
+        layer_hint: Option<u32>,
+        confidence: Option<f32>,
+        alpha_override: Option<f32>,
+        mode: InsertMode,
+    ) -> Result<Vec<String>, LqlError> {
+        let snapshot = self.insert_snapshot(matches!(mode, InsertMode::Compose));
+        let result = self.exec_insert_steps(
+            entity,
+            relation,
+            target,
+            layer_hint,
+            confidence,
+            alpha_override,
+            mode,
+        );
+        if result.is_err() {
+            self.restore_insert(snapshot);
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn exec_insert_steps(
         &mut self,
         entity: &str,
         relation: &str,
@@ -104,6 +136,7 @@ impl Session {
         // down-vector norm — the actual down vector written into the
         // overlay is `target_embed_unit * d_ref * alpha_mul`. The
         // default lives in `executor::tuning` (DEFAULT_INSERT_ALPHA_MUL).
+        self.inject_install_fault(InstallFaultPoint::BeforeInstall)?;
         let alpha_mul = alpha_override.unwrap_or(DEFAULT_INSERT_ALPHA_MUL);
         let c_score = confidence.unwrap_or(DEFAULT_INSERT_CONFIDENCE);
 
@@ -119,6 +152,7 @@ impl Session {
         for (layer, decoys) in captured.pending_decoys {
             self.decoy_residual_cache.insert(layer, decoys);
         }
+        self.inject_install_fault(InstallFaultPoint::AfterCachesCommitted)?;
 
         // ── Phase 2: install slots ──
         let mut installed = self.install_slots(
@@ -136,6 +170,11 @@ impl Session {
                 "no free feature slots in target layers".into(),
             ));
         }
+        // `install_slots` stages each slot and runs the refine pass under one
+        // borrow of the overlay, so on VINDEX2 both points fire here, after
+        // both writes.
+        self.inject_install_fault(InstallFaultPoint::AfterSlotStaged)?;
+        self.inject_install_fault(InstallFaultPoint::AfterRefine)?;
 
         // Commit the new raw residuals to the session cache. Future
         // INSERTs read from `self.raw_install_residuals` to rebuild
@@ -151,6 +190,7 @@ impl Session {
         // ── Phase 3: balance + cross-fact regression check ──
         if plan.use_constellation {
             self.balance_installed(&installed, entity, relation, target)?;
+            self.inject_install_fault(InstallFaultPoint::AfterBalance)?;
             self.cross_fact_regression_check(&installed)?;
             self.refresh_installed_patch_ops_from_overlay(&mut installed)?;
 
@@ -167,6 +207,7 @@ impl Session {
                 });
             }
         }
+        self.inject_install_fault(InstallFaultPoint::BeforeRecord)?;
 
         // ── Phase 4: record patch ops + build output summary ──
         for slot in &installed {

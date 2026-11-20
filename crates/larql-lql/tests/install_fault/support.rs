@@ -93,3 +93,100 @@ pub fn infer(session: &mut Session, prompt: &str) -> Vec<String> {
         .filter(|line| !line.trim_end().ends_with("ms"))
         .collect()
 }
+
+/// The `[N]` ↔ id N tokenizer for the VINDEX2 fixture.
+fn n_tokenizer_json(vocab: usize) -> String {
+    let entries: Vec<String> = (0..vocab).map(|i| format!("\"[{i}]\":{i}")).collect();
+    format!(
+        "{{\"version\":\"1.0\",\"truncation\":null,\"padding\":null,\"added_tokens\":[],\
+         \"normalizer\":{{\"type\":\"Strip\",\"strip_left\":true,\"strip_right\":true}},\
+         \"pre_tokenizer\":{{\"type\":\"WhitespaceSplit\"}},\"post_processor\":null,\"decoder\":null,\
+         \"model\":{{\"type\":\"WordLevel\",\"vocab\":{{{}}},\"unk_token\":\"[0]\"}}}}",
+        entries.join(",")
+    )
+}
+
+/// Top tokens per feature the VINDEX2 extractor writes into `down_meta`.
+const V2_DOWN_TOP_K: usize = 8;
+
+pub const V2_INSERT: &str = r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[3]", "[7]", "[5]") AT LAYER 0 MODE COMPOSE;"#;
+pub const V2_INSERT_SECOND: &str = r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[4]", "[7]", "[6]") AT LAYER 0 MODE COMPOSE;"#;
+
+/// A VINDEX2 vindex extracted from the dense fixture model, whose installs
+/// have distinct gates, so the refine and balance passes do real work.
+pub struct V2Fixture {
+    _checkpoint: tempfile::TempDir,
+    pub dir: tempfile::TempDir,
+}
+
+impl V2Fixture {
+    pub fn new() -> Self {
+        use larql_vindex::format::vindex3::fixtures::{dense_f32_model, DENSE_VOCAB};
+        let checkpoint = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        dense_f32_model(checkpoint.path());
+        let weights = larql_inference::load_model_dir(checkpoint.path()).unwrap();
+        let json = n_tokenizer_json(DENSE_VOCAB);
+        let tokenizer = larql_vindex::tokenizers::Tokenizer::from_bytes(json.as_bytes()).unwrap();
+        larql_vindex::build_vindex(
+            &weights,
+            &tokenizer,
+            "install-fault-v2",
+            dir.path(),
+            V2_DOWN_TOP_K,
+            larql_vindex::ExtractLevel::All,
+            larql_vindex::StorageDtype::F32,
+            &mut larql_vindex::SilentBuildCallbacks,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("tokenizer.json"), json).unwrap();
+        Self {
+            _checkpoint: checkpoint,
+            dir,
+        }
+    }
+
+    pub fn session(&self) -> Session {
+        let mut s = Session::new();
+        run(&mut s, &format!("USE \"{}\";", q(self.dir.path())));
+        s
+    }
+
+    pub fn path(&self, name: &str) -> PathBuf {
+        self.dir.path().join(name)
+    }
+}
+
+/// Everything an install can change, as text: every state fingerprint
+/// component, the VINDEX2 override vectors and KNN count as bits (the
+/// fingerprint's overlay components cover VINDEX3 only), and the asserted
+/// facts.
+pub fn state(session: &mut Session) -> String {
+    let fingerprint = format!("{:?}", session.state_fingerprint().components());
+    let v2 = session
+        .patched_overlay_mut()
+        .map(|pv| {
+            let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+            let mut gates: Vec<_> = pv
+                .overrides_gate_iter()
+                .map(|(l, f, g)| ((l, f), bits(g)))
+                .collect();
+            let mut ups: Vec<_> = pv
+                .up_overrides()
+                .iter()
+                .map(|(k, v)| (*k, bits(v)))
+                .collect();
+            let mut downs: Vec<_> = pv
+                .down_overrides()
+                .iter()
+                .map(|(k, v)| (*k, bits(v)))
+                .collect();
+            gates.sort();
+            ups.sort();
+            downs.sort();
+            format!("{gates:?}\n{ups:?}\n{downs:?}\nknn {}", pv.knn_store.len())
+        })
+        .unwrap_or_default();
+    let facts = format!("{:?}", session.asserted_facts().unwrap());
+    format!("{fingerprint}\n--\n{v2}\n--\n{facts}")
+}
