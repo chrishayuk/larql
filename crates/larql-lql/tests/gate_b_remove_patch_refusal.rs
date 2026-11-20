@@ -319,10 +319,7 @@ fn the_refusal_lists_keyed_and_physical_edits_in_journal_order() {
         "save the open recording to {} with SAVE PATCH; ",
         shown(&named)
     );
-    assert!(
-        why.ends_with(&refusal(&shown(&a), &edits, &save)),
-        "{why}"
-    );
+    assert!(why.ends_with(&refusal(&shown(&a), &edits, &save)), "{why}");
     assert_eq!(observe(&mut session, fx.prompt), before);
 }
 
