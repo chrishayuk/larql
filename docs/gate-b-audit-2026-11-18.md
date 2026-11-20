@@ -47,6 +47,12 @@ references are to `3b5dd3d2`.
 - **An existing test pins the leak:**
   `tests/vindex3_mutation.rs::rebalance_converges_and_survives_an_emptied_overlay`
   treats the survival as intended.
+- **Decision 2026-11-19 (owner): USE refuses to discard unsaved operations.**
+  When the open recording holds operations, USE refuses before doing
+  anything, as does EXTRACT, which binds what it builds. The binding and the
+  recording stay as they were. SAVE PATCH keeps the operations. An empty
+  recording does not block. An explicit discard statement may follow
+  separately; it is not part of B1.
 - **Probe:** `engine_lql::b1_reuse_same_path_then_insert_equals_fresh_session`.
   Two compose INSERTs, then a re-USE of the same path; the session fingerprint
   still differs from a pristine one. INSERT a: the overlay vectors differ from
