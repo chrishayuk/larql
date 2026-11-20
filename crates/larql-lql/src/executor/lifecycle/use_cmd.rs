@@ -10,6 +10,7 @@ use larql_vindex::format::filenames::KNN_STORE_BIN;
 
 impl Session {
     pub(crate) fn exec_use(&mut self, target: &UseTarget) -> Result<Vec<String>, LqlError> {
+        self.refuse_rebind_over_unsaved_recording("USE")?;
         match target {
             UseTarget::Vindex(path_str) => {
                 // Resolve hf:// paths to local cache
@@ -111,9 +112,7 @@ impl Session {
                     router,
                     memit_store,
                 };
-                // Reset any previous patch session
-                self.patch_recording = None;
-                self.auto_patch = false;
+                self.reset_binding_state();
                 Ok(out)
             }
             UseTarget::Model {
@@ -142,8 +141,7 @@ impl Session {
                     weights,
                     tokenizer,
                 };
-                self.patch_recording = None;
-                self.auto_patch = false;
+                self.reset_binding_state();
                 Ok(out)
             }
             UseTarget::Remote(url) => self.exec_use_remote(url),
@@ -213,8 +211,7 @@ impl Session {
             bos_token,
             patch_files: Vec::new(),
         };
-        self.patch_recording = None;
-        self.auto_patch = false;
+        self.reset_binding_state();
         Ok(out)
     }
 }

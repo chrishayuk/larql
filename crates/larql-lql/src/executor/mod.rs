@@ -169,6 +169,88 @@ impl Session {
         }
     }
 
+    /// Refuses a statement that would bind something new while the open
+    /// recording holds unsaved operations (Gate B, B1). Binding again resets
+    /// the recording with the rest of the session, so going ahead would lose
+    /// work the user has not authorised losing. Checked before the statement
+    /// does anything, so a refusal leaves the binding and the recording as
+    /// they were. A recording with no operations holds nothing to lose.
+    pub(crate) fn refuse_rebind_over_unsaved_recording(&self, verb: &str) -> Result<(), LqlError> {
+        let Some(recording) = &self.patch_recording else {
+            return Ok(());
+        };
+        let pending = recording.operations.len();
+        if pending == 0 {
+            return Ok(());
+        }
+        let (held_by, keep) = if recording.path.is_empty() {
+            (
+                "the anonymous recording".to_string(),
+                "name it with BEGIN PATCH \"file.vlp\" and run SAVE PATCH",
+            )
+        } else {
+            (
+                format!("the recording for {}", recording.path),
+                "run SAVE PATCH",
+            )
+        };
+        Err(LqlError::Execution(format!(
+            "{verb} refused: {held_by} holds {pending} unsaved operation(s), and binding again \
+             would discard them. Nothing was changed. To keep them, {keep}, then run {verb} again."
+        )))
+    }
+
+    /// After a successful bind (`USE`, or EXTRACT's auto-bind): give every
+    /// piece of state that derives from the previous binding its fresh value,
+    /// so the session is as one created and bound there (Gate B, B1). Run
+    /// only once the new backend is in place: a bind that fails leaves the
+    /// previous session as it was. The statement has already refused if the
+    /// open recording held anything
+    /// ([`Self::refuse_rebind_over_unsaved_recording`]), so the recording
+    /// this drops is empty.
+    ///
+    /// The destructuring is exhaustive, so a field added to `Session` does
+    /// not compile until it is classified here.
+    pub(crate) fn reset_binding_state(&mut self) {
+        debug_assert!(
+            self.patch_recording
+                .as_ref()
+                .is_none_or(|r| r.operations.is_empty()),
+            "a bind reached the reset with unsaved operations"
+        );
+        let Session {
+            // Kept: the new binding itself, and the session's own
+            // configuration and counts, which no binding derives.
+            backend: _,
+            profile: _,
+            verifier: _,
+            contract_violations: _,
+            balance_trace: _,
+            install_fault: _,
+            model_resolver: _,
+            representation_source: _,
+            // Reset: everything the previous binding's statements built.
+            patch_recording,
+            auto_patch,
+            decoy_residual_cache,
+            raw_install_residuals,
+            installed_edges,
+            relation_resolver,
+            epoch,
+            mutations_since_minor,
+            mutations_since_major,
+        } = Session::new();
+        self.patch_recording = patch_recording;
+        self.auto_patch = auto_patch;
+        self.decoy_residual_cache = decoy_residual_cache;
+        self.raw_install_residuals = raw_install_residuals;
+        self.installed_edges = installed_edges;
+        self.relation_resolver = relation_resolver;
+        self.epoch = epoch;
+        self.mutations_since_minor = mutations_since_minor;
+        self.mutations_since_major = mutations_since_major;
+    }
+
     /// Choose where a VINDEX3 container bound by a LATER `USE` may take its execution representation from.
     ///
     /// The default, [`RepresentationSource::Stored`], executes the stored weights: the loader manufactures

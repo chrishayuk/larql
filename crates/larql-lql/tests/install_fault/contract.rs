@@ -127,6 +127,7 @@ fn the_fingerprint_names_every_part_of_the_state_it_covers() {
             "session.installed_edges",
             "session.patch_recording",
             "session.raw_install_residuals",
+            "session.relation_resolver",
         ]
     );
 }
