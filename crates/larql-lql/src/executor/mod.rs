@@ -6,6 +6,7 @@
 mod backend;
 mod compact;
 mod extract_hint;
+mod facts;
 mod helpers;
 mod introspection;
 mod knowledge;
@@ -130,6 +131,7 @@ pub struct Session {
 }
 
 /// Where a VINDEX3 execution representation may come from, as the session's binding policy.
+pub use facts::{AssertedFact, FactDurability, FactRealization, FactStatus};
 pub use larql_vindex::format::vindex3::opplan::exec::operands::RepresentationSource;
 
 /// What a session binds a VINDEX3 container under unless told otherwise: the stored weights, with nothing
@@ -434,6 +436,14 @@ impl Session {
                 alpha,
                 mode,
             } => {
+                // FACT-ID-1: a live key, an id collision or a multi-token
+                // KNN target refuses before the session is touched.
+                let version = self.check_fact_insert(
+                    entity,
+                    relation,
+                    target,
+                    matches!(mode, crate::ast::InsertMode::Knn),
+                )?;
                 let mut out = self.ensure_patch_session();
                 out.extend(self.exec_insert(
                     entity,
@@ -444,6 +454,10 @@ impl Session {
                     *alpha,
                     *mode,
                 )?);
+                out.push(format!(
+                    "  fact {} (v{version})",
+                    larql_vindex::FactKey::new(entity, relation).fact_id()
+                ));
                 self.advance_epoch();
                 Ok(out)
             }

@@ -228,9 +228,9 @@ impl Session {
                 }
                 _ => unreachable!("every other backend was refused above"),
             }
-            if let Some(ref mut recording) = self.patch_recording {
+            {
                 for (layer, feature, meta) in &plan.writes {
-                    recording.operations.push(larql_vindex::PatchOp::Update {
+                    self.record_knowledge_op(larql_vindex::PatchOp::Update {
                         layer: *layer,
                         feature: *feature,
                         gate_vector_b64: None,

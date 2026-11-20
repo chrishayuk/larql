@@ -76,9 +76,8 @@ fn knn_insert_q4k_flagged_no_weights_uses_embedding_fallback() {
     index.save_vindex(&dir, &mut config).unwrap();
     let embed_bytes = vec![0u8; vocab_size * hidden * 4];
     std::fs::write(dir.join("embeddings.bin"), embed_bytes).unwrap();
-    let tok_json =
-        r#"{"version":"1.0","model":{"type":"BPE","vocab":{},"merges":[]},"added_tokens":[]}"#;
-    std::fs::write(dir.join("tokenizer.json"), tok_json).unwrap();
+    // A KNN target must be one token (FACT-ID-1 D-5).
+    std::fs::write(dir.join("tokenizer.json"), stub_knn_tokenizer_json()).unwrap();
 
     let mut session = Session::new();
     let stmt = parser::parse(&format!(r#"USE "{}";"#, lql_path(&dir))).unwrap();

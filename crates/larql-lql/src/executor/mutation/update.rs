@@ -25,6 +25,11 @@ impl Session {
         // first and whether or not any feature matches: a statement that
         // cannot be applied is refused, not answered "no matching features".
         let set = UpdateSet::parse(set)?;
+        // FACT-ID-1 D-8: `entity = … AND relation = …` alone addresses an
+        // asserted fact, never discovered rows.
+        if let Some((entity, relation)) = crate::executor::facts::semantic_pair(conditions)? {
+            return self.exec_update_fact(&set, &entity, &relation);
+        }
         let matches = self.resolve_mutation_targets(conditions)?;
         let update_ops: Vec<(usize, usize, larql_vindex::FeatureMeta)> = {
             let ctx = self.browse()?;
@@ -63,8 +68,8 @@ impl Session {
 
         // Record to patch session
         for (layer, feature, meta) in &update_ops {
-            if let Some(ref mut recording) = self.patch_recording {
-                recording.operations.push(larql_vindex::PatchOp::Update {
+            {
+                self.record_knowledge_op(larql_vindex::PatchOp::Update {
                     layer: *layer,
                     feature: *feature,
                     gate_vector_b64: None,

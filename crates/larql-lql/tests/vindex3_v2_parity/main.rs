@@ -59,11 +59,16 @@ use std::path::Path;
 /// resolve that alias differently — a fixture artifact the first
 /// parity run flagged as a false divergence. Parity fixtures must not
 /// carry ambiguous vocabularies.
+///
+/// A `Strip` normalizer makes the spaced form a KNN INSERT encodes
+/// (`" [5]"`) the single token 5 without a second spelling for any id; a KNN
+/// target must be one token (FACT-ID-1 D-5).
 fn unambiguous_tokenizer_json(vocab: usize) -> String {
     let entries: Vec<String> = (0..vocab).map(|i| format!("\"[{i}]\":{i}")).collect();
     format!(
         "{{\"version\":\"1.0\",\"truncation\":null,\"padding\":null,\"added_tokens\":[],\
-         \"normalizer\":null,\"pre_tokenizer\":null,\"post_processor\":null,\"decoder\":null,\
+         \"normalizer\":{{\"type\":\"Strip\",\"strip_left\":true,\"strip_right\":true}},\
+         \"pre_tokenizer\":null,\"post_processor\":null,\"decoder\":null,\
          \"model\":{{\"type\":\"WordLevel\",\"vocab\":{{{}}},\"unk_token\":\"[0]\"}}}}",
         entries.join(",")
     )

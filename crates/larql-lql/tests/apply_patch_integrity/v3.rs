@@ -165,7 +165,11 @@ fn a_refused_patch_leaves_the_patches_under_it_and_the_stack_usable() {
 
     let out = run(
         &mut session,
-        &apply_statement(f.container.path(), "second.vlp", &f.valid),
+        &apply_statement(
+            f.container.path(),
+            "second.vlp",
+            &with_other_entities(f.valid.clone()),
+        ),
     )
     .join("\n");
     assert!(out.contains("Applied"), "{out}");

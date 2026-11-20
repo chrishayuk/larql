@@ -282,6 +282,9 @@ fn compact_major_runs_full_memit_solve_on_large_fixture() {
     )
     .expect("compose insert");
     try_run(&mut session, "SAVE PATCH;").expect("save patch");
+    // The saved facts are live in this session; APPLY in a fresh one (a
+    // re-asserted fact is refused, FACT-ID-1 I-2).
+    let mut session = use_large(dir.path());
     try_run(
         &mut session,
         &format!(r#"APPLY PATCH "{}";"#, sql_path(&vlp)),
@@ -320,6 +323,9 @@ fn compact_major_with_lambda_override_on_large_fixture() {
     )
     .expect("compose insert");
     try_run(&mut session, "SAVE PATCH;").expect("save patch");
+    // The saved facts are live in this session; APPLY in a fresh one (a
+    // re-asserted fact is refused, FACT-ID-1 I-2).
+    let mut session = use_large(dir.path());
     try_run(
         &mut session,
         &format!(r#"APPLY PATCH "{}";"#, sql_path(&vlp)),
@@ -436,6 +442,9 @@ fn compact_major_persist_failure_emits_warning() {
     )
     .expect("compose insert");
     try_run(&mut session, "SAVE PATCH;").expect("save patch");
+    // The saved facts are live in this session; APPLY in a fresh one (a
+    // re-asserted fact is refused, FACT-ID-1 I-2).
+    let mut session = use_large(dir.path());
     try_run(
         &mut session,
         &format!(r#"APPLY PATCH "{}";"#, sql_path(&vlp)),

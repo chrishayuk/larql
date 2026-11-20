@@ -16,7 +16,7 @@ use ndarray::Array1;
 use crate::index::storage::vindex_storage::VindexStorage;
 use crate::index::{FeatureMeta, VectorIndex, WalkHit, WalkTrace};
 
-use super::format::VindexPatch;
+use super::format::{PatchOp, VindexPatch};
 use super::gate_overlay::GateOverlay;
 
 /// Oversampling factor for the base KNN query when the overlay has
@@ -109,6 +109,14 @@ pub struct PatchedVindex {
     pub(crate) deleted: std::collections::HashSet<(usize, usize)>,
     /// Architecture B: per-layer retrieval-override KNN store.
     pub knn_store: super::knn_store::KnnStore,
+    /// The KNN entries the bound vindex itself carries (`knn_store.bin`), as
+    /// bound. Read by the FACT-ID-1 catalogue only: `remove_patch` still
+    /// rebuilds `knn_store` from empty (docs/fact-id-1.md C-11).
+    pub(crate) base_knn: super::knn_store::KnnStore,
+    /// The session journal (FACT-ID-1): every knowledge op the session applied
+    /// to this overlay directly, outside `try_apply_patch`, in order. Cleared
+    /// by `remove_patch` with the rest of the session state.
+    pub(crate) session_ops: Vec<(usize, PatchOp)>,
 }
 
 impl PatchedVindex {
@@ -121,7 +129,34 @@ impl PatchedVindex {
             overrides_gate: GateOverlay::default(),
             deleted: std::collections::HashSet::new(),
             knn_store: super::knn_store::KnnStore::default(),
+            base_knn: super::knn_store::KnnStore::default(),
+            session_ops: Vec::new(),
         }
+    }
+
+    /// Bind the KNN entries the vindex carries: the store in effect, and the
+    /// baseline the FACT-ID-1 catalogue folds from.
+    pub fn bind_base_knn(&mut self, store: super::knn_store::KnnStore) {
+        self.base_knn = store.clone();
+        self.knn_store = store;
+    }
+
+    /// The KNN entries the bound vindex itself carries.
+    pub fn base_knn(&self) -> &super::knn_store::KnnStore {
+        &self.base_knn
+    }
+
+    /// Record a knowledge op the session has just applied to this overlay
+    /// directly (FACT-ID-1 session journal). The caller applies it.
+    pub fn record_session_op(&mut self, op: PatchOp) {
+        self.session_ops.push((self.patches.len(), op));
+    }
+
+    /// The knowledge ops applied directly in this session, in order, since the
+    /// overlay last reset its session state, each with how many patches were
+    /// applied when it ran.
+    pub fn session_ops(&self) -> &[(usize, PatchOp)] {
+        &self.session_ops
     }
 
     /// Insert a feature directly into the overlay (auto-patch mode).

@@ -51,6 +51,23 @@ fn sql_path(p: &std::path::Path) -> String {
     p.display().to_string().replace('\\', "\\\\")
 }
 
+/// A copy of the patch at `vlp` whose every op names `entity_suffix`-renamed
+/// entities: the same slots under different fact keys. Applying one patch
+/// twice asserts its facts twice, which APPLY PATCH refuses (FACT-ID-1 I-2);
+/// two renamed copies still put two patches on the same slots.
+fn renamed_copy(vlp: &std::path::Path, entity_suffix: &str) -> std::path::PathBuf {
+    let mut patch: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(vlp).expect("read patch")).expect("patch json");
+    for op in patch["operations"].as_array_mut().expect("operations") {
+        if let Some(entity) = op["entity"].as_str() {
+            op["entity"] = format!("{entity}{entity_suffix}").into();
+        }
+    }
+    let out = vlp.with_file_name(format!("copy{entity_suffix}.vlp"));
+    std::fs::write(&out, serde_json::to_vec(&patch).expect("encode")).expect("write copy");
+    out
+}
+
 // ── USE (use_cmd.rs) ─────────────────────────────────────────────────────
 
 #[test]
@@ -300,8 +317,9 @@ fn compile_into_vindex_on_conflict_fail_with_collision_errors() {
     // collision; under ON CONFLICT FAIL that returns the early
     // "colliding slot(s)" error (into_vindex.rs:87-101, incl. line 100).
     //
-    // Recipe: record a compose INSERT into a .vlp, then APPLY it twice so
-    // patched.patches holds two patches with identical (layer, feature).
+    // Recipe: record a compose INSERT into a .vlp, then APPLY two copies of
+    // it (renamed entities) so patched.patches holds two patches with
+    // identical (layer, feature).
     let (mut session, dir, _) = fresh_session();
     let _ = &dir;
     let patch_dir = tempfile::tempdir().expect("patch tempdir");
@@ -317,17 +335,15 @@ fn compile_into_vindex_on_conflict_fail_with_collision_errors() {
         r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "rel", "[2]") AT LAYER 0 MODE COMPOSE;"#,
     );
     try_run(&mut session, "SAVE PATCH;").expect("save patch");
-    // Apply the same patch twice → two patches, same slot → collision.
-    try_run(
-        &mut session,
-        &format!(r#"APPLY PATCH "{}";"#, sql_path(&vlp)),
-    )
-    .expect("apply 1");
-    try_run(
-        &mut session,
-        &format!(r#"APPLY PATCH "{}";"#, sql_path(&vlp)),
-    )
-    .expect("apply 2");
+    // Two copies of the patch → two patches, same slot → collision.
+    for suffix in ["x", "y"] {
+        let copy = renamed_copy(&vlp, suffix);
+        try_run(
+            &mut session,
+            &format!(r#"APPLY PATCH "{}";"#, sql_path(&copy)),
+        )
+        .unwrap_or_else(|e| panic!("apply {suffix}: {e}"));
+    }
 
     let out_dir = tempfile::tempdir().expect("out tempdir");
     let out = out_dir.path().join("compiled_collide.vindex");
@@ -376,16 +392,15 @@ fn compile_into_vindex_last_wins_with_collision_reports_strategy() {
         r#"INSERT INTO EDGES (entity, relation, target) VALUES ("[1]", "rel", "[2]") AT LAYER 0 MODE COMPOSE;"#,
     );
     try_run(&mut session, "SAVE PATCH;").expect("save patch");
-    try_run(
-        &mut session,
-        &format!(r#"APPLY PATCH "{}";"#, sql_path(&vlp)),
-    )
-    .expect("apply 1");
-    try_run(
-        &mut session,
-        &format!(r#"APPLY PATCH "{}";"#, sql_path(&vlp)),
-    )
-    .expect("apply 2");
+    // Two copies of the patch → two patches, same slot → collision.
+    for suffix in ["x", "y"] {
+        let copy = renamed_copy(&vlp, suffix);
+        try_run(
+            &mut session,
+            &format!(r#"APPLY PATCH "{}";"#, sql_path(&copy)),
+        )
+        .unwrap_or_else(|e| panic!("apply {suffix}: {e}"));
+    }
 
     let out_dir = tempfile::tempdir().expect("out tempdir");
     let out = out_dir.path().join("compiled_collide_lw.vindex");

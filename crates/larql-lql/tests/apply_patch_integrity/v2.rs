@@ -158,7 +158,11 @@ fn a_refused_patch_leaves_the_patches_under_it_and_the_stack_usable() {
     // A valid patch still stacks on top afterwards.
     let out = run(
         &mut session,
-        &apply_statement(f.dir.path(), "second.vlp", &f.valid),
+        &apply_statement(
+            f.dir.path(),
+            "second.vlp",
+            &with_other_entities(f.valid.clone()),
+        ),
     )
     .join("\n");
     assert!(out.contains("Applied"), "{out}");

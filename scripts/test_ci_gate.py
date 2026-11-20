@@ -207,6 +207,38 @@ class NewestRunOfEachWorkflow(unittest.TestCase):
         runs = [run("quality"), run("ci-gate", "failure", run_id=SELF)]
         self.assertEqual(judge(runs, SELF)[0], PASS)
 
+    def test_the_gates_own_earlier_run_at_the_same_commit_is_ignored(self):
+        # PR 887: reopened at an unchanged head after main was fixed. The new gate
+        # judged the gate's own failed run from the first push and failed.
+        runs = [
+            run("quality"),
+            run("ci-gate", "failure", workflow_id=5, run_id=50, created_at="2026-11-19T21:45:22Z"),
+            run("ci-gate", status="in_progress", workflow_id=5, run_id=SELF,
+                created_at="2026-11-20T01:04:07Z"),
+        ]
+        self.assertEqual(judge(runs, SELF)[0], PASS)
+
+    def test_the_gates_own_earlier_run_is_ignored_before_this_run_is_listed(self):
+        earlier = run("ci-gate", "failure", workflow_id=5, run_id=50,
+                      path=".github/workflows/ci-gate.yml")
+        self.assertEqual(judge([run("quality"), earlier], SELF)[0], FAIL)
+        self.assertEqual(judge([run("quality"), earlier], SELF,
+                               self_path=".github/workflows/ci-gate.yml")[0], PASS)
+
+    def test_the_own_workflow_path_comes_from_the_workflow_ref(self):
+        ref = "chrishayuk/larql/.github/workflows/ci-gate.yml@refs/pull/887/merge"
+        self.assertEqual(ci_gate.own_workflow_path(ref), ".github/workflows/ci-gate.yml")
+        self.assertIsNone(ci_gate.own_workflow_path(None))
+        self.assertIsNone(ci_gate.own_workflow_path(""))
+
+    def test_another_workflow_is_still_judged_beside_the_gates_own(self):
+        runs = [
+            run("quality", "failure"),
+            run("ci-gate", "failure", workflow_id=5, run_id=50),
+            run("ci-gate", status="in_progress", workflow_id=5, run_id=SELF),
+        ]
+        self.assertEqual(judge(runs, SELF)[0], FAIL)
+
 
 if __name__ == "__main__":
     unittest.main()

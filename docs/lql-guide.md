@@ -163,9 +163,10 @@ env vars (`LARQL_KNN_VERIFY` → verified, `+ LARQL_KNN_FALLBACK` → two-tier;
 ### 5. Edit knowledge
 
 ```sql
--- Insert a fact (default KNN retrieval override)
+-- Insert a fact (default KNN retrieval override). A KNN target must be
+-- one token: the entry recalls one token id.
 INSERT INTO EDGES (entity, relation, target)
-    VALUES ("John Coyle", "lives-in", "Colchester");
+    VALUES ("John Coyle", "lives-in", "London");
 
 -- Insert with all COMPOSE knobs: choose the layer, set confidence,
 -- and dial the down-vector override strength
@@ -179,12 +180,18 @@ INSERT INTO EDGES (entity, relation, target)
 -- Verify
 DESCRIBE "John Coyle";
 
--- List the edges, then delete the slot the listing shows.
--- (A mutation does not combine entity and relation; SELECT is its preview.)
+-- An inserted fact has one identity: entity + relation address it.
+-- SELECT lists it above the discovered rows; UPDATE and DELETE reach it,
+-- and never a discovered row.
 SELECT * FROM EDGES WHERE entity = "John Coyle" AND relation = "lives-in";
+UPDATE EDGES SET target = "Paris"
+    WHERE entity = "John Coyle" AND relation = "lives-in";
+DELETE FROM EDGES WHERE entity = "John Coyle" AND relation = "lives-in";
+
+-- Discovered rows (features the model already has) are edited by slot.
 DELETE FROM EDGES WHERE layer = 26 AND feature = 8821;
 
--- Update by entity (works on both heap and mmap-loaded vindexes)
+-- Update metadata by entity (top-token match over discovered rows)
 UPDATE EDGES SET target = "London" WHERE entity = "John Coyle";
 
 -- Update by (layer, feature) — fast-path, bypasses the entity scan
@@ -198,6 +205,22 @@ inference and can be compiled into vindex/model bytes; its default `ALPHA` is
 0.10, with the validated range around 0.05-0.30. Relation predicates on
 DELETE/UPDATE require relation labels in the active vindex; otherwise target
 by `(layer, feature)` or omit `relation`.
+
+**Asserted facts** (FACT-ID-1, `docs/fact-id-1.md`). `WHERE entity = … AND
+relation = …`, with nothing else, addresses a fact LQL inserted, by its key
+(case, `-`/`_` and spacing do not matter). Each fact has a stable id
+(`f_…`), a version, a realization (`knn` or `compose`) and a status;
+`Session::asserted_facts()` returns them as structured values.
+
+- Inserting a key that already exists is refused; change it with UPDATE.
+- UPDATE of a KNN fact keeps its retrieval key and replaces its target id
+  and text, so INFER answers the new target.
+- Compose facts are listed but read-only by identity. REMOVE PATCH of the
+  patch that installed one is its exact rollback.
+- APPLY PATCH refuses a patch that asserts a live fact, or that changes one
+  the session does not hold.
+- After COMPILE, KNN facts keep their identity (in `knn_store.bin`).
+  Compose facts read back as discovered rows.
 
 ### 6. Patches
 

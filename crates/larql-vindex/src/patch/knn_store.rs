@@ -23,6 +23,8 @@ use std::collections::HashMap;
 use ndarray::Array1;
 use serde::{Deserialize, Serialize};
 
+use super::fact_key::FactKey;
+use super::format::PatchOp;
 use super::gate_overlay::GateOverlay;
 
 /// A single entry in the retrieval-override KNN store.
@@ -115,6 +117,75 @@ impl KnnStore {
         self.remove_matching(|e| {
             e.entity.to_lowercase() != entity_lower || e.relation.to_lowercase() != relation_lower
         });
+    }
+
+    /// Remove every entry of the asserted fact `key` (FACT-ID-1). Matching is
+    /// by fact key, so `capital-of` and `Capital Of` name the same fact.
+    pub fn remove_fact(&mut self, key: &FactKey) {
+        self.remove_matching(|e| !key.names(&e.entity, &e.relation));
+    }
+
+    /// Replace the target of every entry of the asserted fact `key`, keeping
+    /// each entry's residual key and layer. `confidence: None` keeps the
+    /// stored one. Returns how many entries changed. The retrieval key rows
+    /// are untouched, so nothing is rebuilt.
+    pub fn update_fact(
+        &mut self,
+        key: &FactKey,
+        target_id: u32,
+        target_token: &str,
+        confidence: Option<f32>,
+    ) -> usize {
+        let mut changed = 0;
+        for entry in self.entries.values_mut().flatten() {
+            if key.names(&entry.entity, &entry.relation) {
+                entry.target_id = target_id;
+                entry.target_token = target_token.to_string();
+                if let Some(c) = confidence {
+                    entry.confidence = c;
+                }
+                changed += 1;
+            }
+        }
+        changed
+    }
+
+    /// Apply a FACT-ID-1 fact op (`delete_knn_fact`, `update_knn_fact`).
+    /// Returns `false`, changing nothing, for any other op.
+    pub fn apply_fact_op(&mut self, op: &PatchOp) -> bool {
+        match op {
+            PatchOp::DeleteKnnFact { entity, relation } => {
+                self.remove_fact(&FactKey::new(entity, relation));
+                true
+            }
+            PatchOp::UpdateKnnFact {
+                entity,
+                relation,
+                target,
+                target_id,
+                confidence,
+            } => {
+                self.update_fact(
+                    &FactKey::new(entity, relation),
+                    *target_id,
+                    target,
+                    *confidence,
+                );
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Every entry, with its layer, in a fixed order: layer ascending, then
+    /// insertion order within the layer.
+    pub fn ordered_entries(&self) -> Vec<(usize, &KnnEntry)> {
+        let mut layers: Vec<usize> = self.entries.keys().copied().collect();
+        layers.sort_unstable();
+        layers
+            .into_iter()
+            .flat_map(|layer| self.entries[&layer].iter().map(move |e| (layer, e)))
+            .collect()
     }
 
     /// Top-1 KNN query at a layer. Returns (&entry, cosine_score).

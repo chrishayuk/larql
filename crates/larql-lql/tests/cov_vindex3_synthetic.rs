@@ -171,7 +171,7 @@ fn infer_after_a_knn_insert_captures_residuals_and_still_predicts() {
     let mut session = bound(container.path());
     run(
         &mut session,
-        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("a", "b", "c");"#,
+        r#"INSERT INTO EDGES (entity, relation, target) VALUES ("a", "b", "[3]");"#,
     );
     let out = run(&mut session, &format!("INFER \"{PROMPT}\" TOP 3;"));
     assert_eq!(

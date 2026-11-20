@@ -107,6 +107,23 @@ pub enum PatchOp {
     /// Architecture B: remove all KNN entries for an entity.
     #[serde(rename = "delete_knn")]
     DeleteKnn { entity: String },
+    /// Remove one asserted KNN fact: every entry whose fact key
+    /// (`patch::fact_key`) is `(entity, relation)`. FACT-ID-1. A tag of its
+    /// own, not a field on `delete_knn`: a reader that does not know it must
+    /// refuse the patch, not read it as "delete every relation of `entity`".
+    #[serde(rename = "delete_knn_fact")]
+    DeleteKnnFact { entity: String, relation: String },
+    /// Replace the target of one asserted KNN fact, keeping its residual key
+    /// and layer: one logical UPDATE, one op. FACT-ID-1.
+    #[serde(rename = "update_knn_fact")]
+    UpdateKnnFact {
+        entity: String,
+        relation: String,
+        target: String,
+        target_id: u32,
+        #[serde(default)]
+        confidence: Option<f32>,
+    },
     /// Edit stored weights of a VINDEX3 container (additive, versioned).
     ///
     /// Carries the exact artifact it was written against and its own
@@ -160,6 +177,8 @@ impl PatchOp {
             PatchOp::Delete { layer, feature, .. } => Some((*layer, *feature)),
             PatchOp::InsertKnn { .. }
             | PatchOp::DeleteKnn { .. }
+            | PatchOp::DeleteKnnFact { .. }
+            | PatchOp::UpdateKnnFact { .. }
             | PatchOp::WeightDelta(_)
             | PatchOp::StructuredWeight(_)
             | PatchOp::LowRankColumnsWeight(_) => None,
@@ -243,10 +262,13 @@ impl VindexPatch {
             match op {
                 PatchOp::Insert { .. } | PatchOp::InsertKnn { .. } => ins += 1,
                 PatchOp::Update { .. }
+                | PatchOp::UpdateKnnFact { .. }
                 | PatchOp::WeightDelta(_)
                 | PatchOp::StructuredWeight(_)
                 | PatchOp::LowRankColumnsWeight(_) => upd += 1,
-                PatchOp::Delete { .. } | PatchOp::DeleteKnn { .. } => del += 1,
+                PatchOp::Delete { .. }
+                | PatchOp::DeleteKnn { .. }
+                | PatchOp::DeleteKnnFact { .. } => del += 1,
             }
         }
         (ins, upd, del)
