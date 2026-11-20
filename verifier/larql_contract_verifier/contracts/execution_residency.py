@@ -33,7 +33,8 @@ import numpy as np
 from refcheck import container as C
 
 from . import vlp_numerics as V
-from .weight_patches_v4 import CannotEvaluate, Store, container_digest, file_digests, strict_json
+from .weight_patches_v4 import (CONTAINER_FILES_READ, CannotEvaluate, Store, container_digest, file_digests,
+                               report_resolution, strict_json)
 
 CONTRACT = "EXECUTION_RESIDENCY_V1"
 STATEMENT = (
@@ -406,7 +407,7 @@ def evaluate(out: dict, record: str, container: str) -> dict:
             {"name": "objects with stored matrices that the record does not name (not judged)",
              "value": ", ".join(judge.uncovered) or "none"},
             {"name": "not established", "value": "; ".join(NOT_ESTABLISHED)},
-        ],
+        ] + report_resolution(out["container"], CONTAINER_FILES_READ, files),
     )
     if status == "could_not_evaluate" and not out["reasons"]:
         out["reasons"] = ["nothing was judged"]

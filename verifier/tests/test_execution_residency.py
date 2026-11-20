@@ -433,7 +433,8 @@ class RecordFaults(Fixture):
     def test_a_container_the_reader_refuses_is_not_an_exception(self):
         root = os.path.join(self.work, "container")
         shutil.copytree(BASE, root)
-        os.symlink("index.json", os.path.join(root, "link.json"))
+        # A link out of the container (one inside it is followed: see test_container_symlinks.py).
+        os.symlink(os.path.join(BASE, "index.json"), os.path.join(root, "link.json"))
         out = self.judge(record(), root)
         self.assertHalves(out, CNE, CNE)
         self.assertIn("symlink", self.findings(out, R.DERIVATION))
