@@ -97,8 +97,8 @@ references are to `3b5dd3d2`.
   anything changes, while the session holds a knowledge edit no applied patch
   holds. Replaying such edits without the removed patch is not defined
   (apply A, edit B, apply C, remove A). A replay or rebase of session edits
-  would be a separate, explicitly verified operation. Implemented in #884
-  (`crates/larql-lql/tests/gate_b_remove_patch_refusal.rs`).
+  would be a separate, explicitly verified operation. Implemented in #884,
+  with its refusal tests.
 
 ### B3: exact replay | FAIL (exec on VINDEX3; VINDEX2 by reading the code at audit time)
 
