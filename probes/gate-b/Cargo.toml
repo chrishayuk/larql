@@ -1,0 +1,17 @@
+[package]
+name = "gate-b-probes"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Gate B / Gate S audit reproducers (docs/gate-b-audit-2026-11-18.md). Each test asserts the invariant and FAILS on the audited main 3b5dd3d2."
+
+# Standalone: not a workspace member, never built by CI.
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+larql-lql = { path = "../../crates/larql-lql" }
+larql-vindex = { path = "../../crates/larql-vindex", features = ["test-utils"] }
+tempfile = "3"
