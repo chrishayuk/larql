@@ -59,6 +59,12 @@ fn lql_path(path: impl AsRef<Path>) -> String {
     path.as_ref().display().to_string().replace('\\', "\\\\")
 }
 
+/// A path as the engine holds it, after LQL has unescaped the string: what
+/// the refusal text shows. [`lql_path`] is the escaped spelling for a statement.
+fn shown(path: impl AsRef<Path>) -> String {
+    path.as_ref().display().to_string()
+}
+
 fn run(session: &mut Session, stmt: &str) -> Vec<String> {
     let parsed = parse(stmt).unwrap_or_else(|e| panic!("parse {stmt}: {e}"));
     session
@@ -204,7 +210,7 @@ fn assert_remove_refuses(fx: &Fixture, insert: &str, save: bool) {
     // is open and the edit is in b.vlp.
     let save_clause = if save { "" } else { SAVE_ANONYMOUS };
     assert!(
-        why.ends_with(&refusal(&lql_path(&a), &[SESSION_EDIT_LINE], save_clause)),
+        why.ends_with(&refusal(&shown(&a), &[SESSION_EDIT_LINE], save_clause)),
         "{why}"
     );
     assert_eq!(observe(&mut session, fx.prompt), before);
@@ -311,10 +317,10 @@ fn the_refusal_lists_keyed_and_physical_edits_in_journal_order() {
         .to_string();
     let save = format!(
         "save the open recording to {} with SAVE PATCH; ",
-        lql_path(&named)
+        shown(&named)
     );
     assert!(
-        why.ends_with(&refusal(&lql_path(&a), &edits, &save)),
+        why.ends_with(&refusal(&shown(&a), &edits, &save)),
         "{why}"
     );
     assert_eq!(observe(&mut session, fx.prompt), before);
