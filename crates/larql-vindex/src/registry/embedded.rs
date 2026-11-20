@@ -49,6 +49,9 @@ const GRANITE_4_1_3B_JSON: &str = include_str!("../../../../registry/models/gran
 /// `registry/models/gemma-3-4b-it.json` — see [`embedded_model_json`].
 const GEMMA_3_4B_IT_JSON: &str = include_str!("../../../../registry/models/gemma-3-4b-it.json");
 
+/// `registry/models/gemma-3-270m-it.json` — see [`embedded_model_json`].
+const GEMMA_3_270M_IT_JSON: &str = include_str!("../../../../registry/models/gemma-3-270m-it.json");
+
 /// `registry/models/gemma-3-12b-it.json` — see [`embedded_model_json`].
 const GEMMA_3_12B_IT_JSON: &str = include_str!("../../../../registry/models/gemma-3-12b-it.json");
 
@@ -89,6 +92,7 @@ fn embedded_model_json(name: &str) -> Option<&'static str> {
     match name {
         "granite-4.1-3b" => Some(GRANITE_4_1_3B_JSON),
         "gemma-3-4b-it" => Some(GEMMA_3_4B_IT_JSON),
+        "gemma-3-270m-it" => Some(GEMMA_3_270M_IT_JSON),
         "gemma-3-12b-it" => Some(GEMMA_3_12B_IT_JSON),
         "gemma-4-12b-it" => Some(GEMMA_4_12B_IT_JSON),
         _ => None,

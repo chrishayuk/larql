@@ -15,10 +15,13 @@ therefore never admitted, even when its bytes are valid and self-consistent.
   E2  LARQL family: C, D, C32a, D32a cached; C, D batched prefill
       (all positions); on each input
   E3  captures at the frozen positions: C and D (LARQL); A32 and A64
+  N1  control (hf-f64-accuracy/2): Dauto = production CPU from the `auto`
+      representation source, cached, on every input; read only by
+      `control_runs`
       (transformers); on I_rep and I_nr1
 
 Usage:
-  experiment.py run E1|E2|E3 --freeze FREEZE.json --freeze-sha256 HEX --root DIR
+  experiment.py run E1|E2|E3|N1 --freeze FREEZE.json --freeze-sha256 HEX --root DIR
   experiment.py readings --freeze FREEZE.json --freeze-sha256 HEX --root DIR
 
 `readings` runs `analysis.analyse` over every run in the three experiments.
@@ -46,7 +49,13 @@ from prec_diag import v0  # noqa: E402
 INPUTS = ("I_rep", "I_nr1", "I_nr2")
 CAPTURE_INPUTS = ("I_rep", "I_nr1")
 LARQL_ARMS = {"C": ["--backend", "reference"],
-              "D": ["--backend", "production", "--representation-source", "stored"]}
+              "D": ["--backend", "production", "--representation-source", "stored"],
+              # N1 control only: production CPU from the `auto` source, which may
+              # build a lossy (Q8) residency at load. Never an admission path.
+              "Dauto": ["--backend", "production", "--representation-source", "auto"]}
+#: Control experiments: run on demand, read only by `control_runs`, never by
+#: `runs_and_identities` (so PREC-DIAG readings and v1/v2 admission never see them).
+CONTROL_EXPERIMENTS = ("N1",)
 #: The modeling file A64 patches, and the thread settings, are the oracle's own constants.
 HF_MODELING_SHA256 = "221f147ccc0b16d7fa0aa007231ee0a6bd40fb37feb79eb9e537290498468aef"
 HF_THREADS = {"torch_num_threads": 8, "torch_num_interop_threads": 1, "OMP_NUM_THREADS": "8"}
@@ -73,6 +82,10 @@ def plan(experiment: str) -> list[dict]:
                              "input": i, "mode": "cached", "rope_angles": "hf-f32", "capture": False})
                 runs.append({"run_id": f"E2.{b}-batched.{i}", "kind": "larql", "arm": f"{b}-batched", "base": b,
                              "input": i, "mode": "batched", "rope_angles": "larql", "capture": False})
+    elif experiment == "N1":
+        for i in INPUTS:
+            runs.append({"run_id": f"N1.Dauto.{i}", "kind": "larql", "arm": "Dauto", "base": "Dauto", "input": i,
+                         "mode": "cached", "rope_angles": "larql", "capture": False})
     elif experiment == "E3":
         for i in CAPTURE_INPUTS:
             for b in ("C", "D"):
@@ -106,7 +119,20 @@ def load_freeze(path: Path, expected_sha256: str) -> dict:
 
 def layer_types(manifest: dict) -> list[str]:
     config = json.loads((Path(manifest["checkpoint"]["directory"]) / "config.json").read_text())
-    return sorted(set(config.get("layer_types") or []))
+    return sorted(set(config_layer_types(config)))
+
+
+def config_layer_types(config: dict) -> list[str]:
+    """Per-layer attention types. An older Gemma 3 config (1B) names only
+    `sliding_window_pattern`; transformers expands it as every
+    `pattern`-th layer full, the rest sliding, and so does this."""
+    if config.get("layer_types"):
+        return list(config["layer_types"])
+    pattern = config.get("sliding_window_pattern") or config.get("_sliding_window_pattern")
+    if not pattern:
+        return []
+    return ["sliding_attention" if (i + 1) % pattern else "full_attention"
+            for i in range(config["num_hidden_layers"])]
 
 
 def rope_table_labels(manifest: dict) -> list[str]:
@@ -374,6 +400,18 @@ def runs_and_identities(manifest: dict, freeze_sha256: str, root: Path) -> tuple
     return runs, expected
 
 
+def control_runs(manifest: dict, freeze_sha256: str, root: Path, experiment: str) -> tuple[dict, dict]:
+    """A control experiment's runs and identities, keyed `(arm, input)`."""
+    if experiment not in CONTROL_EXPERIMENTS:
+        raise ValueError(f"not a control experiment: {experiment!r}")
+    runs, expected = {}, {}
+    for run in plan(experiment):
+        key = (run["arm"], run["input"])
+        runs[key] = root / experiment / run["run_id"]
+        expected[key] = expected_identity(manifest, freeze_sha256, run, experiment)
+    return runs, expected
+
+
 def repeatability(manifest: dict, freeze_sha256: str, root: Path, log: ev.ResultsLog) -> list[dict]:
     """Validity check: A32 run twice is bit-identical (rev 3 "Validity checks")."""
     out = []
@@ -418,7 +456,7 @@ def main(argv=None) -> int:
     for name in ("run", "readings"):
         p = sub.add_parser(name)
         if name == "run":
-            p.add_argument("experiment", choices=("E1", "E2", "E3"))
+            p.add_argument("experiment", choices=("E1", "E2", "E3", *CONTROL_EXPERIMENTS))
         p.add_argument("--freeze", required=True, type=Path)
         p.add_argument("--freeze-sha256", required=True)
         p.add_argument("--root", required=True, type=Path)
