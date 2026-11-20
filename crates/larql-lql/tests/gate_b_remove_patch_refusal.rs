@@ -7,6 +7,11 @@
 //! was silently dropped, and replaying it without the removed patch is not
 //! defined: apply A, edit B, apply C, remove A cannot be assumed to leave B
 //! with the effect it had.
+//!
+//! The refusal text is pinned in full: it names the patch, lists the blocking
+//! edits in journal order (a fact id only for an op that carries a fact key),
+//! says that edits held by applied patches do not block, and gives a recovery
+//! that runs. An unknown patch name is "not found" whatever the session holds.
 
 use std::path::{Path, PathBuf};
 
@@ -21,6 +26,34 @@ const V3_PROMPT: &str = "The b of a is";
 const V3_MODEL: &str = "gate-b-refusal";
 /// The session edit B: a tombstone, a knowledge edit on either backend.
 const SESSION_EDIT: &str = "DELETE FROM EDGES WHERE layer = 0 AND feature = 0;";
+/// How the refusal lists [`SESSION_EDIT`]: a physical op, by its address.
+const SESSION_EDIT_LINE: &str = "  delete at layer 0 feature 0";
+/// A keyed compose install made in the session, for the fact-id lines.
+const V3_SESSION_INSERT: &str = r#"INSERT INTO EDGES (entity, relation, target) VALUES ("c", "b", "[6]") AT LAYER 1 MODE COMPOSE;"#;
+
+/// The full refusal text for removing `path` over `edits`, with `save` the
+/// clause that saves the open recording ("" when none is open).
+fn refusal(path: &str, edits: &[&str], save: &str) -> String {
+    let mut lines = vec![
+        format!("REMOVE PATCH refused: {path:?}. Nothing was changed."),
+        format!(
+            "Removing a patch rebuilds the state from the vindex and the remaining patches. \
+             This session holds {} knowledge edit(s) that no applied patch holds, and they \
+             would be dropped:",
+            edits.len()
+        ),
+    ];
+    lines.extend(edits.iter().map(|l| l.to_string()));
+    lines.push("Edits held by applied patches do not block removal.".into());
+    lines.push(format!(
+        "To remove the patch and keep these edits: {save}bind the vindex again with USE; then \
+         APPLY the patches to keep, including the file(s) this session's edits were saved to."
+    ));
+    lines.join("\n")
+}
+
+const SAVE_ANONYMOUS: &str =
+    "save the open recording with BEGIN PATCH \"file.vlp\" then SAVE PATCH; ";
 
 fn lql_path(path: impl AsRef<Path>) -> String {
     path.as_ref().display().to_string().replace('\\', "\\\\")
@@ -167,9 +200,50 @@ fn assert_remove_refuses(fx: &Fixture, insert: &str, save: bool) {
         .execute(&parse(&stmt).unwrap())
         .expect_err("REMOVE PATCH must refuse while a session edit is live")
         .to_string();
-    assert!(why.contains("REMOVE PATCH refused"), "{why}");
-    assert!(why.contains("Nothing was changed"), "{why}");
+    // Unsaved, the edit sits in the anonymous recording; saved, no recording
+    // is open and the edit is in b.vlp.
+    let save_clause = if save { "" } else { SAVE_ANONYMOUS };
+    assert!(
+        why.ends_with(&refusal(&lql_path(&a), &[SESSION_EDIT_LINE], save_clause)),
+        "{why}"
+    );
     assert_eq!(observe(&mut session, fx.prompt), before);
+
+    // The same refusal again: the text depends only on the state.
+    let again = session.execute(&parse(&stmt).unwrap()).unwrap_err();
+    assert_eq!(again.to_string(), why);
+
+    // An unknown name is "not found", whatever the session holds.
+    let typo = session
+        .execute(&parse("REMOVE PATCH \"typo.vlp\";").unwrap())
+        .unwrap_err()
+        .to_string();
+    assert!(typo.ends_with("patch not found: typo.vlp"), "{typo}");
+    assert_eq!(observe(&mut session, fx.prompt), before);
+
+    // The recovery the text gives runs, step by step, and ends where a fresh
+    // session applying the kept patches does.
+    let b = dir.join("b.vlp");
+    if !save {
+        run(&mut session, &format!("BEGIN PATCH \"{}\";", lql_path(&b)));
+        run(&mut session, "SAVE PATCH;");
+    }
+    run(&mut session, &format!("USE \"{}\";", lql_path(&fx.vindex)));
+    for patch in [&a, &c, &b] {
+        run(
+            &mut session,
+            &format!("APPLY PATCH \"{}\";", lql_path(patch)),
+        );
+    }
+    run(&mut session, &stmt);
+    let mut want = bound(&fx.vindex);
+    for patch in [&c, &b] {
+        run(&mut want, &format!("APPLY PATCH \"{}\";", lql_path(patch)));
+    }
+    assert_eq!(
+        observe_with(&mut session, fx.prompt, false),
+        observe_with(&mut want, fx.prompt, false)
+    );
 }
 
 #[test]
@@ -190,6 +264,60 @@ fn vindex3_remove_patch_refuses_over_an_unsaved_session_edit() {
 #[test]
 fn vindex3_remove_patch_refuses_over_a_saved_session_edit() {
     assert_remove_refuses(&v3(), V3_INSERT, true);
+}
+
+/// A keyed edit is listed with its fact id, every op in journal order; a
+/// named open recording is saved by name.
+#[test]
+fn the_refusal_lists_keyed_and_physical_edits_in_journal_order() {
+    let fx = v3();
+    let dir = fx.vindex.parent().unwrap();
+    let a = dir.join("a.vlp");
+    let mut author = bound(&fx.vindex);
+    run(&mut author, &format!("BEGIN PATCH \"{}\";", lql_path(&a)));
+    run(&mut author, V3_INSERT);
+    run(&mut author, "SAVE PATCH;");
+
+    let mut session = bound(&fx.vindex);
+    run(&mut session, &format!("APPLY PATCH \"{}\";", lql_path(&a)));
+    let named = dir.join("named.vlp");
+    run(
+        &mut session,
+        &format!("BEGIN PATCH \"{}\";", lql_path(&named)),
+    );
+    run(&mut session, SESSION_EDIT);
+    run(&mut session, V3_SESSION_INSERT);
+    let slots: Vec<(usize, usize)> = session
+        .asserted_facts()
+        .unwrap()
+        .iter()
+        .find(|f| f.entity == "c")
+        .expect("the session's fact")
+        .slots
+        .clone();
+    let id = larql_vindex::FactKey::new("c", "b").fact_id();
+    let mut edits = vec![SESSION_EDIT_LINE.to_string()];
+    edits.extend(
+        slots
+            .iter()
+            .map(|(l, f)| format!("  insert, fact {id}, at layer {l} feature {f}")),
+    );
+    let edits: Vec<&str> = edits.iter().map(String::as_str).collect();
+    let before = observe(&mut session, fx.prompt);
+
+    let why = session
+        .execute(&parse(&format!("REMOVE PATCH \"{}\";", lql_path(&a))).unwrap())
+        .unwrap_err()
+        .to_string();
+    let save = format!(
+        "save the open recording to {} with SAVE PATCH; ",
+        lql_path(&named)
+    );
+    assert!(
+        why.ends_with(&refusal(&lql_path(&a), &edits, &save)),
+        "{why}"
+    );
+    assert_eq!(observe(&mut session, fx.prompt), before);
 }
 
 /// The way out the refusal names: bind again, apply the patches wanted. The
