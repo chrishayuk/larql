@@ -19,6 +19,7 @@ mod predicate;
 pub(crate) mod query;
 mod relation_resolver;
 mod remote;
+mod remove_refusal;
 mod trace;
 pub(crate) mod tuning;
 mod verify;

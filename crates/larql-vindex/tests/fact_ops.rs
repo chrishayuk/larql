@@ -377,8 +377,8 @@ fn the_session_journal_records_in_order_and_clears_when_the_overlay_resets() {
     pv.try_apply_patch(patch(vec![])).unwrap();
     pv.remove_patch(0);
     assert!(pv.session_ops().is_empty());
-    // VINDEX2 rebuilds the store from empty (docs/fact-id-1.md C-11); its
-    // base is still known, which is how the catalogue sees the loss.
-    assert!(pv.knn_store.is_empty());
+    // VINDEX2 rebuilds the store from the vindex's own entries (Gate B, B2;
+    // this was docs/fact-id-1.md C-11).
+    assert_eq!(pv.knn_store.len(), 1);
     assert_eq!(pv.base_knn().len(), 1);
 }

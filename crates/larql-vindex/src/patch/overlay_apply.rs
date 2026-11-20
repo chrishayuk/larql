@@ -265,13 +265,18 @@ impl PatchedVindex {
         }
     }
 
-    /// Rebuild override maps from scratch (after removing a patch).
+    /// Rebuild the effective state from the base as bound plus the remaining
+    /// patches (after removing a patch), as the VINDEX3 overlay does. Every
+    /// kind of state a patch can write is reset: metadata, gate rows,
+    /// tombstones, the base's up/down overrides and the KNN store.
     fn rebuild_overrides(&mut self) {
         self.overrides_meta.clear();
         // Clears rows AND every layer's cached snapshot.
         self.overrides_gate.clear();
         self.deleted.clear();
-        self.knn_store = super::knn_store::KnnStore::default();
+        self.base.metadata.up_overrides = self.base_up_overrides.clone();
+        self.base.metadata.down_overrides = self.base_down_overrides.clone();
+        self.knn_store = self.base_knn.clone();
         self.session_ops.clear();
         let patches: Vec<VindexPatch> = std::mem::take(&mut self.patches);
         // Each was checked against this same base when it was admitted, so

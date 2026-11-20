@@ -487,6 +487,7 @@ mod inferenceweights_format_dispatch;
 mod memit_fact_collection;
 mod mutation_recording;
 mod pipe;
+mod remove_refusal_text;
 mod session_patched_overlay_mut_accessor;
 mod session_state_no_backend;
 mod show_stats_verbs;
