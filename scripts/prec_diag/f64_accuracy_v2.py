@@ -32,8 +32,12 @@ report names how its runs relate to the rule:
   report tooling that freeze binds could not read them, and was corrected
   after the runs and before any verdict. A write-once repair addendum binds the
   freeze, the sealed runs, the failed report attempts, the frozen and the
-  corrected tooling hashes, and the reviewed PR and merge commit. The freeze is
-  never rewritten and is never said to have bound the corrected tooling.
+  corrected hashes of every module the report imports, and the reviewed PR and
+  merge commit. Only `experiment.py` and this script may differ from the
+  freeze; every other module (analysis, evidence, v0, ...) must be the frozen
+  bytes. There is one repair per freeze: the addendum and the repaired report
+  live at fixed names beside FREEZE.json, each written once. The freeze is never
+  rewritten and is never said to have bound the corrected tooling.
 Anything else is `invalid`.
 
 Scope. The test reads E1 (A32, A64) and E2 (C, D) only (`REPORT_EXPERIMENTS`).
@@ -50,8 +54,8 @@ never changes a constant.
 usage:
   python3 -I f64_accuracy_v2.py addendum --freeze-sha256 SHA --root RUNS --v1-report V1.json --out ADDENDUM.json
   python3 -I f64_accuracy_v2.py repair-addendum --freeze FREEZE.json --freeze-sha256 SHA --root RUNS \
-         --failed-attempt FILE [--failed-attempt FILE ...] --pr N --merge-commit SHA --statement TEXT \
-         --out ADDENDUM.json
+         --failed-attempt FILE [--failed-attempt FILE ...] --pr N --merge-commit SHA --statement TEXT
+         (writes REPAIR_ADDENDUM beside FREEZE.json; the repaired report must be REPAIR_REPORT there)
   python3 -I f64_accuracy_v2.py run --freeze FREEZE.json --freeze-sha256 SHA --root RUNS --out REPORT.json
          [--addendum ADDENDUM.json --addendum-sha256 SHA]
   python3 -I f64_accuracy_v2.py control N1 --freeze FREEZE.json --freeze-sha256 SHA --root RUNS --out REPORT.json
@@ -62,6 +66,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -75,6 +80,8 @@ from prec_diag import evidence as ev  # noqa: E402
 from prec_diag import experiment as ex  # noqa: E402
 from prec_diag import f64_accuracy as v1  # noqa: E402
 from prec_diag import freeze as fz  # noqa: E402
+from prec_diag import families as fam  # noqa: E402
+from prec_diag import v0  # noqa: E402
 
 NAME = v1.NAME
 VERSION = 2
@@ -96,8 +103,15 @@ REPORT_EXPERIMENTS = ("E1", "E2")
 CONTROL_FAMILY = {"Dauto": "D"}
 ADDENDUM_SCHEMA = "larql.hf-f64-accuracy-2.addendum/1"
 REPAIR_SCHEMA = "larql.hf-f64-accuracy-2.reporting-repair/1"
-#: The report tooling a repair addendum binds, by freeze label.
-TOOLING_LABELS = ("script.f64_accuracy_v2", "script.experiment", "script.analysis")
+#: Every module the report imports, by freeze label: a repair addendum binds them all.
+TOOLING_LABELS = ("script.analysis", "script.evidence", "script.experiment", "script.f64_accuracy",
+                  "script.f64_accuracy_v2", "script.families", "script.freeze", "script.v0")
+#: The only modules a reporting repair may change (run discovery and this report).
+REPAIRABLE = ("script.experiment", "script.f64_accuracy_v2")
+#: One repair per freeze, at fixed names beside FREEZE.json.
+REPAIR_ADDENDUM = "hf-f64-accuracy-2.reporting-repair.json"
+REPAIR_REPORT = "hf-f64-accuracy-2.reporting-repair.report.json"
+HEX40 = re.compile(r"[0-9a-f]{40}")
 SCRIPT_LABEL = "script.f64_accuracy_v2"
 SUMS = "SHA256SUMS"
 #: Bin edges of the reported joint distribution (absolute d, ratio r).
@@ -114,9 +128,11 @@ def analysis_sha256() -> str:
 
 
 def tooling_sha256() -> dict:
-    """The report tooling running now, by freeze label."""
-    return {"script.f64_accuracy_v2": own_sha256(), "script.experiment": ev.sha256_file(Path(ex.__file__).resolve()),
-            "script.analysis": analysis_sha256()}
+    """Every module the report imports, as running now, by freeze label."""
+    files = {"script.analysis": analysis.__file__, "script.evidence": ev.__file__, "script.experiment": ex.__file__,
+             "script.f64_accuracy": v1.__file__, "script.f64_accuracy_v2": __file__, "script.families": fam.__file__,
+             "script.freeze": fz.__file__, "script.v0": v0.__file__}
+    return {label: ev.sha256_file(Path(files[label]).resolve()) for label in TOOLING_LABELS}
 
 
 def frozen_tooling_sha256(manifest: dict) -> dict:
@@ -242,6 +258,36 @@ def runs_sums_sha256(root: Path) -> str | None:
     return ev.sha256_file(sums) if sums.is_file() else None
 
 
+def tooling_problems(frozen: dict, corrected: dict) -> list[str]:
+    """Why `corrected` is not a reporting repair of `frozen` (empty if it is)."""
+    problems = [f"the freeze does not bind {label}" for label in TOOLING_LABELS if not frozen.get(label)]
+    problems += [f"{label} differs from the freeze: a reporting repair may change only {list(REPAIRABLE)}"
+                 for label in TOOLING_LABELS if label not in REPAIRABLE and corrected.get(label) != frozen.get(label)]
+    if frozen == corrected:
+        problems.append("the freeze binds the tooling running now: there is nothing to repair")
+    return problems
+
+
+def repair_fields_problems(failed_attempts, repair) -> list[str]:
+    problems = []
+    if not isinstance(failed_attempts, list) or not failed_attempts:
+        problems.append("a reporting repair names the failed report attempt(s) it follows")
+    else:
+        for f in failed_attempts:
+            p = Path(f.get("path", "")) if isinstance(f, dict) else None
+            if p is None or not p.is_absolute() or not p.is_file() or ev.sha256_file(p) != f.get("sha256"):
+                problems.append(f"failed attempt {f!r} missing, relative or changed")
+    if not isinstance(repair, dict) or not (isinstance(repair.get("pr"), int) and repair["pr"] > 0) or \
+            not HEX40.fullmatch(str(repair.get("merge_commit", ""))) or not str(repair.get("statement", "")).strip():
+        problems.append("a reporting repair names its reviewed PR, its full merge commit and its scope")
+    return problems
+
+
+def repair_paths(manifest_path: Path) -> tuple[Path, Path]:
+    d = Path(manifest_path).resolve().parent
+    return d / REPAIR_ADDENDUM, d / REPAIR_REPORT
+
+
 def make_repair_addendum(manifest_path: Path, freeze_sha256: str, root: Path, failed_attempts: list[Path],
                          pr: int, merge_commit: str, statement: str) -> dict:
     """The binding for a prospective experiment whose frozen report tooling
@@ -250,23 +296,23 @@ def make_repair_addendum(manifest_path: Path, freeze_sha256: str, root: Path, fa
     if manifest["values"].get("admission_test") != TEST:
         raise ev.EvidenceError(f"the freeze does not name {TEST}: a reporting repair is for a prospective freeze")
     frozen, corrected = frozen_tooling_sha256(manifest), tooling_sha256()
-    if frozen == corrected:
-        raise ev.EvidenceError("the freeze binds the tooling running now: there is nothing to repair")
     if runs_sums_sha256(root) is None:
         raise ev.EvidenceError(f"{Path(root) / SUMS}: missing; seal the runs first")
-    if not failed_attempts:
-        raise ev.EvidenceError("a reporting repair names the failed report attempt(s) it follows")
-    missing = [str(p) for p in failed_attempts if not Path(p).is_file()]
-    if missing:
-        raise ev.EvidenceError(f"failed attempt records missing: {missing}")
-    if not (isinstance(pr, int) and pr > 0) or len(merge_commit) != 40 or \
-            any(c not in "0123456789abcdef" for c in merge_commit) or not statement.strip():
-        raise ev.EvidenceError("a reporting repair names its reviewed PR, its full merge commit and its scope")
+    attempts = [{"path": str(Path(p).resolve()), "sha256": ev.sha256_file(Path(p)) if Path(p).is_file() else None}
+                for p in failed_attempts]
+    repair = {"pr": pr, "merge_commit": merge_commit, "statement": statement}
+    problems = tooling_problems(frozen, corrected) + repair_fields_problems(attempts, repair)
+    if problems:
+        raise ev.EvidenceError(f"not a reporting repair: {problems}")
     return {"schema": REPAIR_SCHEMA, "test": TEST, "evidence_class": REPAIRED, "meaning": REPAIRED_MEANING,
             "freeze_sha256": freeze_sha256, "runs_sha256sums": runs_sums_sha256(root),
             "frozen_tooling": frozen, "corrected_tooling": corrected,
-            "failed_attempts": [{"path": str(p), "sha256": ev.sha256_file(Path(p))} for p in failed_attempts],
-            "repair": {"pr": pr, "merge_commit": merge_commit, "statement": statement}}
+            "failed_attempts": attempts, "repair": repair}
+
+
+def write_repair_addendum(manifest_path: Path, addendum: dict) -> str:
+    """Write the one repair addendum this freeze may have, beside it."""
+    return write_addendum(repair_paths(manifest_path)[0], addendum)
 
 
 def repair_class(manifest: dict, freeze_sha256: str, root: Path, a: dict,
@@ -274,6 +320,7 @@ def repair_class(manifest: dict, freeze_sha256: str, root: Path, a: dict,
     checks = {
         "test": (a.get("test"), TEST),
         "evidence_class": (a.get("evidence_class"), REPAIRED),
+        "meaning": (a.get("meaning"), REPAIRED_MEANING),
         "freeze_sha256": (a.get("freeze_sha256"), freeze_sha256),
         "runs_sha256sums": (a.get("runs_sha256sums"), runs_sums_sha256(root)),
         "frozen_tooling": (a.get("frozen_tooling"), frozen_tooling_sha256(manifest)),
@@ -282,13 +329,8 @@ def repair_class(manifest: dict, freeze_sha256: str, root: Path, a: dict,
     problems = [f"addendum {k} differs" for k, (got, want) in checks.items() if got != want]
     if manifest["values"].get("admission_test") != TEST:
         problems.append(f"freeze does not name {TEST}")
-    attempts = a.get("failed_attempts") or []
-    if not attempts:
-        problems.append("addendum names no failed report attempt")
-    for f in attempts:
-        p = Path(f.get("path", ""))
-        if not p.is_file() or ev.sha256_file(p) != f.get("sha256"):
-            problems.append(f"addendum failed attempt {p} missing or changed")
+    problems += tooling_problems(frozen_tooling_sha256(manifest), tooling_sha256())
+    problems += repair_fields_problems(a.get("failed_attempts"), a.get("repair"))
     if problems:
         return None, {}, problems
     return REPAIRED, {"addendum_sha256": addendum_sha256,
@@ -394,6 +436,9 @@ def run(manifest_path: Path, freeze_sha256: str, root: Path, out: Path,
         raise ev.EvidenceError(f"{out} exists: a report is written once")
     manifest = ex.load_freeze(manifest_path, freeze_sha256)
     cls, details, problems = evidence_class(manifest, freeze_sha256, root, addendum, addendum_sha256)
+    if cls == REPAIRED and (Path(addendum).resolve(), out.resolve()) != repair_paths(manifest_path):
+        raise ev.EvidenceError(f"a reporting repair is read from {REPAIR_ADDENDUM} and reported to "
+                               f"{REPAIR_REPORT}, beside FREEZE.json: one repair per freeze")
     problems = fz.preflight(manifest_path, freeze_sha256) + problems
     if problems:
         result = {"verdict": INVALID, "problems": problems}
@@ -430,7 +475,6 @@ def main(argv=None) -> int:
     p_.add_argument("--pr", required=True, type=int)
     p_.add_argument("--merge-commit", required=True)
     p_.add_argument("--statement", required=True)
-    p_.add_argument("--out", required=True, type=Path)
     r_ = sub.add_parser("run")
     r_.add_argument("--freeze", required=True, type=Path)
     r_.add_argument("--freeze-sha256", required=True)
@@ -451,7 +495,7 @@ def main(argv=None) -> int:
               r["expectation"].get("expected"), "matches", r["matches_expectation"], *r.get("problems", [])[:5])
         return 0 if r["matches_expectation"] is not None else 2
     if a.cmd == "repair-addendum":
-        print("repair addendum sha256", write_addendum(a.out, make_repair_addendum(
+        print(repair_paths(a.freeze)[0], "sha256", write_repair_addendum(a.freeze, make_repair_addendum(
             a.freeze, a.freeze_sha256, a.root, a.failed_attempt, a.pr, a.merge_commit, a.statement)))
         return 0
     if a.cmd == "addendum":
