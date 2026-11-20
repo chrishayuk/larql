@@ -362,8 +362,33 @@ class ReportingRepair(unittest.TestCase):
         self.assertEqual(r["reporting_repair"]["repair"]["pr"], 893)
         self.assertEqual(r["reporting_repair"]["meaning"], f2.REPAIRED_MEANING)
         self.assertEqual(r["reporting_repair"]["failed_attempts"][0]["sha256"], ev.sha256_file(self.attempt))
+        self.assertEqual(self.report_path.stat().st_mode & 0o777, 0o444)
         with self.assertRaisesRegex(ev.EvidenceError, "written once"):
             f2.run(self.w.freeze, self.w.sha, self.w.runs, self.report_path, self.add_path, self.sha)
+
+    def test_a_copied_freeze_elsewhere_cannot_repair_the_runs(self):
+        other = self.tmp / "copied"
+        other.mkdir()
+        copy = other / "FREEZE.json"
+        copy.write_bytes(self.w.freeze.read_bytes())
+        with self.assertRaisesRegex(ev.EvidenceError, "not beside FREEZE.json"):
+            f2.make_repair_addendum(copy, self.w.sha, self.w.runs, [self.attempt], 893, "b" * 40, "scope")
+        add = f2.repair_paths(copy)[0]
+        sha = f2.write_addendum(add, json.loads(self.add_path.read_text()))
+        with self.assertRaisesRegex(ev.EvidenceError, "one repair per freeze"):
+            f2.run(copy, self.w.sha, self.w.runs, f2.repair_paths(copy)[1], add, sha)
+        self.assertFalse(f2.repair_paths(copy)[1].exists())
+
+    def test_a_non_repairable_module_changed_after_the_addendum_invalidates_it(self):
+        real = f2.tooling_sha256
+        f2.tooling_sha256 = lambda: {**real(), "script.analysis": "0" * 64}
+        try:
+            r = self.report(self.add_path, self.sha)
+        finally:
+            f2.tooling_sha256 = real
+        self.assertEqual(r["verdict"], f2.INVALID)
+        self.assertTrue(any(p.startswith("script.analysis differs from the freeze") for p in r["problems"]),
+                        r["problems"])
 
     def test_one_repair_per_freeze_at_fixed_names(self):
         with self.assertRaisesRegex(ev.EvidenceError, "one repair per freeze"):
@@ -448,9 +473,16 @@ class ReportingRepair(unittest.TestCase):
         for broken in ({k: v for k, v in base.items() if k != "repair"},
                        {k: v for k, v in base.items() if k != "meaning"},
                        {**base, "failed_attempts": ["not a record"]},
+                       {**base, "failed_attempts": [{"path": 1, "sha256": "x"}]},
+                       ["not", "an", "object"],
                        {**base, "repair": {**base["repair"], "merge_commit": "short"}}):
             r = self.report(*self.elsewhere(broken))
             self.assertEqual((r["verdict"], r["evidence_class"]), (f2.INVALID, None))
+        type(self).n += 1
+        bad = self.tmp / f"not-json-{self.n}.json"
+        bad.write_text("{not json")
+        r = self.report(bad, ev.sha256_file(bad))
+        self.assertEqual((r["verdict"], r["evidence_class"]), (f2.INVALID, None))
 
 
 class ControlEndToEnd(unittest.TestCase):

@@ -232,7 +232,12 @@ def evidence_class(manifest: dict, freeze_sha256: str, root: Path,
     raw = Path(addendum_path).read_bytes()
     if addendum_sha256 is None or ev.sha256_bytes(raw) != addendum_sha256:
         return None, {}, [f"{addendum_path}: sha256 is not the reviewed digest"]
-    a = json.loads(raw)
+    try:
+        a = json.loads(raw)
+    except ValueError:
+        return None, {}, [f"{addendum_path}: not JSON"]
+    if not isinstance(a, dict):
+        return None, {}, [f"{addendum_path}: not a JSON object"]
     if a.get("schema") == REPAIR_SCHEMA:
         return repair_class(manifest, freeze_sha256, root, a, addendum_sha256)
     checks = {
@@ -274,7 +279,7 @@ def repair_fields_problems(failed_attempts, repair) -> list[str]:
         problems.append("a reporting repair names the failed report attempt(s) it follows")
     else:
         for f in failed_attempts:
-            p = Path(f.get("path", "")) if isinstance(f, dict) else None
+            p = Path(f["path"]) if isinstance(f, dict) and isinstance(f.get("path"), str) else None
             if p is None or not p.is_absolute() or not p.is_file() or ev.sha256_file(p) != f.get("sha256"):
                 problems.append(f"failed attempt {f!r} missing, relative or changed")
     if not isinstance(repair, dict) or not (isinstance(repair.get("pr"), int) and repair["pr"] > 0) or \
@@ -286,6 +291,14 @@ def repair_fields_problems(failed_attempts, repair) -> list[str]:
 def repair_paths(manifest_path: Path) -> tuple[Path, Path]:
     d = Path(manifest_path).resolve().parent
     return d / REPAIR_ADDENDUM, d / REPAIR_REPORT
+
+
+def repair_location_problems(manifest_path: Path, root: Path) -> list[str]:
+    """A repair is anchored where the runs are: the run root must sit beside
+    FREEZE.json, so a copied freeze elsewhere has no runs to repair."""
+    if Path(root).resolve().parent != Path(manifest_path).resolve().parent:
+        return [f"the run root {root} is not beside FREEZE.json: a repair lives with its runs"]
+    return []
 
 
 def make_repair_addendum(manifest_path: Path, freeze_sha256: str, root: Path, failed_attempts: list[Path],
@@ -301,7 +314,8 @@ def make_repair_addendum(manifest_path: Path, freeze_sha256: str, root: Path, fa
     attempts = [{"path": str(Path(p).resolve()), "sha256": ev.sha256_file(Path(p)) if Path(p).is_file() else None}
                 for p in failed_attempts]
     repair = {"pr": pr, "merge_commit": merge_commit, "statement": statement}
-    problems = tooling_problems(frozen, corrected) + repair_fields_problems(attempts, repair)
+    problems = tooling_problems(frozen, corrected) + repair_fields_problems(attempts, repair) + \
+        repair_location_problems(manifest_path, root)
     if problems:
         raise ev.EvidenceError(f"not a reporting repair: {problems}")
     return {"schema": REPAIR_SCHEMA, "test": TEST, "evidence_class": REPAIRED, "meaning": REPAIRED_MEANING,
@@ -436,9 +450,10 @@ def run(manifest_path: Path, freeze_sha256: str, root: Path, out: Path,
         raise ev.EvidenceError(f"{out} exists: a report is written once")
     manifest = ex.load_freeze(manifest_path, freeze_sha256)
     cls, details, problems = evidence_class(manifest, freeze_sha256, root, addendum, addendum_sha256)
-    if cls == REPAIRED and (Path(addendum).resolve(), out.resolve()) != repair_paths(manifest_path):
+    if cls == REPAIRED and ((Path(addendum).resolve(), out.resolve()) != repair_paths(manifest_path)
+                            or repair_location_problems(manifest_path, root)):
         raise ev.EvidenceError(f"a reporting repair is read from {REPAIR_ADDENDUM} and reported to "
-                               f"{REPAIR_REPORT}, beside FREEZE.json: one repair per freeze")
+                               f"{REPAIR_REPORT}, beside FREEZE.json and its run root: one repair per freeze")
     problems = fz.preflight(manifest_path, freeze_sha256) + problems
     if problems:
         result = {"verdict": INVALID, "problems": problems}
@@ -456,6 +471,8 @@ def run(manifest_path: Path, freeze_sha256: str, root: Path, out: Path,
               "scope": v1.scope(manifest), "freeze_sha256": freeze_sha256, "root": str(root),
               "script_sha256": own_sha256(), "analysis_sha256": analysis_sha256(), **details, **result}
     ev.write_atomic(out, ev.canonical_json(report) + b"\n")
+    if cls == REPAIRED:
+        out.chmod(0o444)
     return report
 
 
