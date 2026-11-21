@@ -10,7 +10,9 @@ Each subject is one A64 forward made exactly as `hf_oracle.forward` makes it
 (same load, the same patches, the module-boundary hooks, and
 `op_audit=True`). The subjects are:
 - the tiny random checkpoints of the oracle's own tests
-  (`test_prec_diag_hf_oracle*.py`), with their own ids;
+  (`test_prec_diag_hf_oracle*.py`), with their own ids, one per family the
+  oracle supports (Qwen3.5's, added with that family, on its first
+  `MAX_TOKENS` ids and its own loading boundary);
 - the real checkpoints named on the command line (`--checkpoint NAME=DIR`),
   on `TEXT` cut to at most `MAX_TOKENS` tokens.
 
@@ -65,10 +67,14 @@ def synthetic_subjects(root: Path) -> list[dict]:
     sys.path.insert(0, str(scripts))
     import test_prec_diag_hf_oracle as gemma  # noqa: E402
     import test_prec_diag_hf_oracle_qwen3 as qwen3  # noqa: E402
+    import test_prec_diag_hf_oracle_qwen3_5 as qwen3_5  # noqa: E402
     return [{"name": "synthetic gemma3_text (test_prec_diag_hf_oracle)", "kind": "synthetic",
              "checkpoint": gemma.make_checkpoint(root / "gemma3"), "ids": list(gemma.IDS)},
             {"name": "synthetic qwen3 (test_prec_diag_hf_oracle_qwen3)", "kind": "synthetic",
-             "checkpoint": qwen3.make_checkpoint(root / "qwen3"), "ids": list(qwen3.IDS)}]
+             "checkpoint": qwen3.make_checkpoint(root / "qwen3"), "ids": list(qwen3.IDS)},
+            {"name": "synthetic qwen3_5 (test_prec_diag_hf_oracle_qwen3_5)", "kind": "synthetic",
+             "checkpoint": qwen3_5.make_checkpoint(root / "qwen3_5"), "ids": list(qwen3_5.IDS[:MAX_TOKENS]),
+             "boundary": qwen3_5.BOUNDARY}]
 
 
 def real_subject(name: str, directory: Path) -> dict:
@@ -83,7 +89,7 @@ def control(model, ids: list[int], family: ho.Family) -> dict:
     module-boundary audit (part 2) each see of transformers' own f32 sites."""
     linear = sum(isinstance(m, torch.nn.Linear) for m in model.modules())
     audit, ops = ho.A64Audit(model, family), oa.OpDtypeAudit(linear_layers=linear)
-    every_patch = frozenset(family.expected_calls(1))
+    every_patch = frozenset(family.patch_kinds)
     with ho.SiteCapture(model, None, family), ho.a64_patches(model, audit, every_patch), \
             ho.module_dtype_hooks(model, audit), ops, torch.no_grad():
         logits = model(torch.tensor([ids]), use_cache=False).logits[0]
@@ -124,7 +130,7 @@ def audit_subject(subject: dict) -> dict:
     modeling = ho.modeling_sha256(family)
     if modeling != family.facts["modeling_sha256"]:
         raise ho.Refused(f"{ckpt}: modeling_{family.facts['modeling']}.py is not the frozen file")
-    model, _ = ho.load(ckpt, "A64", BOUNDARY)
+    model, _ = ho.load(ckpt, "A64", subject.get("boundary", BOUNDARY))
     result = ho.forward(model, subject["ids"], "A64", None, None, ckpt, family, op_audit=True)
     del result["logits"]  # never read
     audit = result["records"]["audit"]

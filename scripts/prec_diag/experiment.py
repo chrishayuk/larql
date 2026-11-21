@@ -11,7 +11,9 @@ Nothing is caller-supplied. Every run's identity carries the sha256 of the
 therefore never admitted, even when its bytes are valid and self-consistent.
 
   E1  transformers family: A32, A32 again (A32-rep2), A32s, A32r, A64, on
-      each input; logits only
+      each input; logits only. A32r takes a RoPE table only for the layer
+      types that apply rotary (`rope_layer_types`; Qwen3.5: full attention).
+      The oracle's diagnostic arm A32rec is never planned here.
   E2  LARQL family: C, D, C32a, D32a cached; C, D batched prefill
       (all positions); on each input
   E3  captures at the frozen positions: C and D (LARQL); A32 and A64
@@ -87,6 +89,9 @@ HF_ENVIRONMENT = {"OMP_NUM_THREADS": "8"}
 #: freeze that runs A64 must bind.
 OP_AUDIT_VALUE = "a64_op_audit"
 OP_AUDIT_FILES = {"script.op_audit": "op_audit.py", "script.op_probes": "op_probes.py"}
+#: Each family's own oracle module, by freeze label (`families.oracle_module_label`).
+FAMILY_MODULES = {fam.oracle_module_label(f): fam.FAMILIES[f]["oracle_module"]
+                  for f in fam.FAMILIES if fam.FAMILIES[f].get("oracle_module")}
 #: The name of the schema constant in op_audit.py.
 OP_AUDIT_SCHEMA_NAME = "SCHEMA"
 #: FREEZE.json values this runner needs beyond freeze.REQUIRED_*.
@@ -214,8 +219,19 @@ def modeling_identity(manifest: dict) -> dict:
     return {"family": family, "sha256": fam.FAMILIES[family]["modeling_sha256"]}
 
 
+def rope_layer_types(manifest: dict) -> list[str]:
+    """The layer types A32r takes a RoPE table for: those that apply rotary
+    (Qwen3.5: full attention only; its DeltaNet layers take no positions)."""
+    return fam.rope_layer_types(checkpoint_config(manifest))
+
+
 def rope_table_labels(manifest: dict) -> list[str]:
-    return [f"rope_table.{lt}.{t}" for lt in layer_types(manifest) for t in ("cos", "sin")]
+    return [f"rope_table.{lt}.{t}" for lt in rope_layer_types(manifest) for t in ("cos", "sin")]
+
+
+def family_module_label(manifest: dict) -> str | None:
+    """The freeze label of the checkpoint family's own oracle module, if any."""
+    return fam.oracle_module_label(fam.family_of(checkpoint_config(manifest)))
 
 
 def ids_of(manifest: dict, input_name: str) -> list[int]:
@@ -273,6 +289,9 @@ def expected_identity(manifest: dict, freeze_sha256: str, run: dict, experiment:
     if run["base"] == "A64" and op_audit_required(manifest):
         identity["op_audit"] = op_audit_schema(manifest)
         identity["scripts"].update({name: file_sha(manifest, label) for label, name in OP_AUDIT_FILES.items()})
+    module = family_module_label(manifest)
+    if module is not None:  # a family with its own oracle module (Qwen3.5); older families unchanged
+        identity["scripts"][module.removeprefix("script.") + ".py"] = file_sha(manifest, module)
     return identity
 
 
@@ -292,6 +311,7 @@ def frozen_world_problems(manifest_path: Path, freeze_sha256: str) -> list[str]:
            "script.families": here / "families.py",
            "script.oracle_loading": here.parent / "oracle_loading.py",
            **{label: here / name for label, name in OP_AUDIT_FILES.items()},
+           **{label: here / FAMILY_MODULES[label] for label in FAMILY_MODULES},
            "script.equivalence_metrics": here.parent / "equivalence_metrics.py"}
     for label, path in own.items():
         if label in manifest["files"] and ev.sha256_file(path) != manifest["files"][label]["sha256"]:
@@ -325,6 +345,10 @@ def preflight(manifest_path: Path, freeze_sha256: str, root: Path, experiment: s
     problems = frozen_world_problems(manifest_path, freeze_sha256)
     manifest = json.loads(Path(manifest_path).read_bytes())
     problems += op_audit_policy(manifest, experiment)
+    module = family_module_label(manifest)
+    if module is not None and module not in manifest["files"]:
+        problems.append(f"the checkpoint's family runs {module.removeprefix('script.')}.py, and the freeze does not "
+                        f"bind {module}")
     family = fam.family_of(checkpoint_config(manifest))
     if any(r["capture"] for r in plan(experiment)) and not fam.FAMILIES[family]["captures"]:
         problems.append(f"{experiment} captures sites, and the oracle maps no sites for {family}")
@@ -434,7 +458,7 @@ def run_hf(manifest: dict, freeze_sha256: str, run: dict, run_dir: Path, experim
     if run["base"] == "A64" and op_audit_required(manifest):
         argv += ["--op-audit", op_audit_schema(manifest)]
     if run["base"] == "A32r":
-        for lt in layer_types(manifest):
+        for lt in rope_layer_types(manifest):
             argv += ["--tables", f"{lt}={Path(manifest['files'][f'rope_table.{lt}.cos']['path']).parent}"]
     env = {"HOME": os.environ.get("HOME", "/"), "PATH": "/usr/bin:/bin", **HF_ENVIRONMENT, "HF_HUB_OFFLINE": "1"}
     done = v0.spawn(argv, env, launcher, manifest["values"]["resource_limits"]["wall_s_per_run"])

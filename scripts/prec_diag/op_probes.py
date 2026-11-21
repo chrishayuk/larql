@@ -6,10 +6,10 @@ output are float64 could still accumulate in float32. These probes measure
 that, on the same backend and thread settings as the forward, after it:
 
 - accumulating ops (`mm`, `bmm`, `addmm`, `sum`, `mean`, `cumsum`, `cumprod`,
-  `_softmax`, `_log_softmax`) are probed at every distinct shape and stride
-  the forward used, so the kernel path (BLAS blocking, vectorised reduction)
-  is the one the forward took;
-- elementwise transcendental ops (`exp`, `rsqrt`, `cos`, `gelu`, `pow`, ...)
+  `_softmax`, `_log_softmax`, and 1-d `convolution`) are probed at every
+  distinct shape and stride the forward used, so the kernel path (BLAS
+  blocking, vectorised reduction) is the one the forward took;
+- elementwise transcendental ops (`exp`, `rsqrt`, `cos`, `gelu`, `softplus`, `pow`, ...)
   are probed once per scalar variant on a fixed-length vector against
   Python's `math` (double precision);
 - basic IEEE arithmetic (`add`, `mul`, `div`, ...) is probed for bit-exact
@@ -35,6 +35,13 @@ accumulator together:
   float64 also returns a different value.
 `cumprod` uses `(1 + sqrt(e))^2 = 1 + 2 sqrt(e) + e`: its factor is not
 float32-representable and the product is exact in float64 only.
+A 1-d `convolution` (Qwen3.5's depthwise causal conv) slides its window, so
+one input value feeds several outputs and the two heads cannot share one
+probe exactly. It runs two exact probes at the observed geometry: input all
+1 with weights `[h, e, ..., e]` (the accumulator and the weight operand),
+then input all `1 + 2^-26` with weights `[1, 0, ..., 0]` (the input
+operand). Padding drops taps at the edges, so each output's expected value
+is counted from the geometry, and is exact in float64.
 
 Memory. A probe runs at the forward's own shapes (an lm_head-shaped `mm` is
 as large as the logits), while the model is still loaded. So a probe builds
@@ -167,6 +174,13 @@ def signature(name: str, args: tuple, kwargs: dict):
     if name in ("aten.cumsum.default", "aten.cumprod.default", "aten._softmax.default",
                 "aten._log_softmax.default"):
         return {"x": layout(args[0]), "dim": int(args[1])}
+    if name == "aten.convolution.default":
+        return {"x": layout(args[0]), "w": layout(args[1]), "bias": layout(args[2]) if args[2] is not None else None,
+                "stride": list(args[3]), "padding": list(args[4]), "dilation": list(args[5]),
+                "transposed": bool(args[6]), "output_padding": list(args[7]), "groups": int(args[8])}
+    if name == "aten.softplus.default":
+        return {"beta": float(args[1]) if len(args) > 1 else SOFTPLUS_BETA,
+                "threshold": float(args[2]) if len(args) > 2 else SOFTPLUS_THRESHOLD}
     if name == "aten.pow.Tensor_Scalar":
         return {"exponent": float(args[1])}
     if name == "aten.pow.Scalar":
@@ -348,7 +362,66 @@ def _softmax(op, sig: dict, log: bool) -> dict:
                   {"reduction_length": k, "layout_reproduced": ok})
 
 
+def _conv_valid(sig: dict, t_out: int) -> np.ndarray:
+    """`[t_out, K]`: whether tap k of output t reads the input (not padding)."""
+    t_in, k = sig["x"][0][-1], sig["w"][0][-1]
+    s, p, d = sig["stride"][0], sig["padding"][0], sig["dilation"][0]
+    at = np.arange(t_out)[:, None] * s + np.arange(k)[None, :] * d - p
+    return (at >= 0) & (at < t_in)
+
+
+def _convolution(op, sig: dict) -> dict:
+    """1-d convolution, two exact probes (module docstring). The weight's
+    head is its first tap of its first input channel in every group."""
+    x_shape, w_shape = sig["x"][0], sig["w"][0]
+    if len(x_shape) != 3 or sig["transposed"] or sig["bias"] is not None:
+        return {"comparison": EXACT, "pass": False, "detail": "only a 1-d, untransposed, bias-free convolution is probed"}
+    per_group, k = w_shape[1], w_shape[2]
+    if per_group * k < 2:
+        return _no_accumulation(per_group * k)
+    rest = (sig["stride"], sig["padding"], sig["dilation"], False, sig["output_padding"], sig["groups"])
+    t_out = _REFERENCE_OP.get()(torch.empty(x_shape, device="meta"), torch.empty(w_shape, device="meta"), None,
+                                *rest).shape[-1]
+    valid = _conv_valid(sig, t_out)
+    head_valid, taps_valid = valid[:, 0], valid.sum(axis=1)
+    # Probe 1: x = 1, w = [h, e, ..., e]. Output t = h [first tap valid] + e * (other valid taps).
+    acc = [math.fsum([HEAD_A if hv else 0.0] + [F64_EPS] * int(per_group * tv - hv))
+           for hv, tv in zip(head_valid, taps_valid)]
+    x1, ok1 = _pattern(sig["x"], 1.0, 1.0, [])
+    w1, okw = _pattern(sig["w"], F64_EPS, HEAD_A, [1, 2])
+    ref1 = torch.tensor(acc, dtype=torch.float64).expand(x_shape[0], w_shape[0], t_out)
+    accumulator = _judge(op, (x1, w1, None, *rest), {}, ref1, EXACT, {})
+    del x1, w1
+    # Probe 2: x = 1 + 2^-26, w = [1, 0, ..., 0]. Output t = HEAD_B where the first tap is valid, else 0.
+    x2, ok2 = _pattern(sig["x"], HEAD_B, HEAD_B, [])
+    w2, _ = _pattern(sig["w"], 0.0, 1.0, [1, 2])
+    ref2 = torch.tensor(np.where(head_valid, HEAD_B, 0.0), dtype=torch.float64).expand(x_shape[0], w_shape[0], t_out)
+    operand = _judge(op, (x2, w2, None, *rest), {}, ref2, EXACT, {})
+    out = {"comparison": EXACT, "bound": 0.0, "reduction_length": per_group * k,
+           "error": max(accumulator["error"], operand["error"]),
+           "f32_counterfactual_error": min(accumulator["f32_counterfactual_error"],
+                                           operand["f32_counterfactual_error"]),
+           "output_dtype": accumulator["output_dtype"],
+           "probe_bytes": max(accumulator["probe_bytes"], operand["probe_bytes"]),
+           "layout_reproduced": ok1 and okw and ok2,
+           "sub_probes": {"accumulator_and_weight": accumulator, "input_operand": operand},
+           "pass": accumulator["pass"] and operand["pass"]}
+    failed = next((p for p in (accumulator, operand) if not p["pass"]), None)
+    if failed is not None:
+        out["detail"] = failed.get("detail", "failed")
+    return out
+
+
 # ------------------------------------------------------ elementwise ops
+
+#: `F.softplus`'s defaults.
+SOFTPLUS_BETA, SOFTPLUS_THRESHOLD = 1.0, 20.0
+
+
+def _softplus_ref(sig: dict):
+    beta, threshold = sig.get("beta", SOFTPLUS_BETA), sig.get("threshold", SOFTPLUS_THRESHOLD)
+    return lambda x: x if beta * x > threshold else math.log1p(math.exp(beta * x)) / beta
+
 
 def _gelu_ref(approximate: str):
     if approximate == "tanh":
@@ -369,6 +442,8 @@ _ELEMENTWISE = {
     "aten.sigmoid.default": ((-20.0, 20.0, "lin"), lambda s: (lambda x: 1.0 / (1.0 + math.exp(-x))), RELATIVE),
     "aten.silu.default": ((-8.0, 8.0, "lin"), lambda s: (lambda x: x / (1.0 + math.exp(-x))), MIXED),
     "aten.gelu.default": ((-4.0, 4.0, "lin"), lambda s: _gelu_ref(s["approximate"]), MIXED),
+    # Both sides of the threshold (20): above it softplus returns x.
+    "aten.softplus.default": ((-20.0, 30.0, "lin"), _softplus_ref, MIXED),
     "aten.pow.Tensor_Scalar": ((0.5, 2.0, "lin"), lambda s: (lambda x: math.pow(x, s["exponent"])), RELATIVE),
     "aten.pow.Scalar": ((0.0, 1.0, "lin"), lambda s: (lambda x: math.pow(s["base"], x)), RELATIVE),
 }
@@ -391,6 +466,8 @@ def _elementwise(name: str, op, sig: dict) -> dict:
         args, kwargs = (sig["base"], x), {}
     elif name == "aten.gelu.default":
         args, kwargs = (x,), {"approximate": sig["approximate"]}
+    elif name == "aten.softplus.default":
+        args, kwargs = (x, sig.get("beta", SOFTPLUS_BETA), sig.get("threshold", SOFTPLUS_THRESHOLD)), {}
     else:
         args, kwargs = (x,), {}
     return _judge(op, args, kwargs, ref, metric, {"vector_length": ELEMENTWISE_LENGTH})
@@ -431,6 +508,7 @@ _ACCUMULATING = {
     "aten.cumprod.default": lambda op, s: _scan(op, s, product=True),
     "aten._softmax.default": lambda op, s: _softmax(op, s, log=False),
     "aten._log_softmax.default": lambda op, s: _softmax(op, s, log=True),
+    "aten.convolution.default": _convolution,
 }
 
 #: Every probed op, by class.

@@ -110,7 +110,7 @@ EXACT_OPS = frozenset({
     "aten.clone.default", "aten.contiguous.default", "aten.cat.default", "aten.stack.default",
     "aten.embedding.default", "aten.index.Tensor", "aten.index_select.default", "aten.gather.default",
     "aten.repeat.default", "aten.repeat_interleave.self_int", "aten.tril.default", "aten.triu.default",
-    "aten._local_scalar_dense.default",
+    "aten._local_scalar_dense.default", "aten.constant_pad_nd.default",
     # selection and comparison
     "aten.where.self", "aten.masked_fill.Scalar", "aten.masked_fill.Tensor", "aten.masked_fill_.Scalar",
     "aten.eq.Scalar", "aten.eq.Tensor", "aten.ne.Scalar", "aten.ne.Tensor", "aten.lt.Scalar",
@@ -124,7 +124,7 @@ EXACT_OPS = frozenset({
     "aten.zeros.default", "aten.ones.default", "aten.empty.memory_format", "aten.empty_strided.default",
     "aten.zeros_like.default", "aten.ones_like.default", "aten.empty_like.default", "aten.full_like.default",
     "aten.new_ones.default", "aten.new_zeros.default", "aten.new_empty.default", "aten.new_full.default",
-    "aten.fill_.Scalar", "aten.zero_.default",
+    "aten.fill_.Scalar", "aten.zero_.default", "aten.eye.default",
 }) | CAST_OPS
 
 #: What the dispatch level sees and does not see; recorded in every result.

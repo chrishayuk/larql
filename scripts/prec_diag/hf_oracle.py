@@ -1,8 +1,10 @@
-"""PREC-DIAG-1 transformers-side oracle: arms A32, A32s, A32r and A64 (B1).
+"""PREC-DIAG-1 transformers-side oracle: arms A32, A32s, A32r, A64 (B1), and A32rec (diagnostic).
 
-Families (`families.py`): Gemma 3 text, and Qwen3 dense (logits only). The
-family is the checkpoint's `model_type`; A64 patches that family's modeling
-file, and the audit's call counts are that family's.
+Families (`families.py`): Gemma 3 text, Qwen3 dense (logits only) and
+Qwen3.5 hybrid (logits only; its patches, witnesses and loader are in
+`hf_qwen3_5.py`). The family is the checkpoint's `model_type`; A64 patches
+that family's modeling file, and the audit's call counts are that family's,
+derived from the config.
 
 One process runs one arm over one input:
 - it writes logits at every position;
@@ -13,11 +15,23 @@ One process runs one arm over one input:
   A32s  A32 with sdpa attention
   A32r  A32 with LARQL's own cos/sin tables injected into the rotary
         embedding (one value per pair, used for both halves); the rotation
-        itself stays transformers' f32 rotate-half
+        itself stays transformers' f32 rotate-half. Tables are given only
+        for the layer types that apply rotary (`families.rope_layer_types`):
+        for Qwen3.5 the full-attention layers, at the partial rotary width,
+        on text-only positions; a table for its DeltaNet layers is refused
+  A32rec  DIAGNOSTIC ONLY (Qwen3.5): A32 with transformers' own float32
+        step-by-step `torch_recurrent_gated_delta_rule` used for the prefill
+        instead of the chunked rule. It is never a gate baseline: the
+        experiment runner plans no A32rec run, the oracle refuses one made
+        under a freeze (`bind`), and its identity names its own arm, so it
+        can never be admitted as A32
   A64   float64 throughout, with the f32 forcings of transformers 5.5.0's
         modeling file patched to f64 (Gemma 3: RMSNorm, rotary, eager
-        softmax, scaled embedding; Qwen3: RMSNorm, rotary, eager softmax),
-        and the audit (four parts, and a fifth when requested):
+        softmax, scaled embedding; Qwen3: RMSNorm, rotary, eager softmax;
+        Qwen3.5: (1+w) RMSNorm, gated RMSNorm, rotary with partial rotary
+        and M-RoPE, eager softmax, the DeltaNet forward's decay and the
+        chunked gated delta rule, per layer instance), and the audit (four
+        parts, and a fifth when requested):
           1. parameters: every parameter is float64 and equals the
              checkpoint's BF16 value widened exactly (compared against the
              safetensors bytes);
@@ -53,7 +67,8 @@ declares no `query_scale`, no transformation is applied to any site before
 comparison (`QUERY_SCALE_NOTE`).
 
 Refused rather than run:
-- a composite (multimodal) config;
+- a composite (multimodal) config, except a family that declares its text
+  prefix (Qwen3.5: text-config load, every checkpoint tensor accounted for);
 - a modeling file whose sha256 differs from the one the protocol froze;
 - a rope type other than `default`;
 - thread settings other than the protocol's (when `--require-threads`).
@@ -80,15 +95,21 @@ import torch  # noqa: E402
 import transformers  # noqa: E402
 import transformers.models.gemma3.modeling_gemma3 as G  # noqa: E402
 import transformers.models.qwen3.modeling_qwen3 as Q  # noqa: E402
+import transformers.models.qwen3_5.modeling_qwen3_5 as Q35  # noqa: E402
 from safetensors.torch import load_file  # noqa: E402
 from transformers import AutoConfig, AutoModelForCausalLM  # noqa: E402
 
 import oracle_loading  # noqa: E402
 from prec_diag import evidence as ev  # noqa: E402
 from prec_diag import families as fam  # noqa: E402
+from prec_diag import hf_qwen3_5 as q35  # noqa: E402
 from prec_diag import op_audit as oa  # noqa: E402
 
-ARMS = ("A32", "A32s", "A32r", "A64")
+ARMS = ("A32", "A32s", "A32r", "A64", "A32rec")
+#: Arms that are diagnostics only: never planned by the experiment runner and
+#: refused under a freeze, so never a gate baseline.
+DIAGNOSTIC_ARMS = ("A32rec",)
+
 #: The protocol's thread settings (rev 3 [C8]).
 THREADS = {"torch_num_threads": 8, "torch_num_interop_threads": 1, "OMP_NUM_THREADS": "8"}
 #: An f64 computation agrees with its numpy f64 recomputation far below this;
@@ -144,6 +165,9 @@ class Family:
         elif name == "qwen3":
             self.module, self.norm_offset = Q, 0.0
             self.rms_cls, self.rot_cls, self.emb_cls = Q.Qwen3RMSNorm, Q.Qwen3RotaryEmbedding, None
+        elif name == "qwen3_5":
+            self.module, self.norm_offset = Q35, 1.0
+            self.rms_cls, self.rot_cls, self.emb_cls = Q35.Qwen3_5RMSNorm, Q35.Qwen3_5TextRotaryEmbedding, None
         else:
             raise Refused(f"no oracle patches for family {name!r}")
 
@@ -157,22 +181,45 @@ class Family:
             raise Refused(str(e)) from None
 
     def eps(self, norm) -> float:
-        return norm.eps if self.name == "gemma3_text" else norm.variance_epsilon
+        return norm.eps if self.name in ("gemma3_text", "qwen3_5") else norm.variance_epsilon
 
     def theta(self, config, layer_type) -> float:
         params = config.rope_parameters
         return params[layer_type]["rope_theta"] if self.name == "gemma3_text" else params["rope_theta"]
 
     def rotary_calls(self, num_layers: int) -> int:
-        """Gemma 3 builds cos/sin per layer; Qwen3 once per forward."""
+        """Gemma 3 builds cos/sin per layer; Qwen3 and Qwen3.5 once per forward."""
         return num_layers if self.name == "gemma3_text" else 1
 
-    def expected_calls(self, num_layers: int) -> dict:
+    def attention_layers(self, config) -> int:
+        """Layers that run softmax attention (and so apply rotary)."""
+        if self.name == "qwen3_5":
+            return q35.layer_types(config).count("full_attention")
+        return config.num_hidden_layers
+
+    def rotary_width(self, config) -> int:
+        """The rotated width per head (Qwen3.5: partial rotary)."""
+        return q35.rotary_dim(config) if self.name == "qwen3_5" else config.head_dim
+
+    @property
+    def patch_kinds(self) -> tuple:
+        if self.name == "gemma3_text":
+            return ("rmsnorm", "rotary", "softmax", "embedding")
+        if self.name == "qwen3_5":
+            return ("rmsnorm", "gated_rmsnorm", "rotary", "softmax", "gdn", "chunk_rule")
+        return ("rmsnorm", "rotary", "softmax")
+
+    def expected_calls(self, num_layers: int, layer_types: list[str] | None = None) -> dict:
         """Gemma 3: input, post-attention, pre- and post-FFN norms plus q/k
         norms per layer, and the final norm. Qwen3: input and post-attention
-        norms plus q/k norms per layer, and the final norm."""
+        norms plus q/k norms per layer, and the final norm. Qwen3.5: from
+        the config's layer types (`hf_qwen3_5.expected_calls`)."""
         if self.name == "gemma3_text":
             return {"rmsnorm": 6 * num_layers + 1, "rotary": num_layers, "softmax": num_layers, "embedding": 1}
+        if self.name == "qwen3_5":
+            if layer_types is None:
+                raise ValueError("qwen3_5 call counts need the config's layer types")
+            return q35.expected_calls(num_layers, layer_types)
         return {"rmsnorm": 4 * num_layers + 1, "rotary": 1, "softmax": num_layers}
 
 
@@ -182,10 +229,14 @@ def modeling_sha256(family: Family | None = None) -> str:
     return ev.sha256_file(Path((family.module if family else G).__file__))
 
 
-def script_digests() -> dict:
+def script_digests(family: Family | None = None) -> dict:
+    """The oracle's scripts, plus the family's own module when it has one
+    (so the identity of an older family is unchanged)."""
     here = Path(__file__).resolve().parent
     names = ("hf_oracle.py", "evidence.py", "families.py", "op_audit.py", "op_probes.py")
-    return {name: ev.sha256_file(here / name) for name in names} | {
+    module = family.facts.get("oracle_module") if family is not None else None
+    extra = (module,) if module else ()
+    return {name: ev.sha256_file(here / name) for name in names + extra} | {
         "oracle_loading.py": ev.sha256_file(here.parent / "oracle_loading.py")}
 
 
@@ -226,8 +277,28 @@ def ids_digests(ids: list[int]) -> dict:
 
 # --------------------------------------------------------------- loading
 
+def composite_facts(ckpt: Path) -> dict | None:
+    """The family facts of a checkpoint whose family loads from a composite
+    config (it declares `text_prefix`), else None."""
+    model_type = json.loads((Path(ckpt) / "config.json").read_text()).get("model_type")
+    facts = fam.FAMILIES.get(model_type)
+    return facts if facts and "text_prefix" in facts else None
+
+
 def load(ckpt: Path, arm: str, boundary: dict) -> tuple[torch.nn.Module, dict]:
-    """The model for `arm` and its loading facts (gate as harness 2.1.0)."""
+    """The model for `arm` and its loading facts (gate as harness 2.1.0).
+    A composite family (Qwen3.5) loads its text model from `text_config`,
+    with every parameter and buffer dtype asserted as loaded."""
+    facts = composite_facts(ckpt)
+    if facts is not None:
+        dtype = torch.float64 if arm == "A64" else torch.float32
+        try:
+            model, record = q35.load_text_model(ckpt, dtype, "sdpa" if arm == "A32s" else "eager", boundary, facts)
+        except q35.Unsupported as e:
+            raise Refused(str(e)) from None
+        if record["gate"] != "pass":
+            raise Refused(f"loading gate: {record['gate_problems']}")
+        return model, record
     config = AutoConfig.from_pretrained(ckpt)
     if getattr(config, "text_config", None) is not None:
         raise Refused("composite config: this oracle loads text-only checkpoints")
@@ -325,9 +396,12 @@ class SiteCapture:
         self.family.module.apply_rotary_pos_emb = self._orig_rotary
         return False
 
-    def check_complete(self, num_layers: int) -> None:
-        if self._rotary_calls != num_layers:
-            raise RuntimeError(f"apply_rotary_pos_emb ran {self._rotary_calls} times, expected {num_layers}")
+    def check_complete(self, num_layers: int, attention_layers: int | None = None) -> None:
+        """`attention_layers`: how many layers apply rotary (all of them
+        unless given; Qwen3.5's full-attention layers only)."""
+        want = num_layers if attention_layers is None else attention_layers
+        if self._rotary_calls != want:
+            raise RuntimeError(f"apply_rotary_pos_emb ran {self._rotary_calls} times, expected {want}")
         if self.positions is None:
             return
         want = {(s, None) for s in LAYERLESS_SITES} | {(s, L) for s in LAYER_SITES for L in range(num_layers)}
@@ -339,7 +413,9 @@ class SiteCapture:
 
 def load_tables(table_dirs: dict[str, Path], positions: int, head_dim: int) -> dict:
     """LARQL's shipped cos/sin tables per layer type, as the
-    `rope_angle_tables` example wrote them: `[positions, head_dim/2]` f32."""
+    `rope_angle_tables` example wrote them: `[positions, head_dim/2]` f32.
+    `head_dim` is the rotated width (`Family.rotary_width`: Qwen3.5's
+    partial rotary width, not its head size)."""
     out = {}
     for layer_type, d in table_dirs.items():
         entry = {}
@@ -364,6 +440,8 @@ def larql_tables(tables: dict, record: dict, family: Family):
 
     def forward(self, x, position_ids, layer_type=None):
         t = tables[layer_type or "full_attention"]
+        if family.name == "qwen3_5":
+            position_ids = q35.text_positions(position_ids)[0]  # one M-RoPE axis: text-only, all equal
         pos = position_ids[0].numpy()
         cos = torch.from_numpy(np.concatenate([t["cos"][pos]] * 2, axis=-1))[None]
         sin = torch.from_numpy(np.concatenate([t["sin"][pos]] * 2, axis=-1))[None]
@@ -393,9 +471,11 @@ class A64Audit:
 
     def __init__(self, model, family: Family):
         self.model, self.family = model, family
+        self.layer_types = getattr(model.config, "layer_types", None) if family.name == "qwen3_5" else None
         self.problems: list[str] = []
-        self.calls: dict[str, dict] = {k: {} for k in family.expected_calls(1)}
+        self.calls: dict[str, dict] = {k: {} for k in family.patch_kinds}
         self.witness: dict[str, float] = {}
+        self.witness_detail: dict[str, dict] = {}
         self.module_tensors = 0
         names = {id(mod): name for name, mod in model.named_modules()}
         self.names = names
@@ -416,8 +496,15 @@ class A64Audit:
         if not rel <= F64_WITNESS_REL:
             self.problems.append(f"{kind}: f64 witness relative error {rel:.3e} > {F64_WITNESS_REL}")
 
+    def witness_every(self, kind: str, where: str, rel: float, bound: float = F64_WITNESS_REL) -> None:
+        """A witness taken on every call: the worst relative error is kept,
+        and every call over `bound` is a problem."""
+        self.witness[kind] = max(self.witness.get(kind, 0.0), rel)
+        if not rel <= bound:
+            self.problems.append(f"{kind} {where}: f64 witness relative error {rel:.3e} > {bound}")
+
     def expected_calls(self, num_layers: int) -> dict:
-        return self.family.expected_calls(num_layers)
+        return self.family.expected_calls(num_layers, self.layer_types)
 
     def finish(self, logits: torch.Tensor, num_layers: int) -> dict:
         self.check("logits", logits)
@@ -431,12 +518,18 @@ class A64Audit:
         return {"pass": not self.problems, "problems": self.problems[:50],
                 "problem_count": len(self.problems), "calls": self.calls, "call_totals": totals,
                 "expected_call_totals": expected, "witness_relative_error": self.witness,
-                "module_tensors_checked": self.module_tensors}
+                "module_tensors_checked": self.module_tensors,
+                **({"witness_detail": self.witness_detail} if self.witness_detail else {})}
 
 
 def audit_parameters(model, ckpt: Path) -> dict:
     """Audit part 1: every parameter float64 and equal to the checkpoint's
-    BF16 value widened exactly (the composite-config trap would load BF16)."""
+    BF16 value widened exactly (the composite-config trap would load BF16).
+    A composite family maps names through its text prefix and admits BF16
+    and F32 sources (`hf_qwen3_5.audit_parameters`)."""
+    facts = composite_facts(ckpt)
+    if facts is not None:
+        return q35.audit_parameters(model, ckpt, facts)
     problems, checked = [], 0
     stored = {}
     for f in checkpoint_files(ckpt):
@@ -537,6 +630,10 @@ def a64_patches(model, audit: A64Audit, skip: frozenset = frozenset()):
         audit.witness_once("embedding", out, base.detach().numpy() * math.sqrt(hidden))
         return out
 
+    restore = []
+    if family.name == "qwen3_5":
+        rot = q35.rotary_forward(audit)
+        restore = qwen3_5_patches(model, audit, skip, layer_of)
     if "rmsnorm" not in skip:
         family.rms_cls.forward = rms
     if "rotary" not in skip:
@@ -553,6 +650,73 @@ def a64_patches(model, audit: A64Audit, skip: frozenset = frozenset()):
         M.eager_attention_forward = saved["eager"]
         if family.emb_cls is not None:
             family.emb_cls.forward = saved["emb"]
+        for owner, attr, value in reversed(restore):
+            setattr(owner, attr, value)
+
+
+def qwen3_5_patches(model, audit: A64Audit, skip: frozenset, layer_of) -> list:
+    """Qwen3.5's own A64 patches (`hf_qwen3_5.py`): the gated norm, the
+    DeltaNet forward (decay in float64) and the chunked rule, installed on
+    every DeltaNet instance (the modeling file binds it in `__init__`, so a
+    module-level patch would never run). The decode rule is replaced by a
+    refusal on every instance: a no-cache prefill must never reach it.
+    Returns what to restore, as (owner, attribute, original)."""
+    names = audit.names
+    restore = [(Q35.Qwen3_5RMSNormGated, "forward", Q35.Qwen3_5RMSNormGated.forward),
+               (Q35.Qwen3_5GatedDeltaNet, "forward", Q35.Qwen3_5GatedDeltaNet.forward)]
+
+    def on_gates(module, conv_in, conv_out, a, b, beta, g):
+        layer = module.layer_idx
+        audit.check(f"gdn layer {layer}", conv_in, conv_out, a, b, beta, g, module.A_log, module.dt_bias,
+                    module.conv1d.weight)
+        audit.count("gdn", layer)
+        want = q35.gates_witness(module, conv_in, a, b)
+        rel = {"conv": _rel(conv_out.detach().numpy(), want["conv"]), "beta": _rel(beta.detach().numpy(), want["beta"]),
+               "g": _rel(g.detach().numpy(), want["g"])}
+        audit.witness_detail.setdefault("gdn", {})[str(layer)] = rel
+        audit.witness_every("gdn", f"layer {layer}", max(rel.values()))
+
+    if "gated_rmsnorm" not in skip:
+        Q35.Qwen3_5RMSNormGated.forward = q35.gated_norm_forward(audit, names, layer_of, lambda m: m.variance_epsilon)
+    if "gdn" not in skip:
+        Q35.Qwen3_5GatedDeltaNet.forward = q35.gdn_forward(on_gates)
+    for module in q35.deltanets(model):
+        restore += [(module, "chunk_gated_delta_rule", module.chunk_gated_delta_rule),
+                    (module, "recurrent_gated_delta_rule", module.recurrent_gated_delta_rule)]
+        module.recurrent_gated_delta_rule = q35.recurrent_rule_refused
+        if "chunk_rule" in skip:
+            continue
+
+        def on_result(inputs, out, states, chunk_size, layer=module.layer_idx):
+            audit.check(f"chunk_rule layer {layer}", *inputs[:5], out, *states)
+            audit.count("chunk_rule", layer)
+            cmp = q35.compare_with_witness(inputs, out, states, chunk_size)
+            audit.witness_detail.setdefault("chunk_rule", {})[str(layer)] = cmp
+            for part in ("output", "state"):
+                audit.witness_every("chunk_rule", f"layer {layer} {part}s", cmp[part], q35.RECURRENCE_WITNESS_REL)
+
+        module.chunk_gated_delta_rule = q35.chunk_rule(on_result)
+    return restore
+
+
+@contextlib.contextmanager
+def recurrent_prefill(model, record: dict):
+    """A32rec (diagnostic): transformers' own float32 step-by-step rule for
+    the prefill, on every DeltaNet instance; restored afterwards."""
+    modules = q35.deltanets(model)
+    saved = [(m, m.chunk_gated_delta_rule) for m in modules]
+    counter: dict = {}
+    for m in modules:
+        m.chunk_gated_delta_rule = q35.recurrent_rule_for_prefill(counter)
+    record.update({"diagnostic_only": True, "expected_calls": len(modules),
+                   "rule": "transformers torch_recurrent_gated_delta_rule (float32, unmodified) for the prefill",
+                   "note": "not a gate baseline: hf-f64-accuracy/2 reads A32, A64, C and D only"})
+    try:
+        yield record
+    finally:
+        for m, rule in saved:
+            m.chunk_gated_delta_rule = rule
+        record["calls"] = counter.get("calls", 0)
 
 
 @contextlib.contextmanager
@@ -597,6 +761,8 @@ def forward(model, ids: list[int], arm: str, positions, tables=None, ckpt=None, 
         cap = stack.enter_context(SiteCapture(model, positions, family))
         if arm == "A32r":
             stack.enter_context(larql_tables(tables, out["records"].setdefault("tables", {}), family))
+        if arm == "A32rec":
+            stack.enter_context(recurrent_prefill(model, out["records"].setdefault("recurrent_prefill", {})))
         if arm == "A64":
             audit = A64Audit(model, family)
             stack.enter_context(a64_patches(model, audit))
@@ -606,7 +772,11 @@ def forward(model, ids: list[int], arm: str, positions, tables=None, ckpt=None, 
                 tracer = stack.enter_context(oa.OpDtypeAudit(linear_layers=linear))
         with torch.no_grad():
             logits = model(torch.tensor([ids]), use_cache=False).logits[0]
-    cap.check_complete(num_layers)
+    cap.check_complete(num_layers, family.attention_layers(model.config))
+    if arm == "A32rec":
+        r = out["records"]["recurrent_prefill"]
+        if r["calls"] != r["expected_calls"]:
+            raise RuntimeError(f"A32rec: the recurrent rule ran {r['calls']} times, expected {r['expected_calls']}")
     if arm == "A64":
         out["records"]["audit"] = {"parameters": audit_parameters(model, ckpt),
                                    **audit.finish(logits, num_layers)}
@@ -670,7 +840,7 @@ def run(*, arm: str, ckpt: Path, ids: list[int], positions: list[int] | None, ou
         family = Family.of(ckpt)
     except Refused:
         family = None  # refused below, once the record exists
-    identity = {"tool": "hf_oracle", "scripts": script_digests(), "arm": arm,
+    identity = {"tool": "hf_oracle", "scripts": script_digests(family), "arm": arm,
                 "checkpoint": checkpoint_identity(ckpt), "input": ids_digests(ids) | {"length": len(ids)},
                 "positions": positions,
                 "modeling": ({"family": family.name, "sha256": modeling_sha256(family)} if family else None),
@@ -690,6 +860,16 @@ def run(*, arm: str, ckpt: Path, ids: list[int], positions: list[int] | None, ou
             raise Refused(f"operation-level audit {op_audit!r} requested; this oracle implements {oa.SCHEMA!r}")
         if positions is not None and not family.facts["captures"]:
             raise Refused(f"site captures are not mapped for {family.name}")
+        if arm in DIAGNOSTIC_ARMS and family.name != "qwen3_5":
+            raise Refused(f"{arm} replaces the chunked gated delta rule; {family.name} has no recurrence")
+        if arm in DIAGNOSTIC_ARMS and bind is not None:
+            raise Refused(f"{arm} is a diagnostic arm, never run under a freeze (it is not a gate baseline)")
+        if arm == "A32r" and table_dirs:
+            rotary = fam.rope_layer_types(json.loads((Path(ckpt) / "config.json").read_text()))
+            if sorted(table_dirs) != rotary:
+                raise Refused(f"A32r tables for {sorted(table_dirs)}: {family.name} applies rotary on {rotary} only"
+                              + (" (its DeltaNet layers take no positions, so a RoPE table has no meaning there)"
+                                 if family.name == "qwen3_5" else ""))
         if require_threads and identity["threads"] != THREADS:
             raise Refused(f"threads {identity['threads']} != {THREADS}")
         if positions is not None and (positions != sorted(set(positions)) or positions[-1] >= len(ids)):
@@ -700,7 +880,7 @@ def run(*, arm: str, ckpt: Path, ids: list[int], positions: list[int] | None, ou
         if arm == "A32r":
             if not table_dirs:
                 raise Refused("A32r needs LARQL's tables (--tables layer_type=DIR)")
-            tables = load_tables(table_dirs, len(ids), model.config.head_dim)
+            tables = load_tables(table_dirs, len(ids), family.rotary_width(model.config))
             identity["tables"] = {lt: {k: v for k, v in t.items() if k.endswith("sha256")}
                                   for lt, t in tables.items()}
         result = forward(model, ids, arm, positions, tables, ckpt, family, op_audit=op_audit is not None)
