@@ -91,6 +91,12 @@ The patched chunked rule is checked against it on every DeltaNet layer of every 
 
 l2norm and the conv were verified by part 5 on the real forward, not assumed.
 
+**The part's schema is now `larql.prec-diag-1.a64-op-audit/2`.** A freeze names its schema
+(`values.a64_op_audit`), and the oracle refuses any other. So a run recorded under `/2` is never
+mistaken for one made under the narrower `/1` op set, and vice versa. No existing freeze names a schema:
+none sets `a64_op_audit`, so none of their identities changes. The #899 backfill ran under `/1`, and its
+record says so.
+
 **Arms.**
 - **A32 and A32s** run transformers' shipped float32 path unmodified, after the same text-config load.
 - **A32r** takes a table for the `full_attention` layers only, at the partial rotary width
@@ -155,6 +161,11 @@ rotary 1, softmax 6, gdn 18, chunk_rule 18.
 The machine was shared with other work, including a live experiment. An earlier pair of runs, on the same
 code except one unused attribute and under heavier load, gave identical audit results and took 27 s and
 35 s.
+
+**Re-run after review.** Both runs were repeated after the review fixes: op-audit schema `/2`, and the
+chunk-state count check. The audit results were identical (same op counts, 0 non-f64 ops, same witness
+errors), with `states_compared` 1 and 3. The run identities name this PR's current files. Wall time was
+14.3 s and 20.4 s.
 Logits were `[16, 248320]` and `[130, 248320]` float64 and finite.
 
 ## Estimate at 1,040 tokens (not run)

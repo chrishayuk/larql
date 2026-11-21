@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import collections
 import json
+import math
 from pathlib import Path
 
 import numpy as np
@@ -479,10 +480,15 @@ def compare_with_witness(inputs, out, states, chunk_size: int) -> dict:
     w_out, w_states = step_witness(query, key, value, g, beta, l2, ends)
     got = out.detach().numpy()
     # Per head (axis 1 of [b, H, d_k, d_v]) for the states, per position for the outputs.
-    state_rel = max(position_rel(s.detach().numpy(), w, axis=1) for s, w in zip(states, w_states))
-    whole = float(np.linalg.norm(got - w_out) / max(np.linalg.norm(w_out), 1e-300))
-    return {"output": position_rel(got, w_out), "state": state_rel, "output_whole_tensor": whole,
-            "positions": T, "chunk_ends": ends, "states_compared": len(ends)}
+    rels = [position_rel(s.detach().numpy(), w, axis=1) for s, w in zip(states, w_states)]
+    result = {"output": position_rel(got, w_out), "state": max(rels, default=math.inf),
+              "output_whole_tensor": float(np.linalg.norm(got - w_out) / max(np.linalg.norm(w_out), 1e-300)),
+              "positions": T, "chunk_ends": ends, "states_compared": len(rels)}
+    if len(states) != len(ends):
+        # A missing (or extra) chunk state fails the witness; zip would otherwise compare fewer silently.
+        result["state"] = math.inf
+        result["state_count_mismatch"] = f"{len(states)} chunk states for {len(ends)} chunk ends"
+    return result
 
 
 # ----------------------------------------------------- the DeltaNet forward

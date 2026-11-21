@@ -692,6 +692,8 @@ def qwen3_5_patches(model, audit: A64Audit, skip: frozenset, layer_of) -> list:
             audit.count("chunk_rule", layer)
             cmp = q35.compare_with_witness(inputs, out, states, chunk_size)
             audit.witness_detail.setdefault("chunk_rule", {})[str(layer)] = cmp
+            if "state_count_mismatch" in cmp:
+                audit.problems.append(f"chunk_rule layer {layer}: {cmp['state_count_mismatch']}")
             for part in ("output", "state"):
                 audit.witness_every("chunk_rule", f"layer {layer} {part}s", cmp[part], q35.RECURRENCE_WITNESS_REL)
 

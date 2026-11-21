@@ -376,6 +376,20 @@ class Witness(unittest.TestCase):
                 self.assertLess(cmp["state"], q35.RECURRENCE_WITNESS_REL / 100)
                 self.assertEqual(cmp["chunk_ends"], q35.chunk_ends(T))
 
+    def test_a_rule_that_returns_one_fewer_chunk_state_fails_the_witness(self):
+        q, k, v, g, beta = deltanet_inputs(10)
+        seen = {}
+
+        def short(inputs, out, states, chunk_size):
+            seen["cmp"] = q35.compare_with_witness(inputs, out, states[:-1], chunk_size)
+
+        q35.chunk_rule(short)(q, k, v, g=g, beta=beta, use_qk_l2norm_in_kernel=True)
+        cmp = seen["cmp"]
+        ends = q35.chunk_ends(SEQ)
+        self.assertEqual(cmp["states_compared"], len(ends) - 1)
+        self.assertEqual(cmp["state"], float("inf"))
+        self.assertIn(f"{len(ends) - 1} chunk states for {len(ends)} chunk ends", cmp["state_count_mismatch"])
+
     def test_the_witness_checks_the_function_not_the_chunking(self):
         cmp = self.rule64(*deltanet_inputs(4), chunk_size=16)
         self.assertLess(max(cmp["output"], cmp["state"]), q35.RECURRENCE_WITNESS_REL / 100)
@@ -471,6 +485,17 @@ class A64AuditCatchesEachMissingPatch(Fixture):
                 self.assertEqual({v["site"].split(":")[0] for v in ops["violations"]}, {"modeling_qwen3_5.py"})
                 # The module-boundary audit (part 2) sees none of it: the casts are undone inside the call.
                 self.assertEqual([p for p in parts["problems"] if p.startswith("module ")], [])
+
+    def test_a_chunk_rule_that_drops_a_chunk_state_fails_the_audit(self):
+        real = q35.compare_with_witness
+
+        def drop_last(inputs, out, states, chunk_size):
+            return real(inputs, out, states[:-1], chunk_size)
+
+        with unittest.mock.patch.object(q35, "compare_with_witness", drop_last):
+            parts, _, _ = self.a64()
+        self.assertFalse(parts["pass"])
+        self.assertTrue(any("chunk states for" in p for p in parts["problems"]), parts["problems"])
 
     def test_a_qwen3_norm_formula_is_far_from_a32(self):
         """The witness recomputes the patch's own formula, so it cannot see a
