@@ -24,6 +24,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from prec_diag import evidence as ev  # noqa: E402
 from prec_diag import experiment as ex  # noqa: E402
+from prec_diag import op_audit as oa  # noqa: E402
 from prec_diag import freeze as fz  # noqa: E402
 from prec_diag import hf_oracle as ho  # noqa: E402
 import test_prec_diag_hf_oracle as hft  # noqa: E402
@@ -35,7 +36,8 @@ OWN_SCRIPTS = {"script.hf_oracle": "prec_diag/hf_oracle.py", "script.v0": "prec_
                "script.analysis": "prec_diag/analysis.py", "script.evidence": "prec_diag/evidence.py",
                "script.freeze": "prec_diag/freeze.py", "script.experiment": "prec_diag/experiment.py",
                "script.oracle_loading": "oracle_loading.py", "script.equivalence_metrics": "equivalence_metrics.py",
-               "script.families": "prec_diag/families.py"}
+               "script.families": "prec_diag/families.py", "script.op_audit": "prec_diag/op_audit.py",
+               "script.op_probes": "prec_diag/op_probes.py"}
 GEOMETRY = {"vocab": hft.VOCAB, "hidden": hft.HIDDEN, "q_heads": hft.HEADS, "kv_heads": hft.KV,
             "head_dim": hft.HEAD_DIM, "layers": hft.LAYERS}
 POSITIONS = sorted(set([0, 1, 20, 255, 510, 511, 512, 513, 514, 767, 1022, 1023, 1024, 1025, 1026, 1039]
@@ -44,7 +46,9 @@ POSITIONS = sorted(set([0, 1, 20, 255, 510, 511, 512, 513, 514, 767, 1022, 1023,
 
 
 class World:
-    """One freeze over synthetic artifacts, under `root`."""
+    """One freeze over synthetic artifacts, under `root`. It requires A64's
+    operation-level audit, as every new freeze must decide; pass
+    `extra_values={"a64_op_audit": None}` for a freeze from before it existed."""
 
     def __init__(self, root: Path, doc_text="plan rev 3\n", fake_behaviour=None, extra_files=None, extra_values=None):
         self.root = root
@@ -97,6 +101,7 @@ class World:
                   "resource_limits": {"wall_s_per_run": 300, "wall_s_total": {"E1": 7200, "E2": 7200, "E3": 7200, "N1": 7200}, "rss_bytes": 16 * 10**9,
                                       "capture_bytes_per_run": 2 << 30, "min_free_bytes": 1},
                   "larql_environment": {"HOME": str(root), "PATH": "/usr/bin:/bin", "RAYON_NUM_THREADS": "16"},
+                  ex.OP_AUDIT_VALUE: oa.SCHEMA,
                   **(extra_values or {})}
         files.update({label: str(path) for label, path in (extra_files or {}).items()})
         spec = {"files": files, "container": str(self.container),
@@ -382,6 +387,120 @@ class HfRuns(Tmp):
         self.assertEqual(rec["status"], ev.RESOURCE_LIMIT, rec)
         on_disk = json.loads((w.runs / "E1" / run["run_id"] / ev.RESULT_FILE).read_text())
         self.assertEqual(on_disk["status"], ev.RESOURCE_LIMIT)
+
+
+class OpAuditPolicy(Tmp):
+    """A64's operation-level audit (#897) is mandatory for every new freeze
+    that runs A64: the exact bound schema and both files, or the experiment
+    refuses at preflight. There is no waiver."""
+
+    def world(self, name="w", **values):
+        return World(self.tmp / name, extra_values=values)
+
+    def policy(self, w, experiment="E1"):
+        return ex.op_audit_policy(json.loads(w.freeze.read_text()), experiment)
+
+    def rewrite(self, w, edit):
+        m = json.loads(w.freeze.read_text())
+        edit(m)
+        other = self.tmp / f"other-{len(list(self.tmp.glob('other-*')))}.json"
+        return other, fz.write(other, m)
+
+    def test_a_freeze_that_requires_it_binds_it_into_every_a64_identity(self):
+        w = World(self.tmp / "w")
+        self.assertEqual(self.policy(w), [])
+        for run in ex.plan("E1") + ex.plan("E3"):
+            if run["kind"] != "hf":
+                continue
+            e = ex.expected_identity(w.manifest, w.sha, run, run["run_id"].split(".")[0])
+            if run["base"] == "A64":
+                self.assertEqual(e["op_audit"], oa.SCHEMA)
+                self.assertEqual(e["scripts"]["op_audit.py"], ev.sha256_file(SCRIPTS / "prec_diag" / "op_audit.py"))
+            else:
+                self.assertNotIn("op_audit", e)
+
+    def test_the_schema_is_read_from_the_bound_file(self):
+        w = World(self.tmp / "w")
+        self.assertEqual(ex.bound_op_audit_schema(w.manifest), oa.SCHEMA)
+
+    def test_a_freeze_from_before_the_audit_keeps_its_identities(self):
+        w = self.world(a64_op_audit=None)
+        run = next(r for r in ex.plan("E1") if r["base"] == "A64")
+        e = ex.expected_identity(w.manifest, w.sha, run, "E1")
+        self.assertNotIn("op_audit", e)
+        self.assertEqual(set(e["scripts"]), {"hf_oracle.py", "evidence.py", "families.py", "oracle_loading.py"})
+
+    def test_a_freeze_that_names_no_schema_refuses_experiments_with_a64_only(self):
+        w = self.world(a64_op_audit=None)
+        for experiment in ("E1", "E3"):
+            problems = ex.preflight(w.freeze, w.sha, w.runs, experiment)
+            self.assertTrue(any("sets no values.a64_op_audit" in p for p in problems), problems)
+        for experiment in ("E2", "N1"):
+            self.assertEqual(self.policy(w, experiment), [])
+            self.assertFalse(any("a64_op_audit" in p for p in ex.preflight(w.freeze, w.sha, w.runs, experiment)))
+        records = ex.run_experiment(w.freeze, w.sha, w.runs, "E1")
+        self.assertEqual(records[0]["status"], ev.ABORTED_PREFLIGHT)
+        self.assertFalse((w.runs / "E1").exists())
+
+    def test_there_is_no_waiver(self):
+        w = self.world(a64_op_audit="waived", a64_op_audit_waiver="replicating a sealed run")
+        problems = self.policy(w)
+        self.assertTrue(any("is not the schema" in p for p in problems), problems)
+
+    def test_a_schema_typo_refuses_at_preflight_before_any_run(self):
+        w = self.world(a64_op_audit="larql.prec-diag-1.a64-op-audit/2")
+        records = ex.run_experiment(w.freeze, w.sha, w.runs, "E1")
+        self.assertEqual(records[0]["status"], ev.ABORTED_PREFLIGHT)
+        self.assertTrue(any("is not the schema the bound op_audit.py implements" in p
+                            for p in records[0]["detail"]), records[0]["detail"])
+        self.assertFalse((w.runs / "E1").exists())
+
+    def test_a_non_string_value_is_refused(self):
+        problems = self.policy(self.world(a64_op_audit=True))
+        self.assertTrue(any("is not the schema" in p for p in problems), problems)
+
+    def test_a_freeze_that_runs_a64_must_bind_both_files(self):
+        w = World(self.tmp / "w")
+        other, sha = self.rewrite(w, lambda m: m["files"].pop("script.op_probes"))
+        with self.assertRaisesRegex(ev.EvidenceError, "script.op_probes"):
+            ex.load_freeze(other, sha)
+        problems = ex.op_audit_policy(json.loads(other.read_text()), "E1")
+        self.assertTrue(any("binds no ['script.op_probes']" in p for p in problems), problems)
+
+    def test_an_unimplemented_schema_is_also_refused_by_the_oracle(self):
+        # Defence in depth: a run launched past preflight still cannot use another schema.
+        w = self.world(a64_op_audit="larql.prec-diag-1.a64-op-audit/999")
+        run = next(r for r in ex.plan("E1") if r["base"] == "A64")
+        rec = ex.run_hf(w.manifest, w.sha, run, w.runs / "E1" / run["run_id"], "E1")
+        # The oracle refuses and exits non-zero; the launcher records that as a fault
+        # and keeps the oracle's own record beside the run.
+        self.assertEqual(rec["status"], ev.FAULT, rec)
+        self.assertEqual(rec["detail"]["oracle_record_status"], ev.REFUSED)
+        kept = json.loads((w.runs / "E1" / rec["detail"]["oracle_record_kept_at"] / ev.RESULT_FILE).read_text())
+        self.assertIn("this oracle implements", kept["detail"])
+
+    def test_a_run_made_without_the_audit_is_not_admitted_where_it_is_required(self):
+        w = self.world(a64_op_audit=None)
+        run = next(r for r in ex.plan("E1") if r["base"] == "A64")
+        rec = ex.run_hf(w.manifest, w.sha, run, w.runs / "E1" / run["run_id"], "E1")
+        self.assertEqual(rec["status"], ev.COMPLETE, rec.get("detail"))
+        run_dir = w.runs / "E1" / run["run_id"]
+        self.assertTrue(ev.admit(run_dir, ex.expected_identity(w.manifest, w.sha, run, "E1")).admitted)
+        required = json.loads(json.dumps(w.manifest))
+        required["values"][ex.OP_AUDIT_VALUE] = oa.SCHEMA
+        adm = ev.admit(run_dir, ex.expected_identity(required, w.sha, run, "E1"))
+        self.assertFalse(adm.admitted)
+        self.assertTrue(any("op_audit" in r for r in adm.reasons), adm.reasons)
+
+    def test_the_runner_passes_the_audit_to_a64(self):
+        w = World(self.tmp / "w")
+        run = next(r for r in ex.plan("E1") if r["base"] == "A64")
+        rec = ex.run_hf(w.manifest, w.sha, run, w.runs / "E1" / run["run_id"], "E1")
+        self.assertEqual(rec["status"], ev.COMPLETE, rec.get("detail"))
+        audit = json.loads((w.runs / "E1" / run["run_id"] / "audit.json").read_text())
+        self.assertTrue(audit["operations"]["pass"], audit["operations"]["problems"])
+        self.assertTrue(ev.admit(w.runs / "E1" / run["run_id"],
+                                 ex.expected_identity(w.manifest, w.sha, run, "E1")).admitted)
 
 
 class TotalLimit(Tmp):

@@ -17,7 +17,7 @@ One process runs one arm over one input:
   A64   float64 throughout, with the f32 forcings of transformers 5.5.0's
         modeling file patched to f64 (Gemma 3: RMSNorm, rotary, eager
         softmax, scaled embedding; Qwen3: RMSNorm, rotary, eager softmax),
-        and the four-part audit:
+        and the audit (four parts, and a fifth when requested):
           1. parameters: every parameter is float64 and equals the
              checkpoint's BF16 value widened exactly (compared against the
              safetensors bytes);
@@ -28,7 +28,17 @@ One process runs one arm over one input:
              architecture's), and is checked once against an independent f64
              recomputation in numpy (relative error <= 1e-12; the unpatched
              f32 path is ~1e-8, so a silently skipped patch fails);
-          4. logits are float64.
+          4. logits are float64;
+          5. operations (`op_audit.py`, #897), only when the run is made with
+             `op_audit` (`--op-audit SCHEMA`; the experiment runner passes the
+             freeze's `values.a64_op_audit`): every ATen op of the
+             forward reads, returns and writes float64 only, every dtype
+             conversion is recorded with its call site, and every op with
+             arithmetic has kernel-precision evidence (probes). Part 2 sees
+             module boundaries only, so it cannot see a cast to float32 that
+             is undone before a module returns; this part can. A run made
+             without it records `op_audit: null` in its identity and no
+             `operations` part, exactly as before.
         A failed audit makes the run `fault`: A64 is never admitted unaudited.
 
 Captures go into `sites/` (Gemma 3 only; a Qwen3 capture is refused). They use E0a's names and layout:
@@ -76,6 +86,7 @@ from transformers import AutoConfig, AutoModelForCausalLM  # noqa: E402
 import oracle_loading  # noqa: E402
 from prec_diag import evidence as ev  # noqa: E402
 from prec_diag import families as fam  # noqa: E402
+from prec_diag import op_audit as oa  # noqa: E402
 
 ARMS = ("A32", "A32s", "A32r", "A64")
 #: The protocol's thread settings (rev 3 [C8]).
@@ -173,7 +184,8 @@ def modeling_sha256(family: Family | None = None) -> str:
 
 def script_digests() -> dict:
     here = Path(__file__).resolve().parent
-    return {name: ev.sha256_file(here / name) for name in ("hf_oracle.py", "evidence.py", "families.py")} | {
+    names = ("hf_oracle.py", "evidence.py", "families.py", "op_audit.py", "op_probes.py")
+    return {name: ev.sha256_file(here / name) for name in names} | {
         "oracle_loading.py": ev.sha256_file(here.parent / "oracle_loading.py")}
 
 
@@ -573,9 +585,12 @@ def module_dtype_hooks(model, audit: A64Audit):
 
 # -------------------------------------------------------------------- run
 
-def forward(model, ids: list[int], arm: str, positions, tables=None, ckpt=None, family: Family | None = None) -> dict:
-    """One forward for `arm`; returns logits, planes and the arm's records."""
+def forward(model, ids: list[int], arm: str, positions, tables=None, ckpt=None, family: Family | None = None,
+            op_audit: bool = False) -> dict:
+    """One forward for `arm`; returns logits, planes and the arm's records.
+    With `op_audit` (A64 only), audit part 5 traces the forward's operations."""
     family = family or Family("gemma3_text")
+    tracer = None
     num_layers = model.config.num_hidden_layers
     out: dict = {"records": {}}
     with contextlib.ExitStack() as stack:
@@ -586,12 +601,17 @@ def forward(model, ids: list[int], arm: str, positions, tables=None, ckpt=None, 
             audit = A64Audit(model, family)
             stack.enter_context(a64_patches(model, audit))
             stack.enter_context(module_dtype_hooks(model, audit))
+            if op_audit:
+                linear = sum(isinstance(m, torch.nn.Linear) for m in model.modules())
+                tracer = stack.enter_context(oa.OpDtypeAudit(linear_layers=linear))
         with torch.no_grad():
             logits = model(torch.tensor([ids]), use_cache=False).logits[0]
     cap.check_complete(num_layers)
     if arm == "A64":
         out["records"]["audit"] = {"parameters": audit_parameters(model, ckpt),
                                    **audit.finish(logits, num_layers)}
+        if tracer is not None:
+            out["records"]["audit"]["operations"] = tracer.finish()
     if arm == "A32r":
         t = out["records"]["tables"]
         if t["injected_calls"] != family.rotary_calls(num_layers) or not t["bit_identical_to_files"]:
@@ -634,12 +654,16 @@ def write_outputs(run_dir: Path, result: dict, arm: str, positions, model) -> li
 
 def run(*, arm: str, ckpt: Path, ids: list[int], positions: list[int] | None, out_dir: Path,
         boundary: dict, table_dirs: dict | None = None, expected_modeling_sha256: str | None = None,
-        require_threads: bool = True, bind: dict | None = None) -> dict:
+        require_threads: bool = True, bind: dict | None = None, op_audit: str | None = None) -> dict:
     """One arm over one input under the lifecycle. Returns the final record.
 
     `bind` is recorded verbatim in the identity: the experiment runner
     passes the freeze digest, experiment and run id, so a run made under one
-    freeze is never admitted under another."""
+    freeze is never admitted under another.
+
+    `op_audit` names the schema of audit part 5 to add (A64 only; any
+    schema but `op_audit.SCHEMA` is refused) and is recorded in the identity,
+    so a freeze that requires the part admits no run made without it."""
     if arm not in ARMS:
         raise ValueError(f"unknown arm {arm!r}")
     try:
@@ -652,7 +676,7 @@ def run(*, arm: str, ckpt: Path, ids: list[int], positions: list[int] | None, ou
                 "modeling": ({"family": family.name, "sha256": modeling_sha256(family)} if family else None),
                 "threads": thread_state(), "environment": ev.numeric_environment(dict(os.environ)),
                 "packages": packages(), "machine": platform.machine(), "os": platform.platform(),
-                "bind": bind}
+                "bind": bind, "op_audit": op_audit}
     rr = ev.RunRecord.begin(out_dir, (bind or {}).get("run_id", arm), "hf-oracle", identity)
     try:
         if family is None:
@@ -660,6 +684,10 @@ def run(*, arm: str, ckpt: Path, ids: list[int], positions: list[int] | None, ou
         frozen = expected_modeling_sha256 or family.facts["modeling_sha256"]
         if identity["modeling"]["sha256"] != frozen:
             raise Refused(f"modeling_{family.facts['modeling']}.py differs from the frozen file")
+        if op_audit is not None and arm != "A64":
+            raise Refused(f"the operation-level audit is part of A64's audit, not {arm}'s")
+        if op_audit is not None and op_audit != oa.SCHEMA:
+            raise Refused(f"operation-level audit {op_audit!r} requested; this oracle implements {oa.SCHEMA!r}")
         if positions is not None and not family.facts["captures"]:
             raise Refused(f"site captures are not mapped for {family.name}")
         if require_threads and identity["threads"] != THREADS:
@@ -675,10 +703,10 @@ def run(*, arm: str, ckpt: Path, ids: list[int], positions: list[int] | None, ou
             tables = load_tables(table_dirs, len(ids), model.config.head_dim)
             identity["tables"] = {lt: {k: v for k, v in t.items() if k.endswith("sha256")}
                                   for lt, t in tables.items()}
-        result = forward(model, ids, arm, positions, tables, ckpt, family)
+        result = forward(model, ids, arm, positions, tables, ckpt, family, op_audit=op_audit is not None)
         if arm == "A64":
             audit = result["records"]["audit"]
-            if not (audit["pass"] and audit["parameters"]["pass"]):
+            if not (audit["pass"] and audit["parameters"]["pass"] and audit.get("operations", {}).get("pass", True)):
                 write_outputs(out_dir, {"logits": result["logits"], "planes": {}, "records": result["records"]},
                               arm, None, model)
                 return rr.fail(ev.FAULT, {"a64_audit": "failed"}, audit=audit)
@@ -703,6 +731,8 @@ def main(argv=None) -> int:
     ap.add_argument("--tables", action="append", default=[], help="LAYER_TYPE=DIR (A32r)")
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--bind-json", type=Path, help="JSON object recorded verbatim in the identity")
+    ap.add_argument("--op-audit", metavar="SCHEMA",
+                    help="A64 only: add the operation-level dtype audit (audit part 5, op_audit.py) of this schema")
     a = ap.parse_args(argv)
     if os.environ.get("OMP_NUM_THREADS") != THREADS["OMP_NUM_THREADS"]:
         print(f"refused: OMP_NUM_THREADS must be {THREADS['OMP_NUM_THREADS']} in the environment",
@@ -714,7 +744,7 @@ def main(argv=None) -> int:
     tables = dict(t.split("=", 1) for t in a.tables)
     rec = run(arm=a.arm, ckpt=a.checkpoint, ids=ids, positions=positions, out_dir=a.out,
               boundary=json.loads(a.boundary.read_text()), table_dirs={k: Path(v) for k, v in tables.items()},
-              bind=json.loads(a.bind_json.read_text()) if a.bind_json else None)
+              bind=json.loads(a.bind_json.read_text()) if a.bind_json else None, op_audit=a.op_audit)
     print(rec["status"])
     return 0 if rec["status"] == ev.COMPLETE else 1
 

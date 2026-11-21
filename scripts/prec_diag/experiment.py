@@ -26,11 +26,32 @@ Usage:
 
 `readings` runs `analysis.analyse` over every run in the three experiments.
 The V0 bridge is separate (`v0.py`).
+
+The operation-level dtype audit (A64 audit part 5, `op_audit.py`, #897) is
+mandatory for every new f64 oracle qualification. An experiment with A64
+runs (E1, E3) refuses at preflight (`op_audit_policy`) unless the freeze:
+- sets `values.a64_op_audit` to exactly the `SCHEMA` written in the
+  `op_audit.py` it binds (read with `ast`, never imported), and
+- binds `script.op_audit` and `script.op_probes`.
+Every A64 run is then made with `--op-audit SCHEMA` and carries the schema in
+its identity, so a run made without the audit is never admitted. There is no
+waiver.
+
+Freezes made before the audit existed are unaffected. They set no value, so:
+- their expected identities are unchanged (`expected_identity`);
+- `load_freeze`, `runs_and_identities` and the reports read them as before;
+- only `preflight`, which `run_experiment` alone calls, enforces the rule,
+  and it does so only for experiments with A64 runs, never for E2 or N1.
+
+This module names no schema itself and imports nothing new: the reports
+(`f64_accuracy_v2.py`) import it, and a reporting repair binds exactly the
+modules they import.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import shutil
@@ -62,6 +83,12 @@ READING_EXPERIMENTS = ("E1", "E2", "E3")
 #: The modeling file A64 patches, and the thread settings, are the oracle's own constants.
 HF_THREADS = {"torch_num_threads": 8, "torch_num_interop_threads": 1, "OMP_NUM_THREADS": "8"}
 HF_ENVIRONMENT = {"OMP_NUM_THREADS": "8"}
+#: The freeze value naming A64's operation-level audit schema, and the files a
+#: freeze that runs A64 must bind.
+OP_AUDIT_VALUE = "a64_op_audit"
+OP_AUDIT_FILES = {"script.op_audit": "op_audit.py", "script.op_probes": "op_probes.py"}
+#: The name of the schema constant in op_audit.py.
+OP_AUDIT_SCHEMA_NAME = "SCHEMA"
 #: FREEZE.json values this runner needs beyond freeze.REQUIRED_*.
 REQUIRED_VALUES = ("larql_environment", "python", "capture_positions", "resource_limits", "packages", "threads")
 
@@ -115,9 +142,59 @@ def load_freeze(path: Path, expected_sha256: str) -> dict:
     missing = [k for k in REQUIRED_VALUES if k not in manifest["values"]]
     missing += [lt for lt in rope_table_labels(manifest) if lt not in manifest["files"]]
     missing += [label for label in ("script.families",) if label not in manifest["files"]]
+    if op_audit_required(manifest):
+        missing += [label for label in OP_AUDIT_FILES if label not in manifest["files"]]
     if missing:
         raise ev.EvidenceError(f"FREEZE.json lacks what the runner needs: {missing}")
     return manifest
+
+
+def op_audit_schema(manifest: dict) -> str | None:
+    """The schema of A64's operation-level audit (part 5) the freeze names, if any."""
+    value = manifest["values"].get(OP_AUDIT_VALUE)
+    return value if isinstance(value, str) and value else None
+
+
+def op_audit_required(manifest: dict) -> bool:
+    return op_audit_schema(manifest) is not None
+
+
+def runs_a64(experiment: str) -> bool:
+    return any(r["kind"] == "hf" and r["base"] == "A64" for r in plan(experiment))
+
+
+def bound_op_audit_schema(manifest: dict) -> str | None:
+    """`SCHEMA` as written in the op_audit.py the freeze binds, parsed, not imported."""
+    tree = ast.parse(Path(manifest["files"]["script.op_audit"]["path"]).read_text())
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+                and any(isinstance(t, ast.Name) and t.id == OP_AUDIT_SCHEMA_NAME for t in node.targets)):
+            return node.value.value
+    return None
+
+
+def op_audit_policy(manifest: dict, experiment: str) -> list[str]:
+    """Why an experiment about to run may not, under the rule that every A64
+    run carries the operation-level audit. Empty for an experiment without
+    A64 runs. Readings and reports never call this."""
+    if not runs_a64(experiment):
+        return []
+    value = manifest["values"].get(OP_AUDIT_VALUE)
+    missing = [label for label in OP_AUDIT_FILES if label not in manifest["files"]]
+    problems = [f"{experiment} runs A64, and the freeze binds no {missing}"] if missing else []
+    if value is None:
+        return problems + [f"FREEZE.json sets no values.{OP_AUDIT_VALUE}: {experiment} runs A64, and every A64 "
+                           "run requires the operation-level dtype audit (op_audit.SCHEMA)"]
+    if missing:
+        return problems
+    try:
+        bound = bound_op_audit_schema(manifest)
+    except (OSError, SyntaxError, UnicodeDecodeError) as e:
+        return [f"the bound op_audit.py cannot be read: {type(e).__name__}: {e}"]
+    if value != bound:
+        problems.append(f"values.{OP_AUDIT_VALUE} = {value!r} is not the schema the bound op_audit.py "
+                        f"implements ({bound!r})")
+    return problems
 
 
 def checkpoint_config(manifest: dict) -> dict:
@@ -182,17 +259,21 @@ def expected_identity(manifest: dict, freeze_sha256: str, run: dict, experiment:
                 "environment": manifest["values"]["larql_environment"], "rope_angles": run["rope_angles"],
                 "mode": run["mode"], "capture": run["capture"]}
     positions = capture_positions_of(manifest, run) if run["capture"] else None
-    return {"tool": "hf_oracle", "arm": run["base"], "bind": bind,
-            "scripts": {"hf_oracle.py": file_sha(manifest, "script.hf_oracle"),
-                        "evidence.py": file_sha(manifest, "script.evidence"),
-                        "families.py": file_sha(manifest, "script.families"),
-                        "oracle_loading.py": file_sha(manifest, "script.oracle_loading")},
-            "checkpoint": {"config_sha256": manifest["checkpoint"]["config_json_sha256"],
-                           "safetensors": manifest["checkpoint"]["safetensors"]},
-            "input": {"ids_json_sha256": v0.ids_json_sha256(ids), "length": len(ids)},
-            "positions": positions, "modeling": modeling_identity(manifest),
-            "threads": manifest["values"]["threads"], "environment": HF_ENVIRONMENT,
-            "packages": manifest["values"]["packages"]}
+    identity = {"tool": "hf_oracle", "arm": run["base"], "bind": bind,
+             "scripts": {"hf_oracle.py": file_sha(manifest, "script.hf_oracle"),
+                         "evidence.py": file_sha(manifest, "script.evidence"),
+                         "families.py": file_sha(manifest, "script.families"),
+                         "oracle_loading.py": file_sha(manifest, "script.oracle_loading")},
+             "checkpoint": {"config_sha256": manifest["checkpoint"]["config_json_sha256"],
+                            "safetensors": manifest["checkpoint"]["safetensors"]},
+             "input": {"ids_json_sha256": v0.ids_json_sha256(ids), "length": len(ids)},
+             "positions": positions, "modeling": modeling_identity(manifest),
+             "threads": manifest["values"]["threads"], "environment": HF_ENVIRONMENT,
+             "packages": manifest["values"]["packages"]}
+    if run["base"] == "A64" and op_audit_required(manifest):
+        identity["op_audit"] = op_audit_schema(manifest)
+        identity["scripts"].update({name: file_sha(manifest, label) for label, name in OP_AUDIT_FILES.items()})
+    return identity
 
 
 # -------------------------------------------------------------- preflight
@@ -210,6 +291,7 @@ def frozen_world_problems(manifest_path: Path, freeze_sha256: str) -> list[str]:
            "script.freeze": here / "freeze.py", "script.hf_oracle": here / "hf_oracle.py",
            "script.families": here / "families.py",
            "script.oracle_loading": here.parent / "oracle_loading.py",
+           **{label: here / name for label, name in OP_AUDIT_FILES.items()},
            "script.equivalence_metrics": here.parent / "equivalence_metrics.py"}
     for label, path in own.items():
         if label in manifest["files"] and ev.sha256_file(path) != manifest["files"][label]["sha256"]:
@@ -242,6 +324,7 @@ def preflight(manifest_path: Path, freeze_sha256: str, root: Path, experiment: s
     """Before an experiment: the frozen world, plus run-once and disk."""
     problems = frozen_world_problems(manifest_path, freeze_sha256)
     manifest = json.loads(Path(manifest_path).read_bytes())
+    problems += op_audit_policy(manifest, experiment)
     family = fam.family_of(checkpoint_config(manifest))
     if any(r["capture"] for r in plan(experiment)) and not fam.FAMILIES[family]["captures"]:
         problems.append(f"{experiment} captures sites, and the oracle maps no sites for {family}")
@@ -348,6 +431,8 @@ def run_hf(manifest: dict, freeze_sha256: str, run: dict, run_dir: Path, experim
             "--out", str(run_dir), "--bind-json", str(launcher / "bind.json")]
     if run["capture"]:
         argv += ["--positions", ",".join(map(str, expected["positions"]))]
+    if run["base"] == "A64" and op_audit_required(manifest):
+        argv += ["--op-audit", op_audit_schema(manifest)]
     if run["base"] == "A32r":
         for lt in layer_types(manifest):
             argv += ["--tables", f"{lt}={Path(manifest['files'][f'rope_table.{lt}.cos']['path']).parent}"]
