@@ -40,6 +40,14 @@ report names how its runs relate to the rule:
   rewritten and is never said to have bound the corrected tooling.
 Anything else is `invalid`.
 
+A64's operation-level dtype audit (audit part 5, #897). A run made under a
+freeze that requires it carries its schema in the expected identity
+(`op_audit`); its audit.json must then hold that part, passed
+(`operations_problems`). A run's own oracle already records a failed part as
+`fault`, so this is a second reading of the same fact. An audit.json written
+before the part existed, under a freeze that does not require it, gives no
+problem here, so `v1.audit_problems` alone decides, exactly as before.
+
 Scope. The test reads E1 (A32, A64) and E2 (C, D) only (`REPORT_EXPERIMENTS`).
 E3 captures are outside it and are never looked at, so a freeze for an E1/E2
 experiment need not name capture positions.
@@ -354,6 +362,22 @@ def repair_class(manifest: dict, freeze_sha256: str, root: Path, a: dict,
 
 # ------------------------------------------------------------- evaluation
 
+def operations_problems(a64_dir: Path, expected_identity: dict | None) -> list[str]:
+    """A64 audit part 5, re-read: required by the expected identity, or
+    present, then recorded under that schema and passed. Silent for an
+    audit.json from before the part existed (no part, not required)."""
+    p = Path(a64_dir) / "audit.json"
+    if not p.is_file():
+        return []  # v1.audit_problems reports the missing file
+    ops = json.loads(p.read_text()).get("operations")
+    required = (expected_identity or {}).get("op_audit")
+    if required is not None and (ops is None or ops.get("schema") != required):
+        return [f"{p}: the freeze requires the operation-level audit {required}, and it is not recorded"]
+    if ops is not None and (ops.get("pass") is not True or ops.get("problem_count", 1) != 0):
+        return [f"{p}: operation-level dtype audit did not pass"]
+    return []
+
+
 def evaluate(runs: dict, expected: dict, vocab: int) -> dict:
     keys = [(b, i) for b in BACKENDS for i in INPUTS] + [(r, i) for r in ("A32", "A64") for i in INPUTS]
     problems = []
@@ -367,6 +391,7 @@ def evaluate(runs: dict, expected: dict, vocab: int) -> dict:
     for i in INPUTS:
         if ("A64", i) in runs:
             problems += v1.audit_problems(runs[("A64", i)])
+            problems += operations_problems(runs[("A64", i)], expected.get(("A64", i)))
     if problems:
         return {"verdict": INVALID, "problems": problems}
     acc, agr, a32acc = {b: {} for b in BACKENDS}, {b: {} for b in BACKENDS}, {}
@@ -407,6 +432,7 @@ def evaluate_control(manifest: dict, freeze_sha256: str, root: Path, experiment:
             problems.append(f"{k}: not admitted: {adm.reasons}")
     for i in INPUTS:
         problems += v1.audit_problems(runs[("A64", i)])
+        problems += operations_problems(runs[("A64", i)], expected.get(("A64", i)))
     if problems:
         return {"verdict": INVALID, "problems": problems}
     vocab = ex.vocab_of(manifest)

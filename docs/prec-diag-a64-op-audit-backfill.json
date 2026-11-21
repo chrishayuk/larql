@@ -1,0 +1,3109 @@
+{
+ "audit_schema": "larql.prec-diag-1.a64-op-audit/1",
+ "date": "2026-11-21",
+ "diagnostic": true,
+ "issue": "#897",
+ "machine": "arm64",
+ "os": "macOS-27.0.1-arm64-arm-64bit",
+ "packages": {
+  "numpy": "2.4.2",
+  "python": "3.12.2",
+  "safetensors": "0.7.0",
+  "torch": "2.14.0",
+  "transformers": "5.5.0"
+ },
+ "schema": "larql.prec-diag-1.a64-op-audit-backfill/1",
+ "statement": "Diagnostic only. No sealed verdict is changed or re-evaluated: no sealed run is read, no accuracy metric is computed, and the forwards are throwaway (at most 16 tokens; logits discarded unread).",
+ "subjects": [
+  {
+   "checkpoint": "<temporary>",
+   "control_unpatched": {
+    "floating_ops": 687,
+    "module_boundary_problems": 0,
+    "non_f64_ops": 330,
+    "non_f64_sites": [
+     {
+      "code": "return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)",
+      "ops": 250,
+      "site": "modeling_gemma3.py:139 Gemma3RMSNorm._norm"
+     },
+     {
+      "code": "output = self._norm(x.float())",
+      "ops": 50,
+      "site": "modeling_gemma3.py:142 Gemma3RMSNorm.forward"
+     },
+     {
+      "code": "output = output * (1.0 + self.weight.float())",
+      "ops": 150,
+      "site": "modeling_gemma3.py:145 Gemma3RMSNorm.forward"
+     },
+     {
+      "code": "return output.type_as(x)",
+      "ops": 25,
+      "site": "modeling_gemma3.py:146 Gemma3RMSNorm.forward"
+     },
+     {
+      "code": "inv_freq_expanded = inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1).to(x.device)",
+      "ops": 16,
+      "site": "modeling_gemma3.py:220 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "position_ids_expanded = position_ids[:, None, :].float()",
+      "ops": 8,
+      "site": "modeling_gemma3.py:221 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)",
+      "ops": 56,
+      "site": "modeling_gemma3.py:225 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "emb = torch.cat((freqs, freqs), dim=-1)",
+      "ops": 8,
+      "site": "modeling_gemma3.py:226 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "cos = emb.cos() * attention_scaling",
+      "ops": 16,
+      "site": "modeling_gemma3.py:227 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "sin = emb.sin() * attention_scaling",
+      "ops": 16,
+      "site": "modeling_gemma3.py:228 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)",
+      "ops": 8,
+      "site": "modeling_gemma3.py:230 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query.dtype)",
+      "ops": 20,
+      "site": "modeling_gemma3.py:305 eager_attention_forward"
+     }
+    ],
+    "part_5_pass": false,
+    "patches_removed": [
+     "embedding",
+     "rmsnorm",
+     "rotary",
+     "softmax"
+    ]
+   },
+   "existing_audit": {
+    "call_totals": {
+     "embedding": 1,
+     "rmsnorm": 25,
+     "rotary": 4,
+     "softmax": 4
+    },
+    "module_boundary_problems": 0,
+    "parameters_pass": true,
+    "parts_2_to_4_pass": true,
+    "problem_count": 0
+   },
+   "family": "gemma3_text",
+   "ids": [
+    2,
+    16,
+    53,
+    90,
+    127,
+    164,
+    201,
+    238,
+    275,
+    22,
+    59,
+    96,
+    133,
+    170,
+    207,
+    244,
+    281,
+    28,
+    65,
+    102,
+    139,
+    176,
+    213,
+    250
+   ],
+   "kind": "synthetic",
+   "modeling_sha256": "221f147ccc0b16d7fa0aa007231ee0a6bd40fb37feb79eb9e537290498468aef",
+   "name": "synthetic gemma3_text (test_prec_diag_hf_oracle)",
+   "operations": {
+    "cast_sites": 1,
+    "casts": [
+     {
+      "call_stack": [
+       {
+        "code": "angles = position_ids[0].to(torch.float64)[:, None] * inv_freq[None, :]",
+        "file": "hf_oracle.py",
+        "function": "a64_patches.<locals>.rot",
+        "line": 502
+       },
+       {
+        "code": "position_embeddings[layer_type] = self.rotary_emb(hidden_states, position_ids, layer_type)",
+        "file": "modeling_gemma3.py",
+        "function": "Gemma3TextModel.forward",
+        "line": 571
+       },
+       {
+        "code": "outputs = func(self, *args, **kwargs)",
+        "file": "output_capturing.py",
+        "function": "capture_outputs.<locals>.wrapped_fn.<locals>.wrapper",
+        "line": 248
+       }
+      ],
+      "count": 4,
+      "from": "torch.int64",
+      "non_f64": false,
+      "op": "aten._to_copy.default",
+      "site": "hf_oracle.py:502 a64_patches.<locals>.rot",
+      "to": "torch.float64"
+     }
+    ],
+    "environment": {
+     "blas": "unknown",
+     "threads": 8,
+     "torch": "2.14.0"
+    },
+    "floating_ops": 708,
+    "non_f64_ops": 0,
+    "op_counts": {
+     "aten._softmax.default": 4,
+     "aten._to_copy.default": 4,
+     "aten._unsafe_view.default": 37,
+     "aten.add.Tensor": 70,
+     "aten.alias.default": 1,
+     "aten.arange.start_step": 4,
+     "aten.bmm.default": 8,
+     "aten.cat.default": 12,
+     "aten.clone.default": 4,
+     "aten.cos.default": 4,
+     "aten.detach.default": 118,
+     "aten.div.Tensor": 4,
+     "aten.embedding.default": 1,
+     "aten.expand.default": 24,
+     "aten.gelu.default": 4,
+     "aten.lift_fresh.default": 3,
+     "aten.mean.dim": 25,
+     "aten.mm.default": 29,
+     "aten.mul.Tensor": 83,
+     "aten.neg.default": 8,
+     "aten.pow.Scalar": 4,
+     "aten.pow.Tensor_Scalar": 25,
+     "aten.reciprocal.default": 4,
+     "aten.rsqrt.default": 25,
+     "aten.scalar_tensor.default": 2,
+     "aten.select.int": 13,
+     "aten.sin.default": 4,
+     "aten.slice.Tensor": 20,
+     "aten.t.default": 29,
+     "aten.transpose.int": 28,
+     "aten.unsqueeze.default": 28,
+     "aten.view.default": 77,
+     "aten.where.self": 2
+    },
+    "ops_by_class": {
+     "accumulating": 66,
+     "basic_arithmetic": 169,
+     "elementwise": 66,
+     "exact": 407
+    },
+    "ops_traced": 793,
+    "pass": true,
+    "probes": [
+     {
+      "bound": 1e-12,
+      "class": "accumulating",
+      "comparison": "relative",
+      "error": 0.0,
+      "f32_counterfactual_error": 9.750947551770755e-07,
+      "layout_reproduced": true,
+      "op": "aten._softmax.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 24,
+      "signature": {
+       "dim": -1,
+       "x": [
+        [
+         1,
+         2,
+         24,
+         24
+        ],
+        [
+         1152,
+         576,
+         24,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 4.732177059096898e-07,
+      "op": "aten.add.Tensor",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 6.8833827526759706e-15,
+      "layout_reproduced": false,
+      "op": "aten.bmm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 32,
+      "signature": {
+       "a": [
+        [
+         2,
+         24,
+         32
+        ],
+        [
+         32,
+         64,
+         1
+        ]
+       ],
+       "b": [
+        [
+         2,
+         32,
+         24
+        ],
+        [
+         0,
+         1,
+         32
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 5.10702591327572e-15,
+      "layout_reproduced": false,
+      "op": "aten.bmm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 24,
+      "signature": {
+       "a": [
+        [
+         2,
+         24,
+         24
+        ],
+        [
+         576,
+         24,
+         1
+        ]
+       ],
+       "b": [
+        [
+         2,
+         24,
+         32
+        ],
+        [
+         0,
+         32,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "mixed",
+      "error": 1.1102230246251565e-16,
+      "f32_counterfactual_error": 0.00012141299540856243,
+      "op": "aten.cos.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 9.096925782614562e-05,
+      "op": "aten.div.Tensor",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "mixed",
+      "error": 2.2041830166630305e-16,
+      "f32_counterfactual_error": 1.5411372041282746e-07,
+      "op": "aten.gelu.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {
+       "approximate": "tanh"
+      },
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.8626429565404834e-10,
+      "layout_reproduced": true,
+      "op": "aten.mean.dim",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 80,
+      "signature": {
+       "dim": [
+        -1
+       ],
+       "keepdim": true,
+       "x": [
+        [
+         1,
+         24,
+         80
+        ],
+        [
+         1920,
+         80,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.1510571102112408e-16,
+      "layout_reproduced": true,
+      "op": "aten.mean.dim",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 32,
+      "signature": {
+       "dim": [
+        -1
+       ],
+       "keepdim": true,
+       "x": [
+        [
+         1,
+         2,
+         24,
+         32
+        ],
+        [
+         1536,
+         32,
+         64,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.1510571102112408e-16,
+      "layout_reproduced": true,
+      "op": "aten.mean.dim",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 32,
+      "signature": {
+       "dim": [
+        -1
+       ],
+       "keepdim": true,
+       "x": [
+        [
+         1,
+         1,
+         24,
+         32
+        ],
+        [
+         768,
+         768,
+         32,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.7541523789077473e-14,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 80,
+      "signature": {
+       "a": [
+        [
+         24,
+         80
+        ],
+        [
+         80,
+         1
+        ]
+       ],
+       "b": [
+        [
+         80,
+         64
+        ],
+        [
+         1,
+         80
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.7541523789077473e-14,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 80,
+      "signature": {
+       "a": [
+        [
+         24,
+         80
+        ],
+        [
+         80,
+         1
+        ]
+       ],
+       "b": [
+        [
+         80,
+         32
+        ],
+        [
+         1,
+         80
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.3988810110276972e-14,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 64,
+      "signature": {
+       "a": [
+        [
+         24,
+         64
+        ],
+        [
+         64,
+         1
+        ]
+       ],
+       "b": [
+        [
+         64,
+         80
+        ],
+        [
+         1,
+         64
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.7541523789077473e-14,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 80,
+      "signature": {
+       "a": [
+        [
+         24,
+         80
+        ],
+        [
+         80,
+         1
+        ]
+       ],
+       "b": [
+        [
+         80,
+         96
+        ],
+        [
+         1,
+         80
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.1094237467877974e-14,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 96,
+      "signature": {
+       "a": [
+        [
+         24,
+         96
+        ],
+        [
+         96,
+         1
+        ]
+       ],
+       "b": [
+        [
+         96,
+         80
+        ],
+        [
+         1,
+         96
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.7541523789077473e-14,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 80,
+      "signature": {
+       "a": [
+        [
+         24,
+         80
+        ],
+        [
+         80,
+         1
+        ]
+       ],
+       "b": [
+        [
+         80,
+         300
+        ],
+        [
+         1,
+         80
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.1624123743558812e-06,
+      "op": "aten.mul.Tensor",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.1904007646279524e-07,
+      "op": "aten.neg.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 2.0841300435571533e-16,
+      "f32_counterfactual_error": 3.1717929890127353e-07,
+      "op": "aten.pow.Scalar",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {
+       "base": 10000.0
+      },
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 2.1109516822708242e-16,
+      "f32_counterfactual_error": 4.470631667412199e-07,
+      "op": "aten.pow.Scalar",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {
+       "base": 1000000.0
+      },
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 1.9173745329607644e-16,
+      "f32_counterfactual_error": 1.667059936045557e-07,
+      "op": "aten.pow.Tensor_Scalar",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {
+       "exponent": 2.0
+      },
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 0.0001011114586617623,
+      "op": "aten.reciprocal.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.0166619836946932e-07,
+      "op": "aten.rsqrt.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "mixed",
+      "error": 1.1102230246251565e-16,
+      "f32_counterfactual_error": 0.0001206728512435154,
+      "op": "aten.sin.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     }
+    ],
+    "probes_run": 24,
+    "problem_count": 0,
+    "problems": [],
+    "schema": "larql.prec-diag-1.a64-op-audit/1",
+    "unclassified": {},
+    "violation_sites": 0,
+    "violations": [],
+    "visibility": {
+     "does_not_see": [
+      "arithmetic inside one kernel (accumulators, internal temporaries of mm, mean, _softmax, cumsum, cumprod): measured instead by the kernel probes, after the forward, at every distinct shape and stride the forward used, on the same backend and threads",
+      "elementwise kernels at shapes other than the probe vector: elementwise probes run once per scalar variant on a fixed-length contiguous vector",
+      "computation outside torch (numpy, Python math): in the oracle these are the patched functions' float64 numpy witnesses and config scalars",
+      "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint",
+      "a float64 tensor holding a value already rounded to float32: dtype is not precision. Gemma 3's embed_scale buffer is built as a float32 tensor and widened by .to(float64), so it is float64 holding sqrt(hidden) rounded to float32; only the patched-function witness (part 3) sees it",
+      "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops"
+     ],
+     "sees": [
+      "every ATen op dispatched during the A64 forward, after autograd and CompositeImplicitAutograd decomposition (F.linear appears as t + mm, a matmul as mm/bmm, softmax(dtype=) as _to_copy + _softmax)",
+      "the dtype of every tensor each op reads, returns or writes (in-place and out= targets, from the op schema), and every floating dtype= argument",
+      "every dtype conversion, with the Python call site that issued it, so a cast that is undone later still appears at both ends",
+      "tensors created inside the forward in the default dtype (float32), e.g. torch.tensor(x) or torch.zeros(n)"
+     ]
+    },
+    "writes": {}
+   },
+   "revision": null,
+   "tokens": 24
+  },
+  {
+   "checkpoint": "<temporary>",
+   "control_unpatched": {
+    "floating_ops": 399,
+    "module_boundary_problems": 0,
+    "non_f64_ops": 117,
+    "non_f64_sites": [
+     {
+      "code": "inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1).to(x.device)",
+      "ops": 4,
+      "site": "modeling_qwen3.py:138 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "position_ids_expanded = position_ids[:, None, :].float()",
+      "ops": 2,
+      "site": "modeling_qwen3.py:139 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)",
+      "ops": 14,
+      "site": "modeling_qwen3.py:143 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "emb = torch.cat((freqs, freqs), dim=-1)",
+      "ops": 2,
+      "site": "modeling_qwen3.py:144 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "cos = emb.cos() * self.attention_scaling",
+      "ops": 4,
+      "site": "modeling_qwen3.py:145 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "sin = emb.sin() * self.attention_scaling",
+      "ops": 4,
+      "site": "modeling_qwen3.py:146 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)",
+      "ops": 2,
+      "site": "modeling_qwen3.py:148 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query.dtype)",
+      "ops": 15,
+      "site": "modeling_qwen3.py:213 eager_attention_forward"
+     },
+     {
+      "code": "hidden_states = hidden_states.to(torch.float32)",
+      "ops": 26,
+      "site": "modeling_qwen3.py:61 Qwen3RMSNorm.forward"
+     },
+     {
+      "code": "variance = hidden_states.pow(2).mean(-1, keepdim=True)",
+      "ops": 52,
+      "site": "modeling_qwen3.py:62 Qwen3RMSNorm.forward"
+     },
+     {
+      "code": "hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)",
+      "ops": 78,
+      "site": "modeling_qwen3.py:63 Qwen3RMSNorm.forward"
+     },
+     {
+      "code": "return self.weight * hidden_states.to(input_dtype)",
+      "ops": 13,
+      "site": "modeling_qwen3.py:64 Qwen3RMSNorm.forward"
+     }
+    ],
+    "part_5_pass": false,
+    "patches_removed": [
+     "rmsnorm",
+     "rotary",
+     "softmax"
+    ]
+   },
+   "existing_audit": {
+    "call_totals": {
+     "rmsnorm": 13,
+     "rotary": 1,
+     "softmax": 3
+    },
+    "module_boundary_problems": 0,
+    "parameters_pass": true,
+    "parts_2_to_4_pass": true,
+    "problem_count": 0
+   },
+   "family": "qwen3",
+   "ids": [
+    16,
+    53,
+    90,
+    127,
+    164,
+    201,
+    238,
+    275,
+    22,
+    59,
+    96,
+    133,
+    170,
+    207,
+    244,
+    281,
+    28,
+    65,
+    102,
+    139,
+    176,
+    213,
+    250,
+    287
+   ],
+   "kind": "synthetic",
+   "modeling_sha256": "fbdcfeeb1b54135ca67ba7df924da92f4b264e1252b517eea2de989289ebaeab",
+   "name": "synthetic qwen3 (test_prec_diag_hf_oracle_qwen3)",
+   "operations": {
+    "cast_sites": 1,
+    "casts": [
+     {
+      "call_stack": [
+       {
+        "code": "angles = position_ids[0].to(torch.float64)[:, None] * inv_freq[None, :]",
+        "file": "hf_oracle.py",
+        "function": "a64_patches.<locals>.rot",
+        "line": 502
+       },
+       {
+        "code": "position_embeddings = self.rotary_emb(hidden_states, position_ids)",
+        "file": "modeling_qwen3.py",
+        "function": "Qwen3Model.forward",
+        "line": 421
+       },
+       {
+        "code": "outputs = func(self, *args, **kwargs)",
+        "file": "output_capturing.py",
+        "function": "capture_outputs.<locals>.wrapped_fn.<locals>.wrapper",
+        "line": 248
+       }
+      ],
+      "count": 1,
+      "from": "torch.int64",
+      "non_f64": false,
+      "op": "aten._to_copy.default",
+      "site": "hf_oracle.py:502 a64_patches.<locals>.rot",
+      "to": "torch.float64"
+     }
+    ],
+    "environment": {
+     "blas": "unknown",
+     "threads": 8,
+     "torch": "2.14.0"
+    },
+    "floating_ops": 441,
+    "non_f64_ops": 0,
+    "op_counts": {
+     "aten._softmax.default": 3,
+     "aten._to_copy.default": 1,
+     "aten._unsafe_view.default": 34,
+     "aten.add.Tensor": 41,
+     "aten.alias.default": 1,
+     "aten.arange.start_step": 1,
+     "aten.bmm.default": 6,
+     "aten.cat.default": 7,
+     "aten.clone.default": 9,
+     "aten.cos.default": 1,
+     "aten.detach.default": 64,
+     "aten.div.Tensor": 1,
+     "aten.embedding.default": 1,
+     "aten.expand.default": 18,
+     "aten.lift_fresh.default": 1,
+     "aten.mean.dim": 13,
+     "aten.mm.default": 22,
+     "aten.mul.Tensor": 46,
+     "aten.neg.default": 6,
+     "aten.pow.Scalar": 1,
+     "aten.pow.Tensor_Scalar": 13,
+     "aten.reciprocal.default": 1,
+     "aten.rsqrt.default": 13,
+     "aten.scalar_tensor.default": 1,
+     "aten.select.int": 8,
+     "aten.silu.default": 3,
+     "aten.sin.default": 1,
+     "aten.slice.Tensor": 13,
+     "aten.t.default": 22,
+     "aten.transpose.int": 21,
+     "aten.unsqueeze.default": 15,
+     "aten.view.default": 52,
+     "aten.where.self": 1
+    },
+    "ops_by_class": {
+     "accumulating": 44,
+     "basic_arithmetic": 95,
+     "elementwise": 32,
+     "exact": 270
+    },
+    "ops_traced": 480,
+    "pass": true,
+    "probes": [
+     {
+      "bound": 1e-12,
+      "class": "accumulating",
+      "comparison": "relative",
+      "error": 0.0,
+      "f32_counterfactual_error": 9.750947551770755e-07,
+      "layout_reproduced": true,
+      "op": "aten._softmax.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 24,
+      "signature": {
+       "dim": -1,
+       "x": [
+        [
+         1,
+         4,
+         24,
+         24
+        ],
+        [
+         2304,
+         576,
+         24,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 4.732177059096898e-07,
+      "op": "aten.add.Tensor",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 6.8833827526759706e-15,
+      "layout_reproduced": true,
+      "op": "aten.bmm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 32,
+      "signature": {
+       "a": [
+        [
+         4,
+         24,
+         32
+        ],
+        [
+         32,
+         128,
+         1
+        ]
+       ],
+       "b": [
+        [
+         4,
+         32,
+         24
+        ],
+        [
+         768,
+         1,
+         32
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 5.10702591327572e-15,
+      "layout_reproduced": true,
+      "op": "aten.bmm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 24,
+      "signature": {
+       "a": [
+        [
+         4,
+         24,
+         24
+        ],
+        [
+         576,
+         24,
+         1
+        ]
+       ],
+       "b": [
+        [
+         4,
+         24,
+         32
+        ],
+        [
+         768,
+         32,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "mixed",
+      "error": 1.1102230246251565e-16,
+      "f32_counterfactual_error": 0.00012141299540856243,
+      "op": "aten.cos.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 9.096925782614562e-05,
+      "op": "aten.div.Tensor",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.185751579730777e-16,
+      "layout_reproduced": true,
+      "op": "aten.mean.dim",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 64,
+      "signature": {
+       "dim": [
+        -1
+       ],
+       "keepdim": true,
+       "x": [
+        [
+         1,
+         24,
+         64
+        ],
+        [
+         1536,
+         64,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.1510571102112408e-16,
+      "layout_reproduced": true,
+      "op": "aten.mean.dim",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 32,
+      "signature": {
+       "dim": [
+        -1
+       ],
+       "keepdim": true,
+       "x": [
+        [
+         1,
+         24,
+         4,
+         32
+        ],
+        [
+         3072,
+         128,
+         32,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.1510571102112408e-16,
+      "layout_reproduced": true,
+      "op": "aten.mean.dim",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 32,
+      "signature": {
+       "dim": [
+        -1
+       ],
+       "keepdim": true,
+       "x": [
+        [
+         1,
+         24,
+         2,
+         32
+        ],
+        [
+         1536,
+         64,
+         32,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.3988810110276972e-14,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 64,
+      "signature": {
+       "a": [
+        [
+         24,
+         64
+        ],
+        [
+         64,
+         1
+        ]
+       ],
+       "b": [
+        [
+         64,
+         128
+        ],
+        [
+         1,
+         64
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.3988810110276972e-14,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 64,
+      "signature": {
+       "a": [
+        [
+         24,
+         64
+        ],
+        [
+         64,
+         1
+        ]
+       ],
+       "b": [
+        [
+         64,
+         64
+        ],
+        [
+         1,
+         64
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.8199664825478976e-14,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 128,
+      "signature": {
+       "a": [
+        [
+         24,
+         128
+        ],
+        [
+         128,
+         1
+        ]
+       ],
+       "b": [
+        [
+         128,
+         64
+        ],
+        [
+         1,
+         128
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.3988810110276972e-14,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 64,
+      "signature": {
+       "a": [
+        [
+         24,
+         64
+        ],
+        [
+         64,
+         1
+        ]
+       ],
+       "b": [
+        [
+         64,
+         96
+        ],
+        [
+         1,
+         64
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.1094237467877974e-14,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 96,
+      "signature": {
+       "a": [
+        [
+         24,
+         96
+        ],
+        [
+         96,
+         1
+        ]
+       ],
+       "b": [
+        [
+         96,
+         64
+        ],
+        [
+         1,
+         96
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.3988810110276972e-14,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 64,
+      "signature": {
+       "a": [
+        [
+         24,
+         64
+        ],
+        [
+         64,
+         1
+        ]
+       ],
+       "b": [
+        [
+         64,
+         300
+        ],
+        [
+         1,
+         64
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.1624123743558812e-06,
+      "op": "aten.mul.Tensor",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.1904007646279524e-07,
+      "op": "aten.neg.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 2.1109516822708242e-16,
+      "f32_counterfactual_error": 4.470631667412199e-07,
+      "op": "aten.pow.Scalar",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {
+       "base": 1000000.0
+      },
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 1.9173745329607644e-16,
+      "f32_counterfactual_error": 1.667059936045557e-07,
+      "op": "aten.pow.Tensor_Scalar",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {
+       "exponent": 2.0
+      },
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 0.0001011114586617623,
+      "op": "aten.reciprocal.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.0166619836946932e-07,
+      "op": "aten.rsqrt.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "mixed",
+      "error": 2.597796577926198e-16,
+      "f32_counterfactual_error": 1.4295600100957658e-07,
+      "op": "aten.silu.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "mixed",
+      "error": 1.1102230246251565e-16,
+      "f32_counterfactual_error": 0.0001206728512435154,
+      "op": "aten.sin.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     }
+    ],
+    "probes_run": 23,
+    "problem_count": 0,
+    "problems": [],
+    "schema": "larql.prec-diag-1.a64-op-audit/1",
+    "unclassified": {},
+    "violation_sites": 0,
+    "violations": [],
+    "visibility": {
+     "does_not_see": [
+      "arithmetic inside one kernel (accumulators, internal temporaries of mm, mean, _softmax, cumsum, cumprod): measured instead by the kernel probes, after the forward, at every distinct shape and stride the forward used, on the same backend and threads",
+      "elementwise kernels at shapes other than the probe vector: elementwise probes run once per scalar variant on a fixed-length contiguous vector",
+      "computation outside torch (numpy, Python math): in the oracle these are the patched functions' float64 numpy witnesses and config scalars",
+      "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint",
+      "a float64 tensor holding a value already rounded to float32: dtype is not precision. Gemma 3's embed_scale buffer is built as a float32 tensor and widened by .to(float64), so it is float64 holding sqrt(hidden) rounded to float32; only the patched-function witness (part 3) sees it",
+      "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops"
+     ],
+     "sees": [
+      "every ATen op dispatched during the A64 forward, after autograd and CompositeImplicitAutograd decomposition (F.linear appears as t + mm, a matmul as mm/bmm, softmax(dtype=) as _to_copy + _softmax)",
+      "the dtype of every tensor each op reads, returns or writes (in-place and out= targets, from the op schema), and every floating dtype= argument",
+      "every dtype conversion, with the Python call site that issued it, so a cast that is undone later still appears at both ends",
+      "tensors created inside the forward in the default dtype (float32), e.g. torch.tensor(x) or torch.zeros(n)"
+     ]
+    },
+    "writes": {}
+   },
+   "revision": null,
+   "tokens": 24
+  },
+  {
+   "checkpoint": "~/.cache/huggingface/hub/models--google--gemma-3-270m-it/snapshots/ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+   "control_unpatched": {
+    "floating_ops": 3011,
+    "module_boundary_problems": 0,
+    "non_f64_ops": 1450,
+    "non_f64_sites": [
+     {
+      "code": "return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)",
+      "ops": 1090,
+      "site": "modeling_gemma3.py:139 Gemma3RMSNorm._norm"
+     },
+     {
+      "code": "output = self._norm(x.float())",
+      "ops": 218,
+      "site": "modeling_gemma3.py:142 Gemma3RMSNorm.forward"
+     },
+     {
+      "code": "output = output * (1.0 + self.weight.float())",
+      "ops": 654,
+      "site": "modeling_gemma3.py:145 Gemma3RMSNorm.forward"
+     },
+     {
+      "code": "return output.type_as(x)",
+      "ops": 109,
+      "site": "modeling_gemma3.py:146 Gemma3RMSNorm.forward"
+     },
+     {
+      "code": "inv_freq_expanded = inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1).to(x.device)",
+      "ops": 72,
+      "site": "modeling_gemma3.py:220 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "position_ids_expanded = position_ids[:, None, :].float()",
+      "ops": 36,
+      "site": "modeling_gemma3.py:221 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)",
+      "ops": 252,
+      "site": "modeling_gemma3.py:225 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "emb = torch.cat((freqs, freqs), dim=-1)",
+      "ops": 36,
+      "site": "modeling_gemma3.py:226 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "cos = emb.cos() * attention_scaling",
+      "ops": 72,
+      "site": "modeling_gemma3.py:227 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "sin = emb.sin() * attention_scaling",
+      "ops": 72,
+      "site": "modeling_gemma3.py:228 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)",
+      "ops": 36,
+      "site": "modeling_gemma3.py:230 Gemma3RotaryEmbedding.forward"
+     },
+     {
+      "code": "attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query.dtype)",
+      "ops": 90,
+      "site": "modeling_gemma3.py:305 eager_attention_forward"
+     }
+    ],
+    "part_5_pass": false,
+    "patches_removed": [
+     "embedding",
+     "rmsnorm",
+     "rotary",
+     "softmax"
+    ]
+   },
+   "existing_audit": {
+    "call_totals": {
+     "embedding": 1,
+     "rmsnorm": 109,
+     "rotary": 18,
+     "softmax": 18
+    },
+    "module_boundary_problems": 0,
+    "parameters_pass": true,
+    "parts_2_to_4_pass": true,
+    "problem_count": 0
+   },
+   "family": "gemma3_text",
+   "ids": [
+    2,
+    818,
+    3823,
+    8864,
+    37423,
+    38167,
+    1024,
+    506,
+    31770,
+    4799,
+    3541,
+    506,
+    8858,
+    4856,
+    236761
+   ],
+   "kind": "real",
+   "modeling_sha256": "221f147ccc0b16d7fa0aa007231ee0a6bd40fb37feb79eb9e537290498468aef",
+   "name": "google/gemma-3-270m-it",
+   "operations": {
+    "cast_sites": 1,
+    "casts": [
+     {
+      "call_stack": [
+       {
+        "code": "angles = position_ids[0].to(torch.float64)[:, None] * inv_freq[None, :]",
+        "file": "hf_oracle.py",
+        "function": "a64_patches.<locals>.rot",
+        "line": 502
+       },
+       {
+        "code": "position_embeddings[layer_type] = self.rotary_emb(hidden_states, position_ids, layer_type)",
+        "file": "modeling_gemma3.py",
+        "function": "Gemma3TextModel.forward",
+        "line": 571
+       },
+       {
+        "code": "outputs = func(self, *args, **kwargs)",
+        "file": "output_capturing.py",
+        "function": "capture_outputs.<locals>.wrapped_fn.<locals>.wrapper",
+        "line": 248
+       }
+      ],
+      "count": 18,
+      "from": "torch.int64",
+      "non_f64": false,
+      "op": "aten._to_copy.default",
+      "site": "hf_oracle.py:502 a64_patches.<locals>.rot",
+      "to": "torch.float64"
+     }
+    ],
+    "environment": {
+     "blas": "unknown",
+     "threads": 8,
+     "torch": "2.14.0"
+    },
+    "floating_ops": 3060,
+    "non_f64_ops": 0,
+    "op_counts": {
+     "aten._softmax.default": 18,
+     "aten._to_copy.default": 18,
+     "aten._unsafe_view.default": 163,
+     "aten.add.Tensor": 308,
+     "aten.alias.default": 1,
+     "aten.arange.start_step": 18,
+     "aten.bmm.default": 36,
+     "aten.cat.default": 54,
+     "aten.clone.default": 18,
+     "aten.cos.default": 18,
+     "aten.detach.default": 482,
+     "aten.div.Tensor": 18,
+     "aten.embedding.default": 1,
+     "aten.expand.default": 108,
+     "aten.gelu.default": 18,
+     "aten.lift_fresh.default": 3,
+     "aten.mean.dim": 109,
+     "aten.mm.default": 127,
+     "aten.mul.Tensor": 363,
+     "aten.neg.default": 36,
+     "aten.pow.Scalar": 18,
+     "aten.pow.Tensor_Scalar": 109,
+     "aten.reciprocal.default": 18,
+     "aten.rsqrt.default": 109,
+     "aten.scalar_tensor.default": 2,
+     "aten.select.int": 55,
+     "aten.sin.default": 18,
+     "aten.slice.Tensor": 90,
+     "aten.t.default": 127,
+     "aten.transpose.int": 126,
+     "aten.unsqueeze.default": 126,
+     "aten.view.default": 343,
+     "aten.where.self": 2
+    },
+    "ops_by_class": {
+     "accumulating": 290,
+     "basic_arithmetic": 743,
+     "elementwise": 290,
+     "exact": 1737
+    },
+    "ops_traced": 3187,
+    "pass": true,
+    "probes": [
+     {
+      "bound": 1e-12,
+      "class": "accumulating",
+      "comparison": "relative",
+      "error": 0.0,
+      "f32_counterfactual_error": 9.667128439451436e-07,
+      "layout_reproduced": true,
+      "op": "aten._softmax.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 15,
+      "signature": {
+       "dim": -1,
+       "x": [
+        [
+         1,
+         4,
+         15,
+         15
+        ],
+        [
+         900,
+         225,
+         15,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 4.732177059096898e-07,
+      "op": "aten.add.Tensor",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 5.6621374255882984e-14,
+      "layout_reproduced": false,
+      "op": "aten.bmm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 256,
+      "signature": {
+       "a": [
+        [
+         4,
+         15,
+         256
+        ],
+        [
+         256,
+         1024,
+         1
+        ]
+       ],
+       "b": [
+        [
+         4,
+         256,
+         15
+        ],
+        [
+         0,
+         1,
+         256
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 3.1086244689504383e-15,
+      "layout_reproduced": false,
+      "op": "aten.bmm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 15,
+      "signature": {
+       "a": [
+        [
+         4,
+         15,
+         15
+        ],
+        [
+         225,
+         15,
+         1
+        ]
+       ],
+       "b": [
+        [
+         4,
+         15,
+         256
+        ],
+        [
+         0,
+         256,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "mixed",
+      "error": 1.1102230246251565e-16,
+      "f32_counterfactual_error": 0.00012141299540856243,
+      "op": "aten.cos.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 9.096925782614562e-05,
+      "op": "aten.div.Tensor",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "mixed",
+      "error": 2.2041830166630305e-16,
+      "f32_counterfactual_error": 1.5411372041282746e-07,
+      "op": "aten.gelu.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {
+       "approximate": "tanh"
+      },
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.3282842667726733e-11,
+      "layout_reproduced": true,
+      "op": "aten.mean.dim",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 640,
+      "signature": {
+       "dim": [
+        -1
+       ],
+       "keepdim": true,
+       "x": [
+        [
+         1,
+         15,
+         640
+        ],
+        [
+         9600,
+         640,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.211772431870429e-16,
+      "layout_reproduced": true,
+      "op": "aten.mean.dim",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 256,
+      "signature": {
+       "dim": [
+        -1
+       ],
+       "keepdim": true,
+       "x": [
+        [
+         1,
+         4,
+         15,
+         256
+        ],
+        [
+         15360,
+         256,
+         1024,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.211772431870429e-16,
+      "layout_reproduced": true,
+      "op": "aten.mean.dim",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 256,
+      "signature": {
+       "dim": [
+        -1
+       ],
+       "keepdim": true,
+       "x": [
+        [
+         1,
+         1,
+         15,
+         256
+        ],
+        [
+         3840,
+         3840,
+         256,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.41886502547095e-13,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 640,
+      "signature": {
+       "a": [
+        [
+         15,
+         640
+        ],
+        [
+         640,
+         1
+        ]
+       ],
+       "b": [
+        [
+         640,
+         1024
+        ],
+        [
+         1,
+         640
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.41886502547095e-13,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 640,
+      "signature": {
+       "a": [
+        [
+         15,
+         640
+        ],
+        [
+         640,
+         1
+        ]
+       ],
+       "b": [
+        [
+         640,
+         256
+        ],
+        [
+         1,
+         640
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.2715163083830703e-13,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 1024,
+      "signature": {
+       "a": [
+        [
+         15,
+         1024
+        ],
+        [
+         1024,
+         1
+        ]
+       ],
+       "b": [
+        [
+         1024,
+         640
+        ],
+        [
+         1,
+         1024
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.41886502547095e-13,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 640,
+      "signature": {
+       "a": [
+        [
+         15,
+         640
+        ],
+        [
+         640,
+         1
+        ]
+       ],
+       "b": [
+        [
+         640,
+         2048
+        ],
+        [
+         1,
+         640
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 4.545253062815391e-13,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 2048,
+      "signature": {
+       "a": [
+        [
+         15,
+         2048
+        ],
+        [
+         2048,
+         1
+        ]
+       ],
+       "b": [
+        [
+         2048,
+         640
+        ],
+        [
+         1,
+         2048
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.41886502547095e-13,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 640,
+      "signature": {
+       "a": [
+        [
+         15,
+         640
+        ],
+        [
+         640,
+         1
+        ]
+       ],
+       "b": [
+        [
+         640,
+         262144
+        ],
+        [
+         1,
+         640
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.1624123743558812e-06,
+      "op": "aten.mul.Tensor",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.1904007646279524e-07,
+      "op": "aten.neg.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 2.0841300435571533e-16,
+      "f32_counterfactual_error": 3.1717929890127353e-07,
+      "op": "aten.pow.Scalar",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {
+       "base": 10000.0
+      },
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 2.1109516822708242e-16,
+      "f32_counterfactual_error": 4.470631667412199e-07,
+      "op": "aten.pow.Scalar",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {
+       "base": 1000000.0
+      },
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 1.9173745329607644e-16,
+      "f32_counterfactual_error": 1.667059936045557e-07,
+      "op": "aten.pow.Tensor_Scalar",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {
+       "exponent": 2.0
+      },
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 0.0001011114586617623,
+      "op": "aten.reciprocal.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.0166619836946932e-07,
+      "op": "aten.rsqrt.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "mixed",
+      "error": 1.1102230246251565e-16,
+      "f32_counterfactual_error": 0.0001206728512435154,
+      "op": "aten.sin.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     }
+    ],
+    "probes_run": 24,
+    "problem_count": 0,
+    "problems": [],
+    "schema": "larql.prec-diag-1.a64-op-audit/1",
+    "unclassified": {},
+    "violation_sites": 0,
+    "violations": [],
+    "visibility": {
+     "does_not_see": [
+      "arithmetic inside one kernel (accumulators, internal temporaries of mm, mean, _softmax, cumsum, cumprod): measured instead by the kernel probes, after the forward, at every distinct shape and stride the forward used, on the same backend and threads",
+      "elementwise kernels at shapes other than the probe vector: elementwise probes run once per scalar variant on a fixed-length contiguous vector",
+      "computation outside torch (numpy, Python math): in the oracle these are the patched functions' float64 numpy witnesses and config scalars",
+      "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint",
+      "a float64 tensor holding a value already rounded to float32: dtype is not precision. Gemma 3's embed_scale buffer is built as a float32 tensor and widened by .to(float64), so it is float64 holding sqrt(hidden) rounded to float32; only the patched-function witness (part 3) sees it",
+      "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops"
+     ],
+     "sees": [
+      "every ATen op dispatched during the A64 forward, after autograd and CompositeImplicitAutograd decomposition (F.linear appears as t + mm, a matmul as mm/bmm, softmax(dtype=) as _to_copy + _softmax)",
+      "the dtype of every tensor each op reads, returns or writes (in-place and out= targets, from the op schema), and every floating dtype= argument",
+      "every dtype conversion, with the Python call site that issued it, so a cast that is undone later still appears at both ends",
+      "tensors created inside the forward in the default dtype (float32), e.g. torch.tensor(x) or torch.zeros(n)"
+     ]
+    },
+    "writes": {}
+   },
+   "revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+   "tokens": 15
+  },
+  {
+   "checkpoint": "~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/c1899de289a04d12100db370d81485cdf75e47ca",
+   "control_unpatched": {
+    "floating_ops": 3424,
+    "module_boundary_problems": 0,
+    "non_f64_ops": 892,
+    "non_f64_sites": [
+     {
+      "code": "inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1).to(x.device)",
+      "ops": 4,
+      "site": "modeling_qwen3.py:138 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "position_ids_expanded = position_ids[:, None, :].float()",
+      "ops": 2,
+      "site": "modeling_qwen3.py:139 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)",
+      "ops": 14,
+      "site": "modeling_qwen3.py:143 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "emb = torch.cat((freqs, freqs), dim=-1)",
+      "ops": 2,
+      "site": "modeling_qwen3.py:144 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "cos = emb.cos() * self.attention_scaling",
+      "ops": 4,
+      "site": "modeling_qwen3.py:145 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "sin = emb.sin() * self.attention_scaling",
+      "ops": 4,
+      "site": "modeling_qwen3.py:146 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)",
+      "ops": 2,
+      "site": "modeling_qwen3.py:148 Qwen3RotaryEmbedding.forward"
+     },
+     {
+      "code": "attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query.dtype)",
+      "ops": 140,
+      "site": "modeling_qwen3.py:213 eager_attention_forward"
+     },
+     {
+      "code": "hidden_states = hidden_states.to(torch.float32)",
+      "ops": 226,
+      "site": "modeling_qwen3.py:61 Qwen3RMSNorm.forward"
+     },
+     {
+      "code": "variance = hidden_states.pow(2).mean(-1, keepdim=True)",
+      "ops": 452,
+      "site": "modeling_qwen3.py:62 Qwen3RMSNorm.forward"
+     },
+     {
+      "code": "hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)",
+      "ops": 678,
+      "site": "modeling_qwen3.py:63 Qwen3RMSNorm.forward"
+     },
+     {
+      "code": "return self.weight * hidden_states.to(input_dtype)",
+      "ops": 113,
+      "site": "modeling_qwen3.py:64 Qwen3RMSNorm.forward"
+     }
+    ],
+    "part_5_pass": false,
+    "patches_removed": [
+     "rmsnorm",
+     "rotary",
+     "softmax"
+    ]
+   },
+   "existing_audit": {
+    "call_totals": {
+     "rmsnorm": 113,
+     "rotary": 1,
+     "softmax": 28
+    },
+    "module_boundary_problems": 0,
+    "parameters_pass": true,
+    "parts_2_to_4_pass": true,
+    "problem_count": 0
+   },
+   "family": "qwen3",
+   "ids": [
+    785,
+    3974,
+    13876,
+    38835,
+    34208,
+    916,
+    279,
+    15678,
+    5562,
+    3143,
+    279,
+    14796,
+    6073,
+    13
+   ],
+   "kind": "real",
+   "modeling_sha256": "fbdcfeeb1b54135ca67ba7df924da92f4b264e1252b517eea2de989289ebaeab",
+   "name": "Qwen/Qwen3-0.6B",
+   "operations": {
+    "cast_sites": 1,
+    "casts": [
+     {
+      "call_stack": [
+       {
+        "code": "angles = position_ids[0].to(torch.float64)[:, None] * inv_freq[None, :]",
+        "file": "hf_oracle.py",
+        "function": "a64_patches.<locals>.rot",
+        "line": 502
+       },
+       {
+        "code": "position_embeddings = self.rotary_emb(hidden_states, position_ids)",
+        "file": "modeling_qwen3.py",
+        "function": "Qwen3Model.forward",
+        "line": 421
+       },
+       {
+        "code": "outputs = func(self, *args, **kwargs)",
+        "file": "output_capturing.py",
+        "function": "capture_outputs.<locals>.wrapped_fn.<locals>.wrapper",
+        "line": 248
+       }
+      ],
+      "count": 1,
+      "from": "torch.int64",
+      "non_f64": false,
+      "op": "aten._to_copy.default",
+      "site": "hf_oracle.py:502 a64_patches.<locals>.rot",
+      "to": "torch.float64"
+     }
+    ],
+    "environment": {
+     "blas": "unknown",
+     "threads": 8,
+     "torch": "2.14.0"
+    },
+    "floating_ops": 3766,
+    "non_f64_ops": 0,
+    "op_counts": {
+     "aten._softmax.default": 28,
+     "aten._to_copy.default": 1,
+     "aten._unsafe_view.default": 309,
+     "aten.add.Tensor": 366,
+     "aten.alias.default": 1,
+     "aten.arange.start_step": 1,
+     "aten.bmm.default": 56,
+     "aten.cat.default": 57,
+     "aten.clone.default": 84,
+     "aten.cos.default": 1,
+     "aten.detach.default": 514,
+     "aten.div.Tensor": 1,
+     "aten.embedding.default": 1,
+     "aten.expand.default": 168,
+     "aten.lift_fresh.default": 1,
+     "aten.mean.dim": 113,
+     "aten.mm.default": 197,
+     "aten.mul.Tensor": 396,
+     "aten.neg.default": 56,
+     "aten.pow.Scalar": 1,
+     "aten.pow.Tensor_Scalar": 113,
+     "aten.reciprocal.default": 1,
+     "aten.rsqrt.default": 113,
+     "aten.scalar_tensor.default": 1,
+     "aten.select.int": 58,
+     "aten.silu.default": 28,
+     "aten.sin.default": 1,
+     "aten.slice.Tensor": 113,
+     "aten.t.default": 197,
+     "aten.transpose.int": 196,
+     "aten.unsqueeze.default": 115,
+     "aten.view.default": 477,
+     "aten.where.self": 1
+    },
+    "ops_by_class": {
+     "accumulating": 394,
+     "basic_arithmetic": 820,
+     "elementwise": 257,
+     "exact": 2295
+    },
+    "ops_traced": 3805,
+    "pass": true,
+    "probes": [
+     {
+      "bound": 1e-12,
+      "class": "accumulating",
+      "comparison": "relative",
+      "error": 0.0,
+      "f32_counterfactual_error": 9.657815205699532e-07,
+      "layout_reproduced": true,
+      "op": "aten._softmax.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 14,
+      "signature": {
+       "dim": -1,
+       "x": [
+        [
+         1,
+         16,
+         14,
+         14
+        ],
+        [
+         3136,
+         196,
+         14,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 4.732177059096898e-07,
+      "op": "aten.add.Tensor",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.8199664825478976e-14,
+      "layout_reproduced": true,
+      "op": "aten.bmm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 128,
+      "signature": {
+       "a": [
+        [
+         16,
+         14,
+         128
+        ],
+        [
+         128,
+         2048,
+         1
+        ]
+       ],
+       "b": [
+        [
+         16,
+         128,
+         14
+        ],
+        [
+         1792,
+         1,
+         128
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.886579864025407e-15,
+      "layout_reproduced": true,
+      "op": "aten.bmm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 14,
+      "signature": {
+       "a": [
+        [
+         16,
+         14,
+         14
+        ],
+        [
+         196,
+         14,
+         1
+        ]
+       ],
+       "b": [
+        [
+         16,
+         14,
+         128
+        ],
+        [
+         1792,
+         128,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "mixed",
+      "error": 1.1102230246251565e-16,
+      "f32_counterfactual_error": 0.00012141299540856243,
+      "op": "aten.cos.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 9.096925782614562e-05,
+      "op": "aten.div.Tensor",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.218277644905342e-16,
+      "layout_reproduced": true,
+      "op": "aten.mean.dim",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 1024,
+      "signature": {
+       "dim": [
+        -1
+       ],
+       "keepdim": true,
+       "x": [
+        [
+         1,
+         14,
+         1024
+        ],
+        [
+         14336,
+         1024,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.203098814490545e-16,
+      "layout_reproduced": true,
+      "op": "aten.mean.dim",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 128,
+      "signature": {
+       "dim": [
+        -1
+       ],
+       "keepdim": true,
+       "x": [
+        [
+         1,
+         14,
+         16,
+         128
+        ],
+        [
+         28672,
+         2048,
+         128,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.203098814490545e-16,
+      "layout_reproduced": true,
+      "op": "aten.mean.dim",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 128,
+      "signature": {
+       "dim": [
+        -1
+       ],
+       "keepdim": true,
+       "x": [
+        [
+         1,
+         14,
+         8,
+         128
+        ],
+        [
+         14336,
+         1024,
+         128,
+         1
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.2715163083830703e-13,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 1024,
+      "signature": {
+       "a": [
+        [
+         14,
+         1024
+        ],
+        [
+         1024,
+         1
+        ]
+       ],
+       "b": [
+        [
+         1024,
+         2048
+        ],
+        [
+         1,
+         1024
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.2715163083830703e-13,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 1024,
+      "signature": {
+       "a": [
+        [
+         14,
+         1024
+        ],
+        [
+         1024,
+         1
+        ]
+       ],
+       "b": [
+        [
+         1024,
+         1024
+        ],
+        [
+         1,
+         1024
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 4.545253062815391e-13,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 2048,
+      "signature": {
+       "a": [
+        [
+         14,
+         2048
+        ],
+        [
+         2048,
+         1
+        ]
+       ],
+       "b": [
+        [
+         2048,
+         1024
+        ],
+        [
+         1,
+         2048
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.2715163083830703e-13,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 1024,
+      "signature": {
+       "a": [
+        [
+         14,
+         1024
+        ],
+        [
+         1024,
+         1
+        ]
+       ],
+       "b": [
+        [
+         1024,
+         3072
+        ],
+        [
+         1,
+         1024
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 6.818989817247711e-13,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 3072,
+      "signature": {
+       "a": [
+        [
+         14,
+         3072
+        ],
+        [
+         3072,
+         1
+        ]
+       ],
+       "b": [
+        [
+         3072,
+         1024
+        ],
+        [
+         1,
+         3072
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "accumulating",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 2.2715163083830703e-13,
+      "layout_reproduced": true,
+      "op": "aten.mm.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "reduction_length": 1024,
+      "signature": {
+       "a": [
+        [
+         14,
+         1024
+        ],
+        [
+         1024,
+         1
+        ]
+       ],
+       "b": [
+        [
+         1024,
+         151936
+        ],
+        [
+         1,
+         1024
+        ]
+       ]
+      }
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.1624123743558812e-06,
+      "op": "aten.mul.Tensor",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.1904007646279524e-07,
+      "op": "aten.neg.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 2.1109516822708242e-16,
+      "f32_counterfactual_error": 4.470631667412199e-07,
+      "op": "aten.pow.Scalar",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {
+       "base": 1000000.0
+      },
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 1.9173745329607644e-16,
+      "f32_counterfactual_error": 1.667059936045557e-07,
+      "op": "aten.pow.Tensor_Scalar",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {
+       "exponent": 2.0
+      },
+      "vector_length": 4099
+     },
+     {
+      "bound": 0.0,
+      "class": "basic_arithmetic",
+      "comparison": "exact",
+      "error": 0.0,
+      "f32_counterfactual_error": 0.0001011114586617623,
+      "op": "aten.reciprocal.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "relative",
+      "error": 0.0,
+      "f32_counterfactual_error": 1.0166619836946932e-07,
+      "op": "aten.rsqrt.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "mixed",
+      "error": 2.597796577926198e-16,
+      "f32_counterfactual_error": 1.4295600100957658e-07,
+      "op": "aten.silu.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     },
+     {
+      "bound": 1e-12,
+      "class": "elementwise",
+      "comparison": "mixed",
+      "error": 1.1102230246251565e-16,
+      "f32_counterfactual_error": 0.0001206728512435154,
+      "op": "aten.sin.default",
+      "output_dtype": "torch.float64",
+      "pass": true,
+      "signature": {},
+      "vector_length": 4099
+     }
+    ],
+    "probes_run": 23,
+    "problem_count": 0,
+    "problems": [],
+    "schema": "larql.prec-diag-1.a64-op-audit/1",
+    "unclassified": {},
+    "violation_sites": 0,
+    "violations": [],
+    "visibility": {
+     "does_not_see": [
+      "arithmetic inside one kernel (accumulators, internal temporaries of mm, mean, _softmax, cumsum, cumprod): measured instead by the kernel probes, after the forward, at every distinct shape and stride the forward used, on the same backend and threads",
+      "elementwise kernels at shapes other than the probe vector: elementwise probes run once per scalar variant on a fixed-length contiguous vector",
+      "computation outside torch (numpy, Python math): in the oracle these are the patched functions' float64 numpy witnesses and config scalars",
+      "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint",
+      "a float64 tensor holding a value already rounded to float32: dtype is not precision. Gemma 3's embed_scale buffer is built as a float32 tensor and widened by .to(float64), so it is float64 holding sqrt(hidden) rounded to float32; only the patched-function witness (part 3) sees it",
+      "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops"
+     ],
+     "sees": [
+      "every ATen op dispatched during the A64 forward, after autograd and CompositeImplicitAutograd decomposition (F.linear appears as t + mm, a matmul as mm/bmm, softmax(dtype=) as _to_copy + _softmax)",
+      "the dtype of every tensor each op reads, returns or writes (in-place and out= targets, from the op schema), and every floating dtype= argument",
+      "every dtype conversion, with the Python call site that issued it, so a cast that is undone later still appears at both ends",
+      "tensors created inside the forward in the default dtype (float32), e.g. torch.tensor(x) or torch.zeros(n)"
+     ]
+    },
+    "writes": {}
+   },
+   "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+   "tokens": 14
+  }
+ ],
+ "threads": {
+  "OMP_NUM_THREADS": "8",
+  "torch_num_interop_threads": 1,
+  "torch_num_threads": 8
+ }
+}

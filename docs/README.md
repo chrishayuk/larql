@@ -87,6 +87,7 @@ distributed).
 | [gw-car-1b-evidence-archive.md](gw-car-1b-evidence-archive.md) | GW-CAR-1B — where the 57 raw output files are archived (registry run, R2 object, SHA-256 manifest) and how to retrieve and verify them |
 | [gw-transition-support-paths.md](gw-transition-support-paths.md) | GW-TS-1 frozen protocol — semantic transition identity, realization-specific support paths, held-out recurrence and prefix prediction |
 | [gw-ts-1-dependencies.md](gw-ts-1-dependencies.md) | GW-TS-1 dependency freeze — observational prediction and causal attribution fork after ATTR-1D, then rejoin only before executability |
+| [prec-diag-a64-op-audit-backfill.md](prec-diag-a64-op-audit-backfill.md) | PREC-DIAG A64 operation-level dtype audit (#897) — diagnostic backfill over Gemma 3 and Qwen3; sealed verdicts unchanged ([JSON](prec-diag-a64-op-audit-backfill.json)) |
 | [vindex3-experiments.md](vindex3-experiments.md) | Pre-registered VINDEX3 experimental programme (the V2-0..V2-4 gates) |
 | [vindex3-ontology-drill.md](vindex3-ontology-drill.md) | The four-architecture ontology drill (candidate §17.4) — run 2026-08-30, findings F1–F16 |
 | [lyrw-v2.md](lyrw-v2.md) | LYRW v2 — the K3 routed-layer physical-layout gate (storage half of K3) |
