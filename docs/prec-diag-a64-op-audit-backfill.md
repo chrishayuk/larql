@@ -145,10 +145,10 @@ The largest single probe's own allocation, and the process peak RSS before and a
 
 | subject | matmuls / nn.Linear | largest probe (bytes) | peak RSS before probes | after probes |
 |---|---|---|---|---|
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | 29 / 29 | 264960 | 804077568 | 804077568 |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | 22 / 22 | 223488 | 804077568 | 804077568 |
-| google/gemma-3-270m-it | 127 / 127 | 1373711360 | 4661673984 | 4661673984 |
-| Qwen/Qwen3-0.6B | 197 / 197 | 1261791232 | 8807071744 | 8807071744 |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | 29 / 29 | 264960 | 799621120 | 799621120 |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | 22 / 22 | 223488 | 799621120 | 799621120 |
+| google/gemma-3-270m-it | 127 / 127 | 1373711360 | 4669014016 | 4669014016 |
+| Qwen/Qwen3-0.6B | 197 / 197 | 1261791232 | 8801632256 | 8801632256 |
 
 ## Control: the same forward with every A64 patch removed
 

@@ -204,8 +204,8 @@
     "matmuls": 29,
     "memory": {
      "largest_probe_bytes": 264960,
-     "peak_rss_bytes_after_probes": 804077568,
-     "peak_rss_bytes_before_probes": 804077568
+     "peak_rss_bytes_after_probes": 799621120,
+     "peak_rss_bytes_before_probes": 799621120
     },
     "non_f64_ops": 0,
     "op_counts": {
@@ -1039,8 +1039,8 @@
     "matmuls": 22,
     "memory": {
      "largest_probe_bytes": 223488,
-     "peak_rss_bytes_after_probes": 804077568,
-     "peak_rss_bytes_before_probes": 804077568
+     "peak_rss_bytes_after_probes": 799621120,
+     "peak_rss_bytes_before_probes": 799621120
     },
     "non_f64_ops": 0,
     "op_counts": {
@@ -1859,8 +1859,8 @@
     "matmuls": 127,
     "memory": {
      "largest_probe_bytes": 1373711360,
-     "peak_rss_bytes_after_probes": 4661673984,
-     "peak_rss_bytes_before_probes": 4661673984
+     "peak_rss_bytes_after_probes": 4669014016,
+     "peak_rss_bytes_before_probes": 4669014016
     },
     "non_f64_ops": 0,
     "op_counts": {
@@ -2684,8 +2684,8 @@
     "matmuls": 197,
     "memory": {
      "largest_probe_bytes": 1261791232,
-     "peak_rss_bytes_after_probes": 8807071744,
-     "peak_rss_bytes_before_probes": 8807071744
+     "peak_rss_bytes_after_probes": 8801632256,
+     "peak_rss_bytes_before_probes": 8801632256
     },
     "non_f64_ops": 0,
     "op_counts": {
@@ -3326,7 +3326,7 @@
   }
  ],
  "threads": {
-  "OMP_NUM_THREADS": null,
+  "OMP_NUM_THREADS": "8",
   "torch_num_interop_threads": 1,
   "torch_num_threads": 8
  }

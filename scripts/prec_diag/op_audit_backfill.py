@@ -35,6 +35,7 @@ import argparse
 import datetime
 import json
 import math
+import os
 import platform
 import sys
 import tempfile
@@ -304,6 +305,11 @@ def main(argv=None) -> int:
     ap.add_argument("--out-md", required=True, type=Path)
     ap.add_argument("--checkpoint", action="append", default=[], help="NAME=DIR of a real checkpoint")
     a = ap.parse_args(argv)
+    # The same thread environment the oracle refuses to run without, so the probes run as A64's would.
+    if os.environ.get("OMP_NUM_THREADS") != ho.THREADS["OMP_NUM_THREADS"]:
+        print(f"refused: OMP_NUM_THREADS must be {ho.THREADS['OMP_NUM_THREADS']} in the environment",
+              file=sys.stderr)
+        return 2
     ho.set_threads()
     with tempfile.TemporaryDirectory() as tmp:
         subjects = synthetic_subjects(Path(tmp))
