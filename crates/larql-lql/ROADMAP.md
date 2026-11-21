@@ -45,7 +45,8 @@ untested.
 - **P1 — four `embed.row()` sites bypass the crate's own safe helper.** Raised
   2026-05-28; **all four confirmed still open 2026-08-04** at
   `executor/query/walk.rs:38`, `executor/query/explain.rs:31`,
-  `executor/mutation/insert/plan.rs:122`, `executor/compact.rs:242`. They skip
+  `executor/mutation/insert/plan.rs:122`, and one in COMPACT MAJOR's MEMIT
+  path, removed when Gate B, B6 made that statement refuse. They skip
   `average_embed_rows`, so an OOV or unbounded token id panics instead of being
   skipped. Route through `average_embed_rows` / a bounds-checked helper.
   (`relations.rs:309` looks like a fifth site but is already guarded by an

@@ -442,9 +442,11 @@ Compose-mode INSERT executes too: the FFN slot lands in the overlay
 and execution observes it through the operand-source seam, running
 V2's full install pipeline (capture, decoy-suppressed refine, balance,
 cross-fact regression) with cross-format parity gated. `COMPILE … INTO MODEL`,
-`DIFF … INTO PATCH`, `COMPACT MINOR` and `COMPACT MAJOR` refuse on a VINDEX3
+`DIFF … INTO PATCH` and `COMPACT MINOR` refuse on a VINDEX3
 container with a message naming the supported statements — a capability
-boundary, not a missing feature apology. See the spec's §4.2/§4.4 for the
+boundary, not a missing feature apology. `COMPACT MAJOR` refuses on every
+binding: a MEMIT cycle has no ledger representation, so its result could not
+be replayed. See the spec's §4.2/§4.4 for the
 full contract.
 
 ### Editing stored weights

@@ -187,12 +187,14 @@ fn no_backend_compact_minor() {
 
 #[test]
 fn no_backend_compact_major() {
+    // Refused before any work, so before the backend check (Gate B, B6 D2).
     let mut session = Session::new();
     let stmt = parser::parse("COMPACT MAJOR;").unwrap();
-    assert!(matches!(
-        session.execute(&stmt).unwrap_err(),
-        LqlError::NoBackend
-    ));
+    let err = session.execute(&stmt).unwrap_err().to_string();
+    assert!(
+        err.contains(crate::executor::compact::COMPACT_MAJOR_REFUSAL),
+        "{err}"
+    );
 }
 
 #[test]
@@ -291,4 +293,23 @@ fn remove_patch_unknown_errors_cleanly() {
         other => panic!("expected Execution error, got {other:?}"),
     }
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The overlay accessors refuse a raw-weights binding by pointing at
+/// EXTRACT, and an unbound session as having no backend.
+#[test]
+fn patched_accessors_refuse_without_a_vindex() {
+    let mut weights = weight_session();
+    let err = weights.require_patched().err().unwrap().to_string();
+    assert!(err.contains("requires a vindex"), "{err}");
+    let err = weights.require_patched_mut().err().unwrap().to_string();
+    assert!(err.contains("mutation requires a vindex"), "{err}");
+    assert!(weights.memit_store().is_none());
+
+    let mut unbound = Session::new();
+    assert!(matches!(
+        unbound.require_patched_mut().err(),
+        Some(LqlError::NoBackend)
+    ));
+    assert!(unbound.memit_store().is_none());
 }

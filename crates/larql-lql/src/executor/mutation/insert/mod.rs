@@ -27,6 +27,7 @@ pub(crate) use compose_v3::probe_target_prob;
 mod knn_v3;
 mod plan;
 mod snapshot;
+pub(crate) use snapshot::InsertSnapshot;
 
 use crate::ast::InsertMode;
 use crate::error::LqlError;

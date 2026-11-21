@@ -123,6 +123,11 @@ pub(crate) fn load_memit_store(vindex_dir: &Path) -> Result<Option<MemitStore>, 
 /// existing snapshot. Empty stores still write a file (one line of
 /// JSON) so callers can tell "we ran COMPACT MAJOR and produced no
 /// facts" apart from "the file was never written".
+///
+/// Since Gate B, B6 (ruling D2) COMPACT MAJOR refuses, so no statement
+/// writes this file; `USE` still reads one a vindex already carries. Only
+/// tests write it, to build those vindexes.
+#[cfg(test)]
 pub(crate) fn save_memit_store(vindex_dir: &Path, store: &MemitStore) -> Result<(), String> {
     let dto = MemitStoreDto {
         cycles: store.cycles().iter().map(MemitCycleDto::from).collect(),

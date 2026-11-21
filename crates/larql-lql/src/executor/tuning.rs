@@ -113,11 +113,6 @@ pub(crate) const REBALANCE_PROBE_TOP_K: usize = 200;
 pub(crate) const MEMIT_TARGET_ALPHA: f32 = 5.0;
 /// Default ridge regularizer for MEMIT solves.
 pub(crate) const MEMIT_DEFAULT_RIDGE: f64 = 0.1;
-/// Default lambda for `COMPACT MAJOR` MEMIT decomposition.
-pub(crate) const MEMIT_COMPACT_LAMBDA: f32 = 1e-3;
-/// Floor on per-fact reconstruction cosine before COMPACT MAJOR
-/// surfaces a quality warning.
-pub(crate) const MEMIT_MIN_RECONSTRUCTION_COS: f32 = 0.95;
 
 // ── Section: introspection (`query::describe`) ──
 //

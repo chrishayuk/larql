@@ -59,8 +59,8 @@ LQL is a query language for neural network weights treated as a graph database. 
 | `UPDATE` | Modify existing edge(s) |
 | `MERGE` | Merge edges from another vindex |
 | `REBALANCE` | Global fixed-point rebalance over compose installs |
-| `COMPACT MINOR` | Promote L0 KNN entries to L1 compose edges |
-| `COMPACT MAJOR` | Promote L1 compose edges to L2 MEMIT (optional `FULL`, `WITH LAMBDA`) |
+| `COMPACT MINOR` | Promote L0 KNN facts to L1 keyed compose installs, recorded and atomic |
+| `COMPACT MAJOR` | Refused: a MEMIT cycle has no ledger representation (Gate B, B6) |
 
 ### 2.5 Patches
 
@@ -1098,15 +1098,19 @@ read like introspection from the user's perspective:
 
 ```
 COMPACT MINOR;
--- Promote every L0 (KNN) entry into L1 (arch-A compose edges).
--- Uses exec_insert internally with MODE COMPOSE; requires model
+-- Promote every live L0 (KNN) fact to a keyed L1 compose install at its
+-- layer, in order of layer then fact key. Each promotion is applied and
+-- recorded as delete_knn_fact then the keyed compose insert, so a saved
+-- patch replays it exactly, and the fact keeps its id. One statement is
+-- one transaction: it refuses before any change if a KNN fact is not
+-- active, and a failure part-way restores everything. Requires model
 -- weights. A no-op when L0 is empty.
 
 COMPACT MAJOR [FULL] [WITH LAMBDA = <float>];
--- Promote L1 compose edges to L2 MEMIT-decomposed (key, down) pairs.
--- FULL re-decomposes every L1 edge; default does only the ones the
--- current compose overlay owns. LAMBDA is the MEMIT ridge (default
--- 1e-3).
+-- Refused before any work, on every binding (Gate B, B6 ruling D2): a
+-- MEMIT cycle has no ledger representation, so its result could not be
+-- replayed. A memit_store.json a vindex already carries is still read
+-- on USE.
 ```
 
 ### 3.7 Residual Stream Trace Statements
@@ -1548,7 +1552,7 @@ family metadata.
 | COMPILE INTO MODEL | ✅ | ❌ Error: "requires vindex" | ❌ container→checkpoint export, later |
 | DIFF | ✅ | ⚠️ One side can be weights | ✅ logical-first³ (+ PHYSICAL mode) |
 | MERGE | ✅ | ❌ Error: "requires vindex" | ✅ V2 source into the overlay |
-| COMPACT MINOR/MAJOR | ✅ LSM tier promotion | ❌ | ❌ tier model is V2's; later |
+| COMPACT MINOR/MAJOR | ✅ MINOR promotes (atomic, recorded); MAJOR refuses | ❌ | ❌ tier model is V2's; later |
 | COMPACT INTO VINDEX | — (V3 statement) | ❌ | ✅ physical reorganisation⁴ |
 | UPDATE WEIGHTS / REMOVE DIRECTION / ADD LOW RANK | ❌ Error: bound to a VINDEX2 vindex | ❌ | ✅ staged, written by COMPILE (§3.5.1–3.5.3) |
 | DISCARD WEIGHT EDITS | ❌ Error: bound to a VINDEX2 vindex | ❌ | ✅ (§3.5.4) |
@@ -2250,7 +2254,7 @@ pub enum ExtractLevel {
 | Auto-patch on mutation | ✅ Done — INSERT/DELETE/UPDATE auto-start anonymous patch session |
 | INSERT MODE {KNN, COMPOSE} | ✅ Done — KNN default (Architecture B), COMPOSE FFN-overlay validated exp 14 |
 | REBALANCE | ✅ Done — global fixed-point rebalance over compose installs |
-| COMPACT MINOR / MAJOR | ✅ Done — L0 → L1 → L2 tier promotion, `SHOW COMPACT STATUS` |
+| COMPACT MINOR / MAJOR | ✅ MINOR: L0 → L1, atomic and recorded; MAJOR refused (B6 D2); `SHOW COMPACT STATUS` |
 | SHOW ENTITIES | ✅ Done — named-entity scan across loaded layers |
 | TRACE | ✅ Done — residual decomposition with FOR/DECOMPOSE/POSITIONS/SAVE |
 | Readonly base | ✅ Done — base vindex files never modified, all edits via PatchedVindex overlay |

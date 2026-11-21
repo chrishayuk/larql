@@ -4,7 +4,7 @@
 //! INSERT/DELETE/UPDATE auto-start an anonymous patch session if none is active.
 
 mod backend;
-mod compact;
+pub(crate) mod compact;
 mod extract_hint;
 mod facts;
 mod helpers;
