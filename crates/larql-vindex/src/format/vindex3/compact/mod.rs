@@ -57,9 +57,28 @@ const CAPABILITY_FILES: &[&str] = &[
 /// ([`crate::format::fresh_output`]). The result is staged beside `out`
 /// and promoted whole.
 pub fn compact_container(src: &Path, out: &Path) -> Result<CompactReport, VindexError> {
-    crate::format::fresh_output::write_fresh_directory(src, out, |staging| {
-        compact_into(src, staging)
-    })
+    compact_container_validated(src, out, |_| Ok(()))
+}
+
+/// [`compact_container`], with `validate` run against the staged result
+/// before it is published, after the container's own structural check.
+/// A caller that can open both sides (LQL, with its component) passes the
+/// semantic DIFF here, so a compaction that changed meaning never reaches
+/// `out` (Gate B, B6 §3.3).
+pub fn compact_container_validated(
+    src: &Path,
+    out: &Path,
+    validate: impl FnOnce(&Path) -> Result<(), VindexError>,
+) -> Result<CompactReport, VindexError> {
+    crate::format::fresh_output::write_fresh_directory_validated(
+        src,
+        out,
+        |staging| compact_into(src, staging),
+        |staging, _| {
+            crate::format::vindex3::verify::check_container_structure(staging, true)?;
+            validate(staging)
+        },
+    )
 }
 
 /// The reorganisation itself, writing into a directory that already

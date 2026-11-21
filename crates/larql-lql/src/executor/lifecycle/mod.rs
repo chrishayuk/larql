@@ -9,4 +9,6 @@ mod diff;
 mod diff_v3;
 mod extract;
 mod stats;
+#[cfg(test)]
+mod tests;
 mod use_cmd;

@@ -15,7 +15,7 @@
 //! Keys are quantised to f16 — KNN cosine retrieval doesn't need f32
 //! precision. Reconstruction goes through `KnnStore::from_entries`.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
 use std::path::Path;
 
@@ -114,7 +114,7 @@ impl KnnStore {
         let dim = read_u32(&mut cursor)? as usize;
         let num_layers = read_u32(&mut cursor)? as usize;
 
-        let mut entries = HashMap::new();
+        let mut entries = BTreeMap::new();
         for _ in 0..num_layers {
             let layer = read_u32(&mut cursor)? as usize;
             let num_entries = read_u32(&mut cursor)? as usize;

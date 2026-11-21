@@ -78,11 +78,11 @@ fn compact_refuses_a_container_missing_a_referenced_segment() {
     assert!(err.to_string().contains("missing"), "{err}");
 }
 
-/// The name an index gives its weight-patch ledger. Compaction does not read a ledger, so these tests name one
-/// in the index and stand a file in for it: what is under test is that the named file travels, or its absence
-/// is refused.
+/// The name an index gives its weight-patch ledger. The test below names one the container lacks: its
+/// absence is refused. That a real ledger travels through compaction is shown in the weight-patch tests
+/// (`tests/weight_patch/lifecycle.rs`), where the ledger comes from an applied patch: since Gate B, B6, a
+/// compacted container must open before it is published, and a stand-in ledger does not.
 const LEDGER: &str = "weight_patches.json";
-const LEDGER_BYTES: &[u8] = b"{\"schema\":\"stand-in\"}";
 
 /// Make the fixture's index name a ledger.
 fn name_a_ledger(container: &std::path::Path) {
@@ -91,26 +91,6 @@ fn name_a_ledger(container: &std::path::Path) {
         serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     index["weight_patches"] = serde_json::json!(LEDGER);
     std::fs::write(&path, serde_json::to_string_pretty(&index).unwrap()).unwrap();
-}
-
-#[test]
-fn compact_carries_the_ledger_the_index_names() {
-    let container = fixture();
-    name_a_ledger(container.path());
-    std::fs::write(container.path().join(LEDGER), LEDGER_BYTES).unwrap();
-
-    let out = tempfile::tempdir().unwrap();
-    let report = compact_container(container.path(), out.path()).unwrap();
-
-    assert!(
-        !report.dropped.iter().any(|d| d == LEDGER),
-        "a ledger the index names is referenced, not junk: {:?}",
-        report.dropped
-    );
-    assert_eq!(
-        std::fs::read(out.path().join(LEDGER)).unwrap(),
-        LEDGER_BYTES
-    );
 }
 
 #[test]

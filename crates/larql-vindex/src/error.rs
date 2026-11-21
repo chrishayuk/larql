@@ -86,6 +86,35 @@ pub enum VindexError {
         source: std::io::Error,
     },
 
+    /// The output was renamed into place, so it may already be visible, but
+    /// the sync that makes the rename durable failed. Nothing was rolled
+    /// back or deleted (Gate B, B6, D3).
+    #[error(
+        "published {} but its durability is not confirmed: syncing the parent directory \
+         failed: {source}. The output is in place and was not removed; re-run the sync or \
+         remove it by hand",
+        out.display()
+    )]
+    PublishedNotDurable {
+        out: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// Writing a new vindex directory failed, and removing its staging
+    /// directory afterwards failed too, so the staging directory is still on
+    /// disk. The destination was not touched.
+    #[error(
+        "{cause}; the staging directory {} could not be removed ({cleanup}) and is left \
+         behind: remove it by hand",
+        staging.display()
+    )]
+    StagingLeftBehind {
+        cause: String,
+        staging: PathBuf,
+        cleanup: std::io::Error,
+    },
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("model error: {0}")]

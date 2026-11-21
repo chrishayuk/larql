@@ -94,9 +94,12 @@ impl Session {
             path.to_path_buf()
         };
 
-        run_atomic_compile(&final_dir, &source_path_owned, |output_dir| {
-            self.bake_compile_into_vindex(output_dir, on_conflict)
-        })
+        run_atomic_compile(
+            &final_dir,
+            &source_path_owned,
+            |output_dir| self.bake_compile_into_vindex(output_dir, on_conflict),
+            super::atomic::validate_compiled_vindex2,
+        )
     }
 
     fn bake_compile_into_vindex(

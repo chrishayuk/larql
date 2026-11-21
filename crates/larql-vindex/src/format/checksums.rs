@@ -1,6 +1,6 @@
 //! Checksum utilities for vindex file integrity verification.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::Path;
 
@@ -26,8 +26,8 @@ pub fn sha256_file(path: &Path) -> Result<String, VindexError> {
 
 /// Compute checksums for all binary files in a vindex directory.
 /// Returns a map of filename → SHA256 hex string.
-pub fn compute_checksums(dir: &Path) -> Result<HashMap<String, String>, VindexError> {
-    let mut checksums = HashMap::new();
+pub fn compute_checksums(dir: &Path) -> Result<BTreeMap<String, String>, VindexError> {
+    let mut checksums = BTreeMap::new();
 
     let files = [
         GATE_VECTORS_BIN,
@@ -57,8 +57,8 @@ pub fn compute_checksums(dir: &Path) -> Result<HashMap<String, String>, VindexEr
 ///
 /// # Why the sort is not cosmetic
 ///
-/// The input is a `HashMap`, and Rust randomises `HashMap` iteration order per
-/// process. Rendering findings in that order made `larql verify` produce
+/// The stored map was once a `HashMap`, whose iteration order Rust randomises
+/// per process. Rendering findings in that order made `larql verify` produce
 /// different output on every run against an identical, intact artifact —
 /// verified as three different digests across three consecutive runs.
 ///
@@ -79,7 +79,7 @@ pub fn compute_checksums(dir: &Path) -> Result<HashMap<String, String>, VindexEr
 /// must never deduplicate them.
 pub fn verify_checksums(
     dir: &Path,
-    stored: &HashMap<String, String>,
+    stored: &BTreeMap<String, String>,
 ) -> Result<Vec<(String, bool)>, VindexError> {
     let mut results = Vec::with_capacity(stored.len());
 
@@ -104,7 +104,6 @@ pub fn verify_checksums(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use tempfile::TempDir;
 
     #[test]
@@ -196,7 +195,7 @@ mod tests {
     #[test]
     fn verify_checksums_missing_file_is_false() {
         let dir = TempDir::new().unwrap();
-        let mut stored = HashMap::new();
+        let mut stored = BTreeMap::new();
         stored.insert(GATE_VECTORS_BIN.to_string(), "fakehash".to_string());
         let results = verify_checksums(dir.path(), &stored).unwrap();
         let r = results.iter().find(|(n, _)| n == GATE_VECTORS_BIN).unwrap();
@@ -206,12 +205,12 @@ mod tests {
     // ── Determinism ────────────────────────────────────────────────────────
     //
     // `larql verify` produced different output on every run against an intact
-    // artifact, because findings were rendered in `HashMap` iteration order.
+    // artifact, because findings were rendered in `BTreeMap` iteration order.
     // These pin the fix: a verification command that disagrees with itself is
     // unusable for goldens, CI diffs, signed reports or operator triage.
 
     /// Several files, so ordering has something to get wrong.
-    fn populated_dir() -> (TempDir, HashMap<String, String>) {
+    fn populated_dir() -> (TempDir, BTreeMap<String, String>) {
         let dir = TempDir::new().unwrap();
         for (name, body) in [
             (GATE_VECTORS_BIN, &b"gate"[..]),
@@ -229,7 +228,7 @@ mod tests {
     /// Repeated calls agree — a weaker property than it looks.
     ///
     /// This **cannot** catch the ordering defect, and a mutation check proved
-    /// it: with the sort removed, this test still passes. `HashMap` iteration
+    /// it: with the sort removed, this test still passes. `BTreeMap` iteration
     /// order is randomised per *process*, so one map iterates identically on
     /// every call within a single test. The real defect only appeared across
     /// process boundaries — three CLI invocations, three digests.
@@ -258,7 +257,7 @@ mod tests {
     /// defect. Verified to fail when the canonical sort is removed.
     #[test]
     fn insertion_order_does_not_affect_output_order() {
-        // The same findings, assembled several ways. A `HashMap` built by a
+        // The same findings, assembled several ways. A `BTreeMap` built by a
         // different insertion sequence iterates differently; the rendered
         // order must not follow it.
         let (dir, stored) = populated_dir();
@@ -268,7 +267,7 @@ mod tests {
         names.sort();
         // Forward, reverse, and rotated insertion orders.
         for rotation in 0..names.len() {
-            let mut shuffled = HashMap::new();
+            let mut shuffled = BTreeMap::new();
             for i in 0..names.len() {
                 let name = names[(i + rotation) % names.len()];
                 shuffled.insert(name.clone(), stored[name].clone());

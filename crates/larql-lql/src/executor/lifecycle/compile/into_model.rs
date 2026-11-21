@@ -35,9 +35,14 @@ impl Session {
         let final_dir = PathBuf::from(output);
         let vindex_path_owned = vindex_path.to_path_buf();
         let config_clone = config.clone();
-        run_atomic_compile(&final_dir, &vindex_path_owned, |output_dir| {
-            self.bake_compile_into_model(&vindex_path_owned, output_dir, &config_clone)
-        })
+        run_atomic_compile(
+            &final_dir,
+            &vindex_path_owned,
+            |output_dir| {
+                self.bake_compile_into_model(&vindex_path_owned, output_dir, &config_clone)
+            },
+            |_| Ok(()),
+        )
     }
 
     fn bake_compile_into_model(

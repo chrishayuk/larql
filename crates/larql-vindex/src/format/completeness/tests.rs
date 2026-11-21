@@ -1,7 +1,7 @@
 //! Completeness against a VINDEX2 index's own declarations — fixtures
 //! only, never a real cache.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use super::*;
 use crate::config::VindexLayerInfo;
@@ -27,7 +27,7 @@ fn layer(layer: usize) -> VindexLayerInfo {
 
 /// An index at `level` declaring `files` and `layers` gate slices.
 fn config(level: ExtractLevel, files: &[&str], layers: usize) -> VindexConfig {
-    let sums: HashMap<String, String> = files
+    let sums: BTreeMap<String, String> = files
         .iter()
         .map(|f| (f.to_string(), "digest".to_string()))
         .collect();
