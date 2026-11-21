@@ -1,7 +1,8 @@
 # Gate B, B7: independent verification of VINDEX3 weight edits
 
-**Status:** **DRAFT r1** (2026-11-21), for the owner to rule on and freeze.
-No verifier or fixture code is written until this matrix is frozen.
+**Status:** **FROZEN r2** (2026-11-21). The owner ruled on D-1 to D-5 (§7)
+and strengthened V-1 (§4.4a). Changing this contract needs an owner-approved
+revision.
 **Base:** `origin/main` `3406037d` (2026-11-21), after #898 (`dffe0038`).
 **Parent documents:** [`gate-b.md`](gate-b.md) r1, frozen: B7 row and §6.2.
 [`gate-b-audit-2026-11-18.md`](gate-b-audit-2026-11-18.md) records the B7
@@ -15,6 +16,19 @@ finding. The verifier contracts are
 
 - **r1** — draft. Inventory (§2), invariant (§3), coverage matrix (§4),
   controls (§5), sequence and boundary (§6), decisions for the owner (§7).
+- **r2** (2026-11-21) — frozen with the owner's rulings:
+  - D-1 zero tolerance;
+  - D-2 order invariance plus exact recorded order;
+  - D-3 option (c), with FACT-WSP-1 required to refuse the path;
+  - D-4 keep historical fixtures;
+  - D-5 fresh-context review is eligible evidence, with head-bound approval
+    or exception per PR and no blanket exception.
+
+  V-1 is strengthened to bind requested ops to execution through an
+  independent expected-operation manifest (§4.4a), and a third verdict half
+  is added (§1). The order rule the manifest must predict is recorded from
+  the engine (§2.1). T-5 is added for a consistent but wrong pair. The
+  acceptance record must state the restricted algebra (§8).
 
 ## 1. What B7 proves
 
@@ -22,8 +36,19 @@ For every admitted sequence of VINDEX3 stored-weight edits `P1 … Pn` on a base
 container `B`:
 
 ```text
-W_engine  =  VerifyApply(W_base, P1 … Pn)
+Requested ops = Ledger ops   ∧   W_engine = VerifyApply(W_base, Requested ops)
 ```
+
+The first equality is established against an expected-operation manifest
+that the verifier builds from independently captured inputs. It never uses
+the ledger the compiler wrote (§4.4a). A verdict therefore has three halves,
+each reported on its own:
+- **intent:** the manifest's effective ops equal the ledger's ops, in the
+  recorded order;
+- **ledger integrity and provenance:** v4 §7 steps 1, 2, 4 and 5;
+- **numerical satisfaction:** v4 §7 step 3.
+
+A container is verified only when all three are satisfied.
 
 - `W_engine` is what the engine publishes: the compiled container's canonical
   BF16 tensors, and the Q8_0 pack it re-derives from them.
@@ -78,6 +103,19 @@ sha256 of each live tensor.
   its own columns of the **base**.
 - **No admitted sequence is order-dependent in its bytes.** An order that would
   matter is an overlap, and an overlap is refused.
+
+**Order the compile is given** (`knowledge/overlay.rs` `weight_ops`; v4 §3
+"the order the compile was given them"):
+1. the ops of each applied patch still in effect, patches in apply order and
+   each patch's ops in file order;
+2. then the directly staged ops still in effect, in staging order.
+
+This is not chronological order. A direct op staged before an `APPLY PATCH`
+is listed after that patch's ops. The ledger's `origins` follow this order,
+and each target's `operations` follow it filtered to that tensor. The manifest
+implements this rule itself (§4.4a). If the engine's order is found to differ
+from the rule recorded here, that is evidence under §5.4, not a reason to
+change either side.
 
 A zero-valued low-rank op (a sham) is admitted, alone or beside nonzero ops.
 A nonzero op that rounds away entirely is refused (`op_target.rs` `resolve_operation_target`).
@@ -165,8 +203,85 @@ Grades:
 | S-3 | the same patches in a fresh session: byte-identical container | partly COVERED, single-op only (`structured.rs`, `low_rank.rs` fresh-session tests). GAP for R-3 and S-2 |
 | S-4 | a refused op between two accepted ones: the compile verifies with the two accepted ops only | **GAP** |
 | S-5 | full rollback (apply, remove, compile; and stage, `DISCARD WEIGHT EDITS`, compile): tensors byte-identical to the base, no weight ledger | **GAP**. The verifier has no "identical to base" judgement for a container with no ledger |
-| S-6 | a chained compile: edit C1 = compile(B), then edit and compile C1 again | **D-3**, undetermined (§7) |
-| V-1 | **op-set equality**: given the patch or patches, the ledger's ops (by digest, kind, tensor, columns and order) equal the ops in effect. A dropped, added, retargeted or reordered op is a ledger violation | **GAP**, verifier code (§2.2) |
+| S-6 | a chained compile: edit C1 = compile(B), then edit and compile C1 again | **NOT_VERIFIED** (D-3 = c). B7-B0 probes and records what the engine does. If the engine admits it, the acceptance record says the capability exists outside the verified boundary, and FACT-WSP-1 must refuse it explicitly, not rely on users knowing it is unverified. Cumulative provenance across compiled generations is a later programme |
+| V-1 | **intent**: the ledger's ops equal the manifest's effective ops (§4.4a), by digest, kind, tensor, columns and recorded order. A dropped, added, retargeted or reordered op violates the intent half | **GAP**, verifier code (§2.2) |
+
+### 4.4a The expected-operation manifest (owner, r2)
+
+V-1 is circular if the requested ops come from the compiler. So the verifier
+builds them itself.
+
+**Inputs.** The manifest is built only from inputs captured independently of
+the compile, each recorded by its SHA-256:
+- the session script: the ordered LQL statements of the session;
+- every file it names: operand files, direction files and `.vlp` patches;
+- the base container's `index.json` and the edited representation's payload
+  digest, which supply each op's source binding.
+
+The ledger, the compiled container and the engine's replies are never inputs.
+
+**The admitted statement subset:**
+- `USE`;
+- `UPDATE WEIGHTS`, `REMOVE DIRECTION` and `ADD LOW RANK`;
+- `APPLY PATCH`, `REMOVE PATCH` and `DISCARD WEIGHT EDITS`;
+- `BEGIN PATCH` and `SAVE PATCH`;
+- one final `COMPILE CURRENT INTO VINDEX`.
+
+A script containing anything else cannot be evaluated: no manifest is built
+and the intent half is `not_evaluated`.
+
+**How each op is derived:**
+- **A direct statement:** the verifier builds the op from the statement text
+  and its operand file. That covers the tensor, columns, profile, operands,
+  scale or delta, origin and source binding. It computes the digest with its
+  own implementation of the §3a text, or the delta op's equivalent in
+  `weight-patches-v2-v3.md`.
+- **A `.vlp` patch:** each op's fields are read from the patch bytes and its
+  digest is recomputed, never trusted.
+
+**Three ordered lists:**
+
+| List | Contents |
+|---|---|
+| `submitted` | every weight op the script presents, direct or in a patch, in script order |
+| `accepted` | the submitted ops the verifier's own admission rules admit, judged at the moment each is submitted |
+| `effective` | the accepted ops still in effect after the script's `REMOVE PATCH` and `DISCARD WEIGHT EDITS`, in the §2.1 order |
+
+The admission rules for `accepted` are:
+- the footprint conflict rules of §2.1 against the ops in effect at that
+  moment;
+- mixed forms on one tensor;
+- the v4 §5 bounds;
+- the source binding;
+- intactness;
+- for a nonzero structured op, at least one changed element, which the
+  verifier decides with its own numerics.
+
+`DISCARD WEIGHT EDITS` withdraws direct ops only. Ops carried by an applied
+patch stay.
+
+**Immutability.**
+- The manifest is a canonical JSON document. It carries its inputs' digests
+  and its own SHA-256, and is committed with each fixture.
+- The intent check takes the manifest by path and reports its digest.
+- A manifest whose recorded input digests do not match the inputs on disk is
+  refused.
+
+**Engine outcomes are compared, not trusted.** The fixture records the
+engine's reply to each statement, accepted or refused. A statement the
+verifier admits and the engine refused, or the reverse, is a finding under
+§5.4. It is reported beside the verdict, and neither list is adjusted to hide
+it.
+
+**Intent half.** It is satisfied when:
+- the ledger's `origins` equal the digests of `effective`, in order;
+- each target's `operations` equal `effective` filtered to that tensor, field
+  for field and in order;
+- for element targets, the set of `effective` ops that edit each tensor is
+  exactly the set the ledger attributes to it.
+
+Any other ledger op, missing op or reordering is an intent violation, even
+when the ledger and numerical halves are both satisfied.
 
 ### 4.5 Tampering (B7-B)
 
@@ -187,6 +302,8 @@ These already exist as v4 verifier tests on the committed fixtures:
 | T-2 | target identifier: an op's `tensor` re-pointed at another tensor of the same shape and resealed, so the ledger and container are consistent | **GAP**, caught only by V-1 |
 | T-3 | ordering: the ledger's `operations` permuted against the patch | **GAP**, V-1 |
 | T-4 | numerical value: one operand element changed, digest and operand digest resealed, container recompiled to match | **GAP**, caught only by V-1 |
+| T-5 | **a consistent but wrong pair** (owner, r2): the engine itself compiles a script that differs from the manifest's: one op dropped, one op added, one op retargeted to a same-shape tensor, one operand value changed, two patches applied in the other order. Each container is judged against the original manifest. Ledger and numerical halves must be satisfied and the intent half violated. This is the failure the pre-B7 verifier could not detect | **GAP** |
+| T-6 | a tampered manifest or input: one byte of an operand file, a patch or the script changed after the manifest was built | **GAP**: refused as an input fault, intent `not_evaluated` |
 
 ### 4.6 Compiled output (B7-C)
 
@@ -235,8 +352,8 @@ exception (<head sha>):` comment on its exact head. So:
 
 | Step | PR | Side | Contents |
 |---|---|---|---|
-| B7-B0 | 1 | engine | `v4_fixtures.rs` pins every case on disk under `weight_patches_v4/` **and** `weight_patches_v2v3/`, without a hard-coded list. If v2/v3 no longer reproduce at `3406037d`, that is recorded per §5.4 and not regenerated silently |
-| B7-B1 | 2 | verifier | V-1 op-set equality for all three op kinds (extends `--patch`), and T-2/T-3/T-4 |
+| B7-B0 | 1 | engine | `v4_fixtures.rs` pins every case on disk under `weight_patches_v4/` **and** `weight_patches_v2v3/`, without a hard-coded list. A v2/v3 case that no longer reproduces is recorded per §5.4 and handled per D-4. Also adds the S-6 probe, an engine test that records whether a chained compile is admitted |
+| B7-B1 | 2 | verifier | the manifest builder and the intent half (§4.4a) for all three op kinds; T-2 to T-6, with T-5's wrong pairs compiled by the engine through `make_fixtures.py` |
 | B7-B2 | 3 | verifier | fixtures I-4, I-6, R-1–R-7, M-3, S-1–S-5 with `.vlp`s and recorded statements; the matrix tests; T-1 |
 | B7-C | 4 | verifier | C-2 on every fixture; C-3 from recorded live digests; C-4 and C-5 fixtures |
 | B7-close | 5 | docs | the acceptance record, row by row, on the ledger |
@@ -247,34 +364,37 @@ override. If a fixture's statements cannot be recorded as plain LQL (S-2
 needs `.vlp` files committed beside them), the pin test's statement replay is
 extended in B7-B0, before any such fixture exists.
 
-## 7. Decisions for the owner
+## 7. Owner rulings (r2)
 
-- **D-1 Tolerance.** §1 reads "frozen numerical tolerances" as zero
-  tolerance: the frozen profiles define every bit. Confirm, or name a
-  tolerance and where it applies.
-- **D-2 Reverse-order control.** By §2.1 no admitted sequence is
-  order-dependent, since overlaps are refused. S-1 therefore tests order
-  *invariance* plus the recorded ledger order. Confirm that is the intended
-  control, and that a ledger whose `operations` order differs from the
-  patches' order is a ledger violation under V-1.
-- **D-3 Chained compiles (S-6).** It is not yet known whether the engine
-  admits editing an already weight-patched container whose ledger is bound to
-  its own base. Options:
-  - (a) admit it and verify each link against its own base;
-  - (b) refuse it, with a test;
-  - (c) leave it NOT_VERIFIED and out of FACT-WSP-1.
+| Decision | Ruling |
+|---|---|
+| D-1 Tolerance | **Zero tolerance.** BF16 bits, Q8_0 bytes and discrete metadata must match exactly under the frozen numerical contracts |
+| D-2 Reverse order | **Accepted.** S-1 tests numerical order invariance and checks the exact recorded op order independently (intent half, §4.4a) |
+| D-3 Chained compiles | **Option (c).** NOT_VERIFIED, excluded from FACT-WSP-1, with the engine probe in B7-B0. If the engine admits it, FACT-WSP-1 must refuse it explicitly (S-6) |
+| D-4 Historical fixtures | **Accepted.** A v2/v3 case that does not reproduce is kept as historical, and a fresh pinned case is added beside it. Nothing is regenerated silently |
+| D-5 Verifier review | **Fresh-context review is eligible evidence.** Each PR that changes the verifier still needs review of its exact head and an explicit, head-bound approval or `Verifier-review exception`. **No blanket exception is granted** |
+| V-1 | **Strengthened:** requested ops come from an independent expected-operation manifest (§4.4a), and T-5 tests a consistent but wrong ledger/container pair |
 
-  I recommend (c) for B7, with a probe in B7-B0 that records what the engine
-  does.
-- **D-4 v2/v3 fixtures that no longer reproduce.** If B7-B0 shows a v2/v3
-  case is not what today's engine writes, regenerate it under review, or keep
-  the old one as historical and add a fresh pinned one. I recommend the
-  latter, so the change is visible.
-- **D-5 Verifier review.** Steps 2–4 change verifier paths, and each needs
-  your exception or approval on its head. Confirm that a fresh-context model
-  review cited in your exception is acceptable, as `independence.md` permits.
+The numerics are unchanged. The explicit unverified boundaries (§4.7, S-6)
+are retained.
 
-**Acceptance.** B7 is PASS for FACT-WSP-1 when every row of §4.1–§4.6 is
-COVERED or REFUSED on pinned engine output, §5 holds, and the §4.7 rows carry
-their labels in the code and docs. FACT-WSP-1 weight-mutation implementation
-stays blocked until then.
+## 8. Acceptance
+
+B7 is PASS for FACT-WSP-1 when:
+- every row of §4.1 to §4.6 is COVERED or REFUSED on pinned engine output,
+  with all three verdict halves (§1);
+- §5 holds;
+- the §4.7 rows and S-6 carry their labels in the code and docs.
+
+FACT-WSP-1 weight-mutation implementation stays blocked until then.
+
+**The acceptance record must say what algebra was verified.** B7 covers a
+deliberately restricted algebra of weight transformations:
+- disjoint-footprint deltas, `remove_direction` and `add_low_rank_columns`;
+- each computed on the base;
+- byte-wise order-invariant;
+- overlaps refused rather than given an order-dependent meaning.
+
+It is not a verification of arbitrary sequential weight updates, of chained
+compiled generations, or of fine-tuning. A later operation with
+order-dependent semantics needs its own contract.
