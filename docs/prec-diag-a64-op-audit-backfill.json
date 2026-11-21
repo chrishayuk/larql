@@ -201,11 +201,11 @@
     },
     "floating_ops": 708,
     "linear_layers": 29,
-    "matmuls": 37,
+    "matmuls": 29,
     "memory": {
      "largest_probe_bytes": 264960,
-     "peak_rss_bytes_after_probes": 803782656,
-     "peak_rss_bytes_before_probes": 803782656
+     "peak_rss_bytes_after_probes": 804077568,
+     "peak_rss_bytes_before_probes": 804077568
     },
     "non_f64_ops": 0,
     "op_counts": {
@@ -847,7 +847,7 @@
       "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint",
       "a float64 tensor holding a value already rounded to float32 (e.g. a buffer computed in float32 at construction and widened later): dtype is not precision. Not observed under A64's load: from_pretrained(dtype=float64) builds buffers in float64, and the backfill records Gemma 3's embed_scale as sqrt(hidden) in float64",
       "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops",
-      "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer matmuls than the model has nn.Linear modules, which catches a forward run elsewhere, but not a small piece of work moved to another thread"
+      "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer mm/addmm than the model has nn.Linear modules (attention's bmm does not count), which catches a forward, or any nn.Linear, run elsewhere; non-linear work (a norm, an activation) moved to another thread is still not seen"
      ],
      "sees": [
       "every ATen op dispatched during the A64 forward, after autograd and CompositeImplicitAutograd decomposition (F.linear appears as t + mm, a matmul as mm/bmm, softmax(dtype=) as _to_copy + _softmax)",
@@ -1036,11 +1036,11 @@
     },
     "floating_ops": 441,
     "linear_layers": 22,
-    "matmuls": 28,
+    "matmuls": 22,
     "memory": {
      "largest_probe_bytes": 223488,
-     "peak_rss_bytes_after_probes": 803782656,
-     "peak_rss_bytes_before_probes": 803782656
+     "peak_rss_bytes_after_probes": 804077568,
+     "peak_rss_bytes_before_probes": 804077568
     },
     "non_f64_ops": 0,
     "op_counts": {
@@ -1665,7 +1665,7 @@
       "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint",
       "a float64 tensor holding a value already rounded to float32 (e.g. a buffer computed in float32 at construction and widened later): dtype is not precision. Not observed under A64's load: from_pretrained(dtype=float64) builds buffers in float64, and the backfill records Gemma 3's embed_scale as sqrt(hidden) in float64",
       "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops",
-      "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer matmuls than the model has nn.Linear modules, which catches a forward run elsewhere, but not a small piece of work moved to another thread"
+      "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer mm/addmm than the model has nn.Linear modules (attention's bmm does not count), which catches a forward, or any nn.Linear, run elsewhere; non-linear work (a norm, an activation) moved to another thread is still not seen"
      ],
      "sees": [
       "every ATen op dispatched during the A64 forward, after autograd and CompositeImplicitAutograd decomposition (F.linear appears as t + mm, a matmul as mm/bmm, softmax(dtype=) as _to_copy + _softmax)",
@@ -1856,11 +1856,11 @@
     },
     "floating_ops": 3060,
     "linear_layers": 127,
-    "matmuls": 163,
+    "matmuls": 127,
     "memory": {
      "largest_probe_bytes": 1373711360,
-     "peak_rss_bytes_after_probes": 4671094784,
-     "peak_rss_bytes_before_probes": 4671094784
+     "peak_rss_bytes_after_probes": 4661673984,
+     "peak_rss_bytes_before_probes": 4661673984
     },
     "non_f64_ops": 0,
     "op_counts": {
@@ -2502,7 +2502,7 @@
       "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint",
       "a float64 tensor holding a value already rounded to float32 (e.g. a buffer computed in float32 at construction and widened later): dtype is not precision. Not observed under A64's load: from_pretrained(dtype=float64) builds buffers in float64, and the backfill records Gemma 3's embed_scale as sqrt(hidden) in float64",
       "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops",
-      "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer matmuls than the model has nn.Linear modules, which catches a forward run elsewhere, but not a small piece of work moved to another thread"
+      "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer mm/addmm than the model has nn.Linear modules (attention's bmm does not count), which catches a forward, or any nn.Linear, run elsewhere; non-linear work (a norm, an activation) moved to another thread is still not seen"
      ],
      "sees": [
       "every ATen op dispatched during the A64 forward, after autograd and CompositeImplicitAutograd decomposition (F.linear appears as t + mm, a matmul as mm/bmm, softmax(dtype=) as _to_copy + _softmax)",
@@ -2681,11 +2681,11 @@
     },
     "floating_ops": 3766,
     "linear_layers": 197,
-    "matmuls": 253,
+    "matmuls": 197,
     "memory": {
      "largest_probe_bytes": 1261791232,
-     "peak_rss_bytes_after_probes": 8807776256,
-     "peak_rss_bytes_before_probes": 8807776256
+     "peak_rss_bytes_after_probes": 8807071744,
+     "peak_rss_bytes_before_probes": 8807071744
     },
     "non_f64_ops": 0,
     "op_counts": {
@@ -3310,7 +3310,7 @@
       "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint",
       "a float64 tensor holding a value already rounded to float32 (e.g. a buffer computed in float32 at construction and widened later): dtype is not precision. Not observed under A64's load: from_pretrained(dtype=float64) builds buffers in float64, and the backfill records Gemma 3's embed_scale as sqrt(hidden) in float64",
       "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops",
-      "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer matmuls than the model has nn.Linear modules, which catches a forward run elsewhere, but not a small piece of work moved to another thread"
+      "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer mm/addmm than the model has nn.Linear modules (attention's bmm does not count), which catches a forward, or any nn.Linear, run elsewhere; non-linear work (a norm, an activation) moved to another thread is still not seen"
      ],
      "sees": [
       "every ATen op dispatched during the A64 forward, after autograd and CompositeImplicitAutograd decomposition (F.linear appears as t + mm, a matmul as mm/bmm, softmax(dtype=) as _to_copy + _softmax)",
@@ -3326,7 +3326,7 @@
   }
  ],
  "threads": {
-  "OMP_NUM_THREADS": "8",
+  "OMP_NUM_THREADS": null,
   "torch_num_interop_threads": 1,
   "torch_num_threads": 8
  }

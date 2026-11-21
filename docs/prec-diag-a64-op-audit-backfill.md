@@ -145,10 +145,10 @@ The largest single probe's own allocation, and the process peak RSS before and a
 
 | subject | matmuls / nn.Linear | largest probe (bytes) | peak RSS before probes | after probes |
 |---|---|---|---|---|
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | 37 / 29 | 264960 | 803782656 | 803782656 |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | 28 / 22 | 223488 | 803782656 | 803782656 |
-| google/gemma-3-270m-it | 163 / 127 | 1373711360 | 4671094784 | 4671094784 |
-| Qwen/Qwen3-0.6B | 253 / 197 | 1261791232 | 8807776256 | 8807776256 |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | 29 / 29 | 264960 | 804077568 | 804077568 |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | 22 / 22 | 223488 | 804077568 | 804077568 |
+| google/gemma-3-270m-it | 127 / 127 | 1373711360 | 4661673984 | 4661673984 |
+| Qwen/Qwen3-0.6B | 197 / 197 | 1261791232 | 8807071744 | 8807071744 |
 
 ## Control: the same forward with every A64 patch removed
 
@@ -236,7 +236,7 @@ Does not see:
 - tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint
 - a float64 tensor holding a value already rounded to float32 (e.g. a buffer computed in float32 at construction and widened later): dtype is not precision. Not observed under A64's load: from_pretrained(dtype=float64) builds buffers in float64, and the backfill records Gemma 3's embed_scale as sqrt(hidden) in float64
 - state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops
-- work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer matmuls than the model has nn.Linear modules, which catches a forward run elsewhere, but not a small piece of work moved to another thread
+- work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer mm/addmm than the model has nn.Linear modules (attention's bmm does not count), which catches a forward, or any nn.Linear, run elsewhere; non-linear work (a norm, an activation) moved to another thread is still not seen
 
 ## Subjects
 

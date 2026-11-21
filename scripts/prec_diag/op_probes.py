@@ -48,6 +48,7 @@ allocated (`probe_bytes`).
 
 from __future__ import annotations
 
+import contextvars
 import math
 
 import numpy as np
@@ -185,18 +186,39 @@ def _scale(ref, metric: str):
     return 1.0
 
 
-def _error(got: torch.Tensor, ref, metric: str) -> float:
+def _error(got: torch.Tensor, ref, metric: str, shape: tuple | None = None) -> float:
     """Max error of `got` against `ref`: a tensor of the same shape (it may be
-    an expanded view), or one scalar for a uniform output, compared in chunks."""
+    an expanded view), or one scalar for a uniform output of `shape`, compared
+    in chunks. A wrong shape or any NaN is an infinite error (Python's `max`
+    would otherwise drop a NaN)."""
     if isinstance(ref, torch.Tensor):
         if tuple(got.shape) != tuple(ref.shape):
             return math.inf
-        return float(((got.to(torch.float64) - ref).abs() / _scale(ref, metric)).max()) if got.numel() else 0.0
+        if not got.numel():
+            return 0.0
+        err = float(((got.to(torch.float64) - ref).abs() / _scale(ref, metric)).max())
+        return math.inf if math.isnan(err) else err
+    if shape is None or tuple(got.shape) != tuple(shape):
+        return math.inf
     flat, worst = got.reshape(-1), 0.0
     for i in range(0, flat.numel(), COMPARE_CHUNK):
-        part = (flat[i:i + COMPARE_CHUNK].to(torch.float64) - ref).abs().max()
-        worst = max(worst, float(part) / _scale(ref, metric))
+        part = float((flat[i:i + COMPARE_CHUNK].to(torch.float64) - ref).abs().max())
+        if math.isnan(part):
+            return math.inf
+        worst = max(worst, part / _scale(ref, metric))
     return worst
+
+
+# The ATen overload being probed, set by `probe` for the duration of one probe. Shape inference uses it,
+# never the kernel under test (which may be a deliberately wrong one).
+_REFERENCE_OP: contextvars.ContextVar = contextvars.ContextVar("prec_diag_probe_reference_op")
+
+
+def _expected_shape(args: tuple, kwargs: dict) -> tuple:
+    """The output shape the probed ATen overload produces for `args`, from the
+    meta device (shape inference only: nothing is allocated or computed)."""
+    meta = [a.to("meta") if isinstance(a, torch.Tensor) else a for a in args]
+    return tuple(_REFERENCE_OP.get()(*meta, **kwargs).shape)
 
 
 def _f32(x):
@@ -211,12 +233,15 @@ def _judge(op, args: tuple, kwargs: dict, ref, metric: str, extra: dict, counter
     """Run the float64 probe, then its float32 counterfactual (on
     `counterfactual_args`, a smaller probe of the same values and reduction
     length, when given). The float64 output is freed before the counterfactual."""
+    uniform = not isinstance(ref, torch.Tensor)
     got = op(*args, **kwargs)
     probe_bytes = _bytes(*args, got)
-    err, dtype = _error(got, ref, metric), got.dtype
+    err = _error(got, ref, metric, _expected_shape(args, kwargs) if uniform else None)
+    dtype = got.dtype
     del got
-    counter = op(*[_f32(a) for a in (counterfactual_args or args)], **kwargs)
-    cf = _error(counter, ref, metric)
+    cf_args = [_f32(a) for a in (counterfactual_args or args)]
+    counter = op(*cf_args, **kwargs)
+    cf = _error(counter, ref, metric, _expected_shape(tuple(cf_args), kwargs) if uniform else None)
     bound = 0.0 if metric == EXACT else TOLERANCE
     within = err <= bound
     discriminates = cf > bound
@@ -427,8 +452,17 @@ def resolve(name: str):
 def probe(name: str, sig: dict, op=None) -> dict:
     """Run the probe for `name` at `sig`. `op` defaults to the ATen overload
     itself; the tests pass a deliberately imprecise one."""
-    op = op or resolve(name)
+    reference = resolve(name)
+    op = op or reference
     kind = class_of(name)
+    token = _REFERENCE_OP.set(reference)
+    try:
+        return _probe(name, sig, op, kind)
+    finally:
+        _REFERENCE_OP.reset(token)
+
+
+def _probe(name: str, sig: dict, op, kind: str) -> dict:
     with torch.no_grad():
         if kind == ACCUMULATING:
             out = _ACCUMULATING[name](op, sig)

@@ -22,6 +22,7 @@ Run: python3 -I -m unittest discover -s scripts -p 'test_prec_diag_*.py'
 
 import ast
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -227,6 +228,42 @@ class Probes(unittest.TestCase):
                     self.assertFalse(r["pass"], r)
                     self.assertIn("not float64-accurate", r["detail"])
 
+    UNIFORM = ("aten.mm.default", "aten.addmm.default", "aten.bmm.default", "aten.sum.default",
+               "aten.sum.dim_IntList", "aten.mean.dim")
+
+    def test_a_nan_output_fails_every_uniform_probe(self):
+        """Review of #899: Python's max drops a NaN, so a chunked scalar
+        comparison must treat any NaN as an infinite error."""
+        for name in self.UNIFORM:
+            real = op.resolve(name)
+            for where in ("one", "all"):
+                def nan(*args, real=real, where=where, **kwargs):
+                    out = real(*args, **kwargs).clone()
+                    if where == "one":
+                        out.view(-1)[0] = math.nan
+                    else:
+                        out.fill_(math.nan)
+                    return out
+
+                with self.subTest(name=name, nan=where):
+                    r = op.probe(name, self.sig(name), op=nan)
+                    self.assertFalse(r["pass"], r)
+                    self.assertEqual(r["error"], math.inf)
+
+    def test_a_wrong_shaped_output_fails_every_uniform_probe(self):
+        """A uniform reference is one scalar, so the output shape is checked
+        against the op's own shape inference."""
+        for name in self.UNIFORM:
+            real = op.resolve(name)
+
+            def first(*args, real=real, **kwargs):
+                return real(*args, **kwargs).reshape(-1)[:1].clone()
+
+            with self.subTest(name=name):
+                r = op.probe(name, self.sig(name), op=first)
+                self.assertFalse(r["pass"], r)
+                self.assertEqual(r["error"], math.inf)
+
     def test_every_probe_records_the_bytes_it_allocated(self):
         r = op.probe("aten.mm.default", self.MATRIX)
         (m, k), (_, n) = self.MATRIX["a"][0], self.MATRIX["b"][0]
@@ -325,7 +362,29 @@ class GapTheModuleAuditCannotSee(unittest.TestCase):
             worker.join()
         r = ops.finish()
         self.assertFalse(r["pass"])
-        self.assertTrue(any(p.startswith("partial trace: 0 matmuls") for p in r["problems"]), r["problems"])
+        self.assertTrue(any(p.startswith("partial trace: 0 mm/addmm") for p in r["problems"]), r["problems"])
+
+    def test_one_mlp_on_another_thread_is_a_partial_trace(self):
+        """Review of #899: counting attention's bmm towards the floor left
+        slack for a layer's linear work moved off the trace."""
+        model, _ = ho.load(self.ckpts["gemma3_text"], "A64", gemma.BOUNDARY)
+        mlp = model.model.layers[0].mlp
+        inner = mlp.forward
+
+        def elsewhere(x):
+            out = {}
+            worker = threading.Thread(target=lambda: out.setdefault("y", inner(x)))
+            worker.start()
+            worker.join()
+            return out["y"]
+
+        mlp.forward = elsewhere
+        ops = oa.OpDtypeAudit(linear_layers=linear_layers(model))
+        with ops, torch.no_grad():
+            model(torch.tensor([gemma.IDS]), use_cache=False)
+        r = ops.finish()
+        self.assertFalse(r["pass"])
+        self.assertTrue(any(p.startswith("partial trace:") for p in r["problems"]), r["problems"])
 
     def test_tracing_part_of_the_forward_fails(self):
         model, _ = ho.load(self.ckpts["gemma3_text"], "A64", gemma.BOUNDARY)
@@ -335,7 +394,7 @@ class GapTheModuleAuditCannotSee(unittest.TestCase):
             model.lm_head(hidden)
         r = ops.finish()
         self.assertFalse(r["pass"])
-        self.assertIn(f"partial trace: 1 matmuls for {linear_layers(model)} nn.Linear modules",
+        self.assertIn(f"partial trace: 1 mm/addmm for {linear_layers(model)} nn.Linear modules",
                       " ".join(r["problems"]))
 
     def test_a_hidden_f32_computation_with_no_patch_fails_only_this_part(self):

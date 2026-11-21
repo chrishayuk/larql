@@ -39,8 +39,9 @@ is double; the probes are the evidence that this build behaves so.)
 
 The part passes only if:
 - the trace is not partial: it saw at least one floating op, and at least as
-  many matmuls (`mm`/`addmm`/`bmm`) as the model has `nn.Linear` modules
-  (`linear_layers`, counted from the loaded model). A dispatch mode is
+  many linear-layer matmuls (`mm`/`addmm`; `bmm` is attention's and does not
+  count) as the model has `nn.Linear` modules (`linear_layers`, counted from
+  the loaded model). A dispatch mode is
   thread-local, so work run on another thread is never seen; this check is
   what catches a forward that ran mostly elsewhere;
 - no dtype fault was recorded;
@@ -85,6 +86,9 @@ MAX_ROWS = 500
 MAX_PROBLEMS = 50
 #: Ops that run an `nn.Linear` (F.linear decomposes into t + mm, or addmm with a bias).
 MATMUL_OPS = frozenset({"aten.mm.default", "aten.addmm.default", "aten.bmm.default"})
+# What an `nn.Linear` dispatches to (F.linear -> t + mm, or addmm with a bias). The partial-trace floor
+# counts only these: attention's bmm would otherwise give slack for linear work moved off the trace.
+LINEAR_OPS = frozenset({"aten.mm.default", "aten.addmm.default"})
 #: `ru_maxrss` is bytes on macOS and KiB on Linux.
 RSS_UNIT = 1 if sys.platform == "darwin" else 1024
 
@@ -151,8 +155,9 @@ VISIBILITY = {
         "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with "
         "use_cache=False; within it, every state tensor is produced and written by traced ops",
         "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer "
-        "matmuls than the model has nn.Linear modules, which catches a forward run elsewhere, but not a small "
-        "piece of work moved to another thread",
+        "mm/addmm than the model has nn.Linear modules (attention's bmm does not count), which catches a "
+        "forward, or any nn.Linear, run elsewhere; non-linear work (a norm, an activation) moved to another "
+        "thread is still not seen",
     ],
 }
 
@@ -303,7 +308,15 @@ class OpDtypeAudit(TorchDispatchMode):
 
     def finish(self) -> dict:
         """The part's record; runs every probe the trace calls for."""
+        # Structural problems first: the record keeps only the first MAX_PROBLEMS, and a partial or vacuous
+        # trace must never be truncated away behind per-op faults.
         problems = []
+        if self.floating_ops == 0:
+            problems.append("the trace saw no floating op: the audit was not active during the forward")
+        matmuls = sum(self.op_counts[name] for name in LINEAR_OPS)
+        if matmuls < self.linear_layers:
+            problems.append(f"partial trace: {matmuls} mm/addmm for {self.linear_layers} nn.Linear modules "
+                            "(work on another thread, or outside the trace, is not seen)")
         violation_rows = self._rows(self.violations, ("op", "role", "dtype", "site"))
         for r in violation_rows:
             problems.append(f"{r['op']}: non-float64 {r['role']} {r['dtype']} at {r['site']} (x{r['count']})")
@@ -320,12 +333,6 @@ class OpDtypeAudit(TorchDispatchMode):
         memory = {"largest_probe_bytes": max((p.get("probe_bytes", 0) for p in probes), default=0),
                   "peak_rss_bytes_before_probes": rss_before,
                   "peak_rss_bytes_after_probes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * RSS_UNIT}
-        if self.floating_ops == 0:
-            problems.append("the trace saw no floating op: the audit was not active during the forward")
-        matmuls = sum(self.op_counts[name] for name in MATMUL_OPS)
-        if matmuls < self.linear_layers:
-            problems.append(f"partial trace: {matmuls} matmuls for {self.linear_layers} nn.Linear modules "
-                            "(work on another thread, or outside the trace, is not seen)")
         probed = {p["op"] for p in probes}
         for name in sorted(self.op_counts):
             if op_probes.class_of(name) == op_probes.ACCUMULATING and name not in probed:
