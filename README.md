@@ -78,8 +78,8 @@ larql pull granite-4.1-3b
 larql run  granite-4.1-3b "Write a haiku about Rust."
 ```
 
-`qwen3-0.6b`, `gemma-3-270m-it`, `gemma-3-4b-it`, `gemma-3-12b-it` and
-`gemma-4-12b-it` are ready to pull the same way.
+`qwen3-0.6b`, `gemma-3-270m-it`, `gemma-3-1b-it`, `gemma-3-4b-it`,
+`gemma-3-12b-it` and `gemma-4-12b-it` are ready to pull the same way.
 
 **2. Serve it** over an OpenAI-compatible API:
 
