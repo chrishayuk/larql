@@ -5,6 +5,7 @@
     "gemma-3-270m-it",
     "gemma-3-4b-it",
     "gemma-4-12b-it",
-    "granite-4.1-3b"
+    "granite-4.1-3b",
+    "qwen3-0.6b"
   ]
 }

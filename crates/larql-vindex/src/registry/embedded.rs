@@ -52,6 +52,9 @@ const GEMMA_3_4B_IT_JSON: &str = include_str!("../../../../registry/models/gemma
 /// `registry/models/gemma-3-270m-it.json` — see [`embedded_model_json`].
 const GEMMA_3_270M_IT_JSON: &str = include_str!("../../../../registry/models/gemma-3-270m-it.json");
 
+/// `registry/models/qwen3-0.6b.json` — see [`embedded_model_json`].
+const QWEN3_0_6B_JSON: &str = include_str!("../../../../registry/models/qwen3-0.6b.json");
+
 /// `registry/models/gemma-3-12b-it.json` — see [`embedded_model_json`].
 const GEMMA_3_12B_IT_JSON: &str = include_str!("../../../../registry/models/gemma-3-12b-it.json");
 
@@ -95,6 +98,7 @@ fn embedded_model_json(name: &str) -> Option<&'static str> {
         "gemma-3-270m-it" => Some(GEMMA_3_270M_IT_JSON),
         "gemma-3-12b-it" => Some(GEMMA_3_12B_IT_JSON),
         "gemma-4-12b-it" => Some(GEMMA_4_12B_IT_JSON),
+        "qwen3-0.6b" => Some(QWEN3_0_6B_JSON),
         _ => None,
     }
 }
