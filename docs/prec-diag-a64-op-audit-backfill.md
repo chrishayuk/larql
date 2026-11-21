@@ -10,8 +10,8 @@ Each subject is one A64 forward made as `hf_oracle.forward` makes it, with the e
 
 - **gemma3_text** (2 subjects): part 5 passes on the A64 forward; 0 non-float64 op events; every op with floating tensors is classified; 48 kernel probes, 0 failed. Dtype conversions: torch.int64 -> torch.float64 at `hf_oracle.py:502 a64_patches.<locals>.rot`.
 - **qwen3** (2 subjects): part 5 passes on the A64 forward; 0 non-float64 op events; every op with floating tensors is classified; 46 kernel probes, 0 failed. Dtype conversions: torch.int64 -> torch.float64 at `hf_oracle.py:502 a64_patches.<locals>.rot`.
-- **The gap #897 names, on these families**: with A64's patches removed, part 5 fails on 4 of 4 subjects while the module-boundary audit (part 2) reports 0 problems on the same forward. The shipped float32 sites (RMSNorm, rotary, eager softmax) cast and cast back inside one call. A64's existing patches cover exactly these sites, and part 3's call counts and witnesses already caught a missing patch; part 5 also catches a float32 site that no patch was written for.
-- **A limit of any dtype audit, shown here**: the control also removed Gemma 3's scaled-embedding patch, and part 5 recorded no embedding site. transformers builds `embed_scale` as a float32 tensor and `.to(float64)` widens it, so the forward multiplies by a float64 tensor holding sqrt(hidden) rounded to float32. Its dtype is float64; only its value is float32-rounded. Part 3's embedding witness is what catches it, so part 5 adds to parts 1-4 and replaces none of them.
+- **The gap #897 names, on these families**: with A64's patches removed, part 5 fails on 4 of 4 subjects while the module-boundary audit (part 2) reports 0 problems on the same forward. The shipped float32 sites (RMSNorm, rotary, eager softmax) cast and cast back inside one call. Part 3 (patched-function call counts and witnesses) also fails on 4 of 4 control forwards, because a removed patch is never called; it can only see a site that has a patch, while part 5 needs none.
+- **Gemma 3's scaled embedding is float64 work unpatched**: on 2 of 2 Gemma 3 subjects the `embed_scale` buffer holds sqrt(hidden) in float64, not a float32-rounded value (`from_pretrained(dtype=float64)` builds it in float64; recorded in `control_unpatched.embed_scale`). So the control, which removed the scaled-embedding patch, correctly shows no embedding site: there is no float32 work there under A64's load. Part 5 can still not see a float64 tensor holding a float32-rounded value; none was found here.
 - Sealed verdicts are unchanged. This backfill re-evaluates none of them.
 
 ## Summary
@@ -46,20 +46,20 @@ Accumulating ops are probed at every distinct shape and stride the forward used;
 |---|---|---|---|---|---|---|
 | synthetic gemma3_text (test_prec_diag_hf_oracle) | aten._softmax.default | 24 | relative | 0.0 | 9.750947551770755e-07 | pass |
 | synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.add.Tensor |  | exact | 0.0 | 4.732177059096898e-07 | pass |
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.bmm.default | 32 | exact | 0.0 | 6.8833827526759706e-15 | pass |
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.bmm.default | 24 | exact | 0.0 | 5.10702591327572e-15 | pass |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.bmm.default | 32 | exact | 0.0 | 7.450581374079945e-08 | pass |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.bmm.default | 24 | exact | 0.0 | 7.450581196444261e-08 | pass |
 | synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.cos.default |  | mixed | 1.1102230246251565e-16 | 0.00012141299540856243 | pass |
 | synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.div.Tensor |  | exact | 0.0 | 9.096925782614562e-05 | pass |
 | synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.gelu.default |  | mixed | 2.2041830166630305e-16 | 1.5411372041282746e-07 | pass |
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mean.dim | 80 | exact | 0.0 | 1.8626429565404834e-10 | pass |
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mean.dim | 32 | exact | 0.0 | 2.1510571102112408e-16 | pass |
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mean.dim | 32 | exact | 0.0 | 2.1510571102112408e-16 | pass |
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mm.default | 80 | exact | 0.0 | 1.7541523789077473e-14 | pass |
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mm.default | 80 | exact | 0.0 | 1.7541523789077473e-14 | pass |
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mm.default | 64 | exact | 0.0 | 1.3988810110276972e-14 | pass |
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mm.default | 80 | exact | 0.0 | 1.7541523789077473e-14 | pass |
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mm.default | 96 | exact | 0.0 | 2.1094237467877974e-14 | pass |
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mm.default | 80 | exact | 0.0 | 1.7541523789077473e-14 | pass |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mean.dim | 80 | exact | 0.0 | 5.587937647322239e-10 | pass |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mean.dim | 32 | exact | 0.0 | 1.862645364336668e-09 | pass |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mean.dim | 32 | exact | 0.0 | 1.862645364336668e-09 | pass |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mm.default | 80 | exact | 0.0 | 7.450582439894049e-08 | pass |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mm.default | 80 | exact | 0.0 | 7.450582439894049e-08 | pass |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mm.default | 64 | exact | 0.0 | 7.450582084622681e-08 | pass |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mm.default | 80 | exact | 0.0 | 7.450582439894049e-08 | pass |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mm.default | 96 | exact | 0.0 | 7.450582795165417e-08 | pass |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mm.default | 80 | exact | 0.0 | 7.450582439894049e-08 | pass |
 | synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.mul.Tensor |  | exact | 0.0 | 1.1624123743558812e-06 | pass |
 | synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.neg.default |  | exact | 0.0 | 1.1904007646279524e-07 | pass |
 | synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.pow.Scalar |  | relative | 2.0841300435571533e-16 | 3.1717929890127353e-07 | pass |
@@ -70,19 +70,19 @@ Accumulating ops are probed at every distinct shape and stride the forward used;
 | synthetic gemma3_text (test_prec_diag_hf_oracle) | aten.sin.default |  | mixed | 1.1102230246251565e-16 | 0.0001206728512435154 | pass |
 | synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten._softmax.default | 24 | relative | 0.0 | 9.750947551770755e-07 | pass |
 | synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.add.Tensor |  | exact | 0.0 | 4.732177059096898e-07 | pass |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.bmm.default | 32 | exact | 0.0 | 6.8833827526759706e-15 | pass |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.bmm.default | 24 | exact | 0.0 | 5.10702591327572e-15 | pass |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.bmm.default | 32 | exact | 0.0 | 7.450581374079945e-08 | pass |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.bmm.default | 24 | exact | 0.0 | 7.450581196444261e-08 | pass |
 | synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.cos.default |  | mixed | 1.1102230246251565e-16 | 0.00012141299540856243 | pass |
 | synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.div.Tensor |  | exact | 0.0 | 9.096925782614562e-05 | pass |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mean.dim | 64 | exact | 0.0 | 2.185751579730777e-16 | pass |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mean.dim | 32 | exact | 0.0 | 2.1510571102112408e-16 | pass |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mean.dim | 32 | exact | 0.0 | 2.1510571102112408e-16 | pass |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mm.default | 64 | exact | 0.0 | 1.3988810110276972e-14 | pass |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mm.default | 64 | exact | 0.0 | 1.3988810110276972e-14 | pass |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mm.default | 128 | exact | 0.0 | 2.8199664825478976e-14 | pass |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mm.default | 64 | exact | 0.0 | 1.3988810110276972e-14 | pass |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mm.default | 96 | exact | 0.0 | 2.1094237467877974e-14 | pass |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mm.default | 64 | exact | 0.0 | 1.3988810110276972e-14 | pass |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mean.dim | 64 | exact | 0.0 | 9.313227931906365e-10 | pass |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mean.dim | 32 | exact | 0.0 | 1.862645364336668e-09 | pass |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mean.dim | 32 | exact | 0.0 | 1.862645364336668e-09 | pass |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mm.default | 64 | exact | 0.0 | 7.450582084622681e-08 | pass |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mm.default | 64 | exact | 0.0 | 7.450582084622681e-08 | pass |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mm.default | 128 | exact | 0.0 | 7.450583505708153e-08 | pass |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mm.default | 64 | exact | 0.0 | 7.450582084622681e-08 | pass |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mm.default | 96 | exact | 0.0 | 7.450582795165417e-08 | pass |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mm.default | 64 | exact | 0.0 | 7.450582084622681e-08 | pass |
 | synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.mul.Tensor |  | exact | 0.0 | 1.1624123743558812e-06 | pass |
 | synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.neg.default |  | exact | 0.0 | 1.1904007646279524e-07 | pass |
 | synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.pow.Scalar |  | relative | 2.1109516822708242e-16 | 4.470631667412199e-07 | pass |
@@ -93,20 +93,20 @@ Accumulating ops are probed at every distinct shape and stride the forward used;
 | synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | aten.sin.default |  | mixed | 1.1102230246251565e-16 | 0.0001206728512435154 | pass |
 | google/gemma-3-270m-it | aten._softmax.default | 15 | relative | 0.0 | 9.667128439451436e-07 | pass |
 | google/gemma-3-270m-it | aten.add.Tensor |  | exact | 0.0 | 4.732177059096898e-07 | pass |
-| google/gemma-3-270m-it | aten.bmm.default | 256 | exact | 0.0 | 5.6621374255882984e-14 | pass |
-| google/gemma-3-270m-it | aten.bmm.default | 15 | exact | 0.0 | 3.1086244689504383e-15 | pass |
+| google/gemma-3-270m-it | aten.bmm.default | 256 | exact | 0.0 | 7.450586347879096e-08 | pass |
+| google/gemma-3-270m-it | aten.bmm.default | 15 | exact | 0.0 | 7.450580996604117e-08 | pass |
 | google/gemma-3-270m-it | aten.cos.default |  | mixed | 1.1102230246251565e-16 | 0.00012141299540856243 | pass |
 | google/gemma-3-270m-it | aten.div.Tensor |  | exact | 0.0 | 9.096925782614562e-05 | pass |
 | google/gemma-3-270m-it | aten.gelu.default |  | mixed | 2.2041830166630305e-16 | 1.5411372041282746e-07 | pass |
-| google/gemma-3-270m-it | aten.mean.dim | 640 | exact | 0.0 | 2.3282842667726733e-11 | pass |
-| google/gemma-3-270m-it | aten.mean.dim | 256 | exact | 0.0 | 2.211772431870429e-16 | pass |
-| google/gemma-3-270m-it | aten.mean.dim | 256 | exact | 0.0 | 2.211772431870429e-16 | pass |
-| google/gemma-3-270m-it | aten.mm.default | 640 | exact | 0.0 | 1.41886502547095e-13 | pass |
-| google/gemma-3-270m-it | aten.mm.default | 640 | exact | 0.0 | 1.41886502547095e-13 | pass |
-| google/gemma-3-270m-it | aten.mm.default | 1024 | exact | 0.0 | 2.2715163083830703e-13 | pass |
-| google/gemma-3-270m-it | aten.mm.default | 640 | exact | 0.0 | 1.41886502547095e-13 | pass |
-| google/gemma-3-270m-it | aten.mm.default | 2048 | exact | 0.0 | 4.545253062815391e-13 | pass |
-| google/gemma-3-270m-it | aten.mm.default | 640 | exact | 0.0 | 1.41886502547095e-13 | pass |
+| google/gemma-3-270m-it | aten.mean.dim | 640 | exact | 0.0 | 6.984941488055729e-11 | pass |
+| google/gemma-3-270m-it | aten.mean.dim | 256 | exact | 0.0 | 2.328308648311128e-10 | pass |
+| google/gemma-3-270m-it | aten.mean.dim | 256 | exact | 0.0 | 2.328308648311128e-10 | pass |
+| google/gemma-3-270m-it | aten.mm.default | 640 | exact | 0.0 | 7.450594874391925e-08 | pass |
+| google/gemma-3-270m-it | aten.mm.default | 640 | exact | 0.0 | 7.450594874391925e-08 | pass |
+| google/gemma-3-270m-it | aten.mm.default | 1024 | exact | 0.0 | 7.450603400904754e-08 | pass |
+| google/gemma-3-270m-it | aten.mm.default | 640 | exact | 0.0 | 7.450594874391925e-08 | pass |
+| google/gemma-3-270m-it | aten.mm.default | 2048 | exact | 0.0 | 7.450626138272298e-08 | pass |
+| google/gemma-3-270m-it | aten.mm.default | 640 | exact | 0.0 | 7.450594874391925e-08 | pass |
 | google/gemma-3-270m-it | aten.mul.Tensor |  | exact | 0.0 | 1.1624123743558812e-06 | pass |
 | google/gemma-3-270m-it | aten.neg.default |  | exact | 0.0 | 1.1904007646279524e-07 | pass |
 | google/gemma-3-270m-it | aten.pow.Scalar |  | relative | 2.0841300435571533e-16 | 3.1717929890127353e-07 | pass |
@@ -117,19 +117,19 @@ Accumulating ops are probed at every distinct shape and stride the forward used;
 | google/gemma-3-270m-it | aten.sin.default |  | mixed | 1.1102230246251565e-16 | 0.0001206728512435154 | pass |
 | Qwen/Qwen3-0.6B | aten._softmax.default | 14 | relative | 0.0 | 9.657815205699532e-07 | pass |
 | Qwen/Qwen3-0.6B | aten.add.Tensor |  | exact | 0.0 | 4.732177059096898e-07 | pass |
-| Qwen/Qwen3-0.6B | aten.bmm.default | 128 | exact | 0.0 | 2.8199664825478976e-14 | pass |
-| Qwen/Qwen3-0.6B | aten.bmm.default | 14 | exact | 0.0 | 2.886579864025407e-15 | pass |
+| Qwen/Qwen3-0.6B | aten.bmm.default | 128 | exact | 0.0 | 7.450583505708153e-08 | pass |
+| Qwen/Qwen3-0.6B | aten.bmm.default | 14 | exact | 0.0 | 7.450580974399656e-08 | pass |
 | Qwen/Qwen3-0.6B | aten.cos.default |  | mixed | 1.1102230246251565e-16 | 0.00012141299540856243 | pass |
 | Qwen/Qwen3-0.6B | aten.div.Tensor |  | exact | 0.0 | 9.096925782614562e-05 | pass |
-| Qwen/Qwen3-0.6B | aten.mean.dim | 1024 | exact | 0.0 | 2.218277644905342e-16 | pass |
-| Qwen/Qwen3-0.6B | aten.mean.dim | 128 | exact | 0.0 | 2.203098814490545e-16 | pass |
-| Qwen/Qwen3-0.6B | aten.mean.dim | 128 | exact | 0.0 | 2.203098814490545e-16 | pass |
-| Qwen/Qwen3-0.6B | aten.mm.default | 1024 | exact | 0.0 | 2.2715163083830703e-13 | pass |
-| Qwen/Qwen3-0.6B | aten.mm.default | 1024 | exact | 0.0 | 2.2715163083830703e-13 | pass |
-| Qwen/Qwen3-0.6B | aten.mm.default | 2048 | exact | 0.0 | 4.545253062815391e-13 | pass |
-| Qwen/Qwen3-0.6B | aten.mm.default | 1024 | exact | 0.0 | 2.2715163083830703e-13 | pass |
-| Qwen/Qwen3-0.6B | aten.mm.default | 3072 | exact | 0.0 | 6.818989817247711e-13 | pass |
-| Qwen/Qwen3-0.6B | aten.mm.default | 1024 | exact | 0.0 | 2.2715163083830703e-13 | pass |
+| Qwen/Qwen3-0.6B | aten.mean.dim | 1024 | exact | 0.0 | 5.82078827412319e-11 | pass |
+| Qwen/Qwen3-0.6B | aten.mean.dim | 128 | exact | 0.0 | 4.656615076176207e-10 | pass |
+| Qwen/Qwen3-0.6B | aten.mean.dim | 128 | exact | 0.0 | 4.656615076176207e-10 | pass |
+| Qwen/Qwen3-0.6B | aten.mm.default | 1024 | exact | 0.0 | 7.450603400904754e-08 | pass |
+| Qwen/Qwen3-0.6B | aten.mm.default | 1024 | exact | 0.0 | 7.450603400904754e-08 | pass |
+| Qwen/Qwen3-0.6B | aten.mm.default | 2048 | exact | 0.0 | 7.450626138272298e-08 | pass |
+| Qwen/Qwen3-0.6B | aten.mm.default | 1024 | exact | 0.0 | 7.450603400904754e-08 | pass |
+| Qwen/Qwen3-0.6B | aten.mm.default | 3072 | exact | 0.0 | 7.450648875639843e-08 | pass |
+| Qwen/Qwen3-0.6B | aten.mm.default | 1024 | exact | 0.0 | 7.450603400904754e-08 | pass |
 | Qwen/Qwen3-0.6B | aten.mul.Tensor |  | exact | 0.0 | 1.1624123743558812e-06 | pass |
 | Qwen/Qwen3-0.6B | aten.neg.default |  | exact | 0.0 | 1.1904007646279524e-07 | pass |
 | Qwen/Qwen3-0.6B | aten.pow.Scalar |  | relative | 2.1109516822708242e-16 | 4.470631667412199e-07 | pass |
@@ -139,16 +139,34 @@ Accumulating ops are probed at every distinct shape and stride the forward used;
 | Qwen/Qwen3-0.6B | aten.silu.default |  | mixed | 2.597796577926198e-16 | 1.4295600100957658e-07 | pass |
 | Qwen/Qwen3-0.6B | aten.sin.default |  | mixed | 1.1102230246251565e-16 | 0.0001206728512435154 | pass |
 
+## Probe memory
+
+The largest single probe's own allocation, and the process peak RSS before and after the probes (the model and logits are live throughout).
+
+| subject | matmuls / nn.Linear | largest probe (bytes) | peak RSS before probes | after probes |
+|---|---|---|---|---|
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | 37 / 29 | 264960 | 803782656 | 803782656 |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | 28 / 22 | 223488 | 803782656 | 803782656 |
+| google/gemma-3-270m-it | 163 / 127 | 1373711360 | 4671094784 | 4671094784 |
+| Qwen/Qwen3-0.6B | 253 / 197 | 1261791232 | 8807776256 | 8807776256 |
+
 ## Control: the same forward with every A64 patch removed
 
 Not an A64 forward: transformers' modeling file as shipped, on the same float64 weights. It shows that part 5 sees the families' own float32 sites on these very subjects, and that the module-boundary audit (part 2) does not.
 
 | subject | patches removed | non-f64 ops / floating ops | part 5 | module-boundary problems |
 |---|---|---|---|---|
-| synthetic gemma3_text (test_prec_diag_hf_oracle) | embedding, rmsnorm, rotary, softmax | 330 / 687 | FAIL | 0 |
-| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | rmsnorm, rotary, softmax | 117 / 399 | FAIL | 0 |
-| google/gemma-3-270m-it | embedding, rmsnorm, rotary, softmax | 1450 / 3011 | FAIL | 0 |
-| Qwen/Qwen3-0.6B | rmsnorm, rotary, softmax | 892 / 3424 | FAIL | 0 |
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | embedding, rmsnorm, rotary, softmax | 330 / 688 | FAIL | 0 |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | rmsnorm, rotary, softmax | 117 / 400 | FAIL | 0 |
+| google/gemma-3-270m-it | embedding, rmsnorm, rotary, softmax | 1450 / 3012 | FAIL | 0 |
+| Qwen/Qwen3-0.6B | rmsnorm, rotary, softmax | 892 / 3425 | FAIL | 0 |
+
+| subject | part 3 on the control | part 3 problems (first) | embed_scale |
+|---|---|---|---|
+| synthetic gemma3_text (test_prec_diag_hf_oracle) | FAIL | patched-function call counts {'rmsnorm': 0, 'rotary': 0, 'softmax': 0, 'embedding': 0} != {'rmsnorm': 25, 'rotary': 4, 'softmax': 4, 'embedding': 1} | torch.float64 8.94427190999916; float32-rounded: False; float64 sqrt: True |
+| synthetic qwen3 (test_prec_diag_hf_oracle_qwen3) | FAIL | patched-function call counts {'rmsnorm': 0, 'rotary': 0, 'softmax': 0} != {'rmsnorm': 13, 'rotary': 1, 'softmax': 3} | n/a |
+| google/gemma-3-270m-it | FAIL | patched-function call counts {'rmsnorm': 0, 'rotary': 0, 'softmax': 0, 'embedding': 0} != {'rmsnorm': 109, 'rotary': 18, 'softmax': 18, 'embedding': 1} | torch.float64 25.298221281347036; float32-rounded: False; float64 sqrt: True |
+| Qwen/Qwen3-0.6B | FAIL | patched-function call counts {'rmsnorm': 0, 'rotary': 0, 'softmax': 0} != {'rmsnorm': 113, 'rotary': 1, 'softmax': 28} | n/a |
 
 Non-float64 sites in the control:
 
@@ -216,8 +234,9 @@ Does not see:
 - elementwise kernels at shapes other than the probe vector: elementwise probes run once per scalar variant on a fixed-length contiguous vector
 - computation outside torch (numpy, Python math): in the oracle these are the patched functions' float64 numpy witnesses and config scalars
 - tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint
-- a float64 tensor holding a value already rounded to float32: dtype is not precision. Gemma 3's embed_scale buffer is built as a float32 tensor and widened by .to(float64), so it is float64 holding sqrt(hidden) rounded to float32; only the patched-function witness (part 3) sees it
+- a float64 tensor holding a value already rounded to float32 (e.g. a buffer computed in float32 at construction and widened later): dtype is not precision. Not observed under A64's load: from_pretrained(dtype=float64) builds buffers in float64, and the backfill records Gemma 3's embed_scale as sqrt(hidden) in float64
 - state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops
+- work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer matmuls than the model has nn.Linear modules, which catches a forward run elsewhere, but not a small piece of work moved to another thread
 
 ## Subjects
 

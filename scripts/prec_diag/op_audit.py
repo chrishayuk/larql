@@ -38,16 +38,26 @@ it instead, rather than assuming it. (ATen's CPU accumulate type for double
 is double; the probes are the evidence that this build behaves so.)
 
 The part passes only if:
-- the trace saw at least one floating op (a vacuous trace fails);
+- the trace is not partial: it saw at least one floating op, and at least as
+  many matmuls (`mm`/`addmm`/`bmm`) as the model has `nn.Linear` modules
+  (`linear_layers`, counted from the loaded model). A dispatch mode is
+  thread-local, so work run on another thread is never seen; this check is
+  what catches a forward that ran mostly elsewhere;
 - no dtype fault was recorded;
 - no op was unclassified;
-- every probe passed.
+- every accumulating op kind seen has a probe, and every probe passed.
+
+The result records the probes' memory (`memory`): the largest probe's own
+allocation and the process peak RSS before and after the probes, so a freeze
+can set its RSS limit knowingly.
 """
 
 from __future__ import annotations
 
 import collections
 import linecache
+import re
+import resource
 import sys
 from pathlib import Path
 
@@ -73,6 +83,10 @@ CALLSITE_TEXT = 120
 MAX_ROWS = 500
 #: Problems kept in the result's `problems` list (as the other audit parts).
 MAX_PROBLEMS = 50
+#: Ops that run an `nn.Linear` (F.linear decomposes into t + mm, or addmm with a bias).
+MATMUL_OPS = frozenset({"aten.mm.default", "aten.addmm.default", "aten.bmm.default"})
+#: `ru_maxrss` is bytes on macOS and KiB on Linux.
+RSS_UNIT = 1 if sys.platform == "darwin" else 1024
 
 #: Op classes besides the probed ones (`op_probes.CLASSES`).
 EXACT, UNCLASSIFIED = "exact", "unclassified"
@@ -130,11 +144,15 @@ VISIBILITY = {
         "float64 numpy witnesses and config scalars",
         "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating "
         "parameter and buffer is float64, and every parameter against the checkpoint",
-        "a float64 tensor holding a value already rounded to float32: dtype is not precision. Gemma 3's "
-        "embed_scale buffer is built as a float32 tensor and widened by .to(float64), so it is float64 holding "
-        "sqrt(hidden) rounded to float32; only the patched-function witness (part 3) sees it",
+        "a float64 tensor holding a value already rounded to float32 (e.g. a buffer computed in float32 at "
+        "construction and widened later): dtype is not precision. Not observed under A64's load: "
+        "from_pretrained(dtype=float64) builds buffers in float64, and the backfill records Gemma 3's "
+        "embed_scale as sqrt(hidden) in float64",
         "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with "
         "use_cache=False; within it, every state tensor is produced and written by traced ops",
+        "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer "
+        "matmuls than the model has nn.Linear modules, which catches a forward run elsewhere, but not a small "
+        "piece of work moved to another thread",
     ],
 }
 
@@ -211,8 +229,11 @@ def _written(func, args: tuple, kwargs: dict) -> list[torch.Tensor]:
 class OpDtypeAudit(TorchDispatchMode):
     """Audit part 5, collected during the forward; `finish()` runs the probes."""
 
-    def __init__(self):
+    def __init__(self, linear_layers: int = 0):
+        """`linear_layers`: the number of `nn.Linear` modules the traced forward
+        runs; the trace must show at least that many matmuls."""
         super().__init__()
+        self.linear_layers = linear_layers
         self.ops_traced = 0
         self.floating_ops = 0
         self.non_f64_ops = 0
@@ -289,14 +310,26 @@ class OpDtypeAudit(TorchDispatchMode):
         for name, count in sorted(self.unclassified.items()):
             problems.append(f"{name}: no precision evidence (not exact, not probed) (x{count})")
         probes = []
+        rss_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * RSS_UNIT
         for name in sorted(self.signatures):
             for sig in self.signatures[name].values():
                 result = op_probes.probe(name, sig)
                 probes.append(result)
                 if not result["pass"]:
                     problems.append(f"probe {name} {sig}: {result.get('detail', 'failed')}")
+        memory = {"largest_probe_bytes": max((p.get("probe_bytes", 0) for p in probes), default=0),
+                  "peak_rss_bytes_before_probes": rss_before,
+                  "peak_rss_bytes_after_probes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * RSS_UNIT}
         if self.floating_ops == 0:
             problems.append("the trace saw no floating op: the audit was not active during the forward")
+        matmuls = sum(self.op_counts[name] for name in MATMUL_OPS)
+        if matmuls < self.linear_layers:
+            problems.append(f"partial trace: {matmuls} matmuls for {self.linear_layers} nn.Linear modules "
+                            "(work on another thread, or outside the trace, is not seen)")
+        probed = {p["op"] for p in probes}
+        for name in sorted(self.op_counts):
+            if op_probes.class_of(name) == op_probes.ACCUMULATING and name not in probed:
+                problems.append(f"{name}: accumulating op with no passing probe (it only ran with faults)")
         cast_rows = self._rows(self.casts, ("op", "from", "to", "site"))
         for r in cast_rows:
             r["non_f64"] = self.cast_non_f64[(r["op"], r["from"], r["to"], r["site"])]
@@ -311,15 +344,15 @@ class OpDtypeAudit(TorchDispatchMode):
                 "casts": cast_rows[:MAX_ROWS], "cast_sites": len(cast_rows),
                 "writes": {k: dict(v) for k, v in sorted(self.writes.items())},
                 "unclassified": dict(sorted(self.unclassified.items())),
-                "probes": probes, "probes_run": len(probes),
+                "probes": probes, "probes_run": len(probes), "memory": memory,
+                "matmuls": matmuls, "linear_layers": self.linear_layers,
                 "environment": {"torch": torch.__version__, "threads": torch.get_num_threads(),
                                 "blas": blas_info()},
                 "visibility": VISIBILITY}
 
 
 def blas_info() -> str:
-    """The BLAS this torch build calls, from its build configuration."""
-    for part in torch.__config__.show().replace("\n", ",").split(","):
-        if part.strip().startswith("BLAS_INFO="):
-            return part.strip().split("=", 1)[1]
-    return "unknown"
+    """The BLAS this torch build calls, from its build configuration
+    (`  - Build settings: BLAS_INFO=accelerate, ...`)."""
+    found = re.search(r"BLAS_INFO=([^,\s]+)", torch.__config__.show())
+    return found.group(1) if found else "unknown"

@@ -602,7 +602,8 @@ def forward(model, ids: list[int], arm: str, positions, tables=None, ckpt=None, 
             stack.enter_context(a64_patches(model, audit))
             stack.enter_context(module_dtype_hooks(model, audit))
             if op_audit:
-                tracer = stack.enter_context(oa.OpDtypeAudit())
+                linear = sum(isinstance(m, torch.nn.Linear) for m in model.modules())
+                tracer = stack.enter_context(oa.OpDtypeAudit(linear_layers=linear))
         with torch.no_grad():
             logits = model(torch.tensor([ids]), use_cache=False).logits[0]
     cap.check_complete(num_layers)

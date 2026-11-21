@@ -390,8 +390,9 @@ class HfRuns(Tmp):
 
 
 class OpAuditPolicy(Tmp):
-    """A64's operation-level audit (#897) is a freeze decision: required,
-    explicitly waived for a backfilled family, or the experiment refuses."""
+    """A64's operation-level audit (#897) is mandatory for every new freeze
+    that runs A64: the exact bound schema and both files, or the experiment
+    refuses at preflight. There is no waiver."""
 
     def world(self, name="w", **values):
         return World(self.tmp / name, extra_values=values)
@@ -399,9 +400,15 @@ class OpAuditPolicy(Tmp):
     def policy(self, w, experiment="E1"):
         return ex.op_audit_policy(json.loads(w.freeze.read_text()), experiment)
 
+    def rewrite(self, w, edit):
+        m = json.loads(w.freeze.read_text())
+        edit(m)
+        other = self.tmp / f"other-{len(list(self.tmp.glob('other-*')))}.json"
+        return other, fz.write(other, m)
+
     def test_a_freeze_that_requires_it_binds_it_into_every_a64_identity(self):
         w = World(self.tmp / "w")
-        self.assertEqual(self.policy(w), ([], []))
+        self.assertEqual(self.policy(w), [])
         for run in ex.plan("E1") + ex.plan("E3"):
             if run["kind"] != "hf":
                 continue
@@ -412,6 +419,10 @@ class OpAuditPolicy(Tmp):
             else:
                 self.assertNotIn("op_audit", e)
 
+    def test_the_schema_is_read_from_the_bound_file(self):
+        w = World(self.tmp / "w")
+        self.assertEqual(ex.bound_op_audit_schema(w.manifest), oa.SCHEMA)
+
     def test_a_freeze_from_before_the_audit_keeps_its_identities(self):
         w = self.world(a64_op_audit=None)
         run = next(r for r in ex.plan("E1") if r["base"] == "A64")
@@ -419,45 +430,45 @@ class OpAuditPolicy(Tmp):
         self.assertNotIn("op_audit", e)
         self.assertEqual(set(e["scripts"]), {"hf_oracle.py", "evidence.py", "families.py", "oracle_loading.py"})
 
-    def test_a_freeze_that_decides_nothing_refuses_experiments_with_a64_only(self):
+    def test_a_freeze_that_names_no_schema_refuses_experiments_with_a64_only(self):
         w = self.world(a64_op_audit=None)
         for experiment in ("E1", "E3"):
             problems = ex.preflight(w.freeze, w.sha, w.runs, experiment)
             self.assertTrue(any("sets no values.a64_op_audit" in p for p in problems), problems)
-        self.assertEqual(self.policy(w, "E2"), ([], []))
+        for experiment in ("E2", "N1"):
+            self.assertEqual(self.policy(w, experiment), [])
+            self.assertFalse(any("a64_op_audit" in p for p in ex.preflight(w.freeze, w.sha, w.runs, experiment)))
         records = ex.run_experiment(w.freeze, w.sha, w.runs, "E1")
         self.assertEqual(records[0]["status"], ev.ABORTED_PREFLIGHT)
         self.assertFalse((w.runs / "E1").exists())
 
-    def test_a_waiver_needs_a_reason_and_a_family_with_a_backfill(self):
-        problems, _ = self.policy(self.world("bare", a64_op_audit=ex.OP_AUDIT_WAIVED))
-        self.assertTrue(any("no reason" in p for p in problems), problems)
-        w = self.world(a64_op_audit=ex.OP_AUDIT_WAIVED, a64_op_audit_waiver="replicating a sealed run")
-        problems, warnings = self.policy(w)
-        self.assertEqual(problems, [])
-        self.assertIn("replicating a sealed run", warnings[0])
-        self.assertIn(ex.OP_AUDIT_BACKFILL_REPORT, warnings[0])
-        with mock.patch.dict(ex.OP_AUDIT_BACKFILL, clear=True):
-            problems, warnings = self.policy(w)
-        self.assertTrue(any("no operation-level backfill" in p for p in problems), problems)
-        self.assertEqual(warnings, [])
+    def test_there_is_no_waiver(self):
+        w = self.world(a64_op_audit="waived", a64_op_audit_waiver="replicating a sealed run")
+        problems = self.policy(w)
+        self.assertTrue(any("is not the schema" in p for p in problems), problems)
 
-    def test_a_waived_experiment_records_its_warning_at_preflight(self):
-        w = self.world(a64_op_audit=ex.OP_AUDIT_WAIVED, a64_op_audit_waiver="replicating a sealed run")
-        m = json.loads(w.freeze.read_text())
-        m["values"]["resource_limits"]["wall_s_total"]["E1"] = 1e-9  # stop after preflight
-        other = self.tmp / "other.json"
-        sha = fz.write(other, m)
-        ex.run_experiment(other, sha, w.runs, "E1")
-        checks = json.loads((w.runs / "E1.preflight-1" / "checks.json").read_text())
-        self.assertEqual(checks["problems"], [])
-        self.assertIn("waived", checks["warnings"][0])
+    def test_a_schema_typo_refuses_at_preflight_before_any_run(self):
+        w = self.world(a64_op_audit="larql.prec-diag-1.a64-op-audit/2")
+        records = ex.run_experiment(w.freeze, w.sha, w.runs, "E1")
+        self.assertEqual(records[0]["status"], ev.ABORTED_PREFLIGHT)
+        self.assertTrue(any("is not the schema the bound op_audit.py implements" in p
+                            for p in records[0]["detail"]), records[0]["detail"])
+        self.assertFalse((w.runs / "E1").exists())
 
-    def test_an_unknown_decision_is_refused(self):
-        problems, _ = self.policy(self.world(a64_op_audit=True))
-        self.assertTrue(any("expected" in p for p in problems), problems)
+    def test_a_non_string_value_is_refused(self):
+        problems = self.policy(self.world(a64_op_audit=True))
+        self.assertTrue(any("is not the schema" in p for p in problems), problems)
 
-    def test_a_schema_the_oracle_does_not_implement_is_refused_by_the_oracle(self):
+    def test_a_freeze_that_runs_a64_must_bind_both_files(self):
+        w = World(self.tmp / "w")
+        other, sha = self.rewrite(w, lambda m: m["files"].pop("script.op_probes"))
+        with self.assertRaisesRegex(ev.EvidenceError, "script.op_probes"):
+            ex.load_freeze(other, sha)
+        problems = ex.op_audit_policy(json.loads(other.read_text()), "E1")
+        self.assertTrue(any("binds no ['script.op_probes']" in p for p in problems), problems)
+
+    def test_an_unimplemented_schema_is_also_refused_by_the_oracle(self):
+        # Defence in depth: a run launched past preflight still cannot use another schema.
         w = self.world(a64_op_audit="larql.prec-diag-1.a64-op-audit/999")
         run = next(r for r in ex.plan("E1") if r["base"] == "A64")
         rec = ex.run_hf(w.manifest, w.sha, run, w.runs / "E1" / run["run_id"], "E1")
@@ -467,16 +478,6 @@ class OpAuditPolicy(Tmp):
         self.assertEqual(rec["detail"]["oracle_record_status"], ev.REFUSED)
         kept = json.loads((w.runs / "E1" / rec["detail"]["oracle_record_kept_at"] / ev.RESULT_FILE).read_text())
         self.assertIn("this oracle implements", kept["detail"])
-
-    def test_a_freeze_that_requires_it_must_bind_its_files(self):
-        w = World(self.tmp / "w")
-        m = json.loads(w.freeze.read_text())
-        del m["files"]["script.op_probes"]
-        other = self.tmp / "other.json"
-        sha = fz.write(other, m)
-        with self.assertRaisesRegex(ev.EvidenceError, "script.op_probes"):
-            ex.load_freeze(other, sha)
-        self.assertTrue(ex.op_audit_policy(m, "E1")[0])
 
     def test_a_run_made_without_the_audit_is_not_admitted_where_it_is_required(self):
         w = self.world(a64_op_audit=None)
@@ -491,7 +492,7 @@ class OpAuditPolicy(Tmp):
         self.assertFalse(adm.admitted)
         self.assertTrue(any("op_audit" in r for r in adm.reasons), adm.reasons)
 
-    def test_the_runner_passes_the_audit_to_a64_only(self):
+    def test_the_runner_passes_the_audit_to_a64(self):
         w = World(self.tmp / "w")
         run = next(r for r in ex.plan("E1") if r["base"] == "A64")
         rec = ex.run_hf(w.manifest, w.sha, run, w.runs / "E1" / run["run_id"], "E1")

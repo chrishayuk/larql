@@ -18,7 +18,14 @@
   {
    "checkpoint": "<temporary>",
    "control_unpatched": {
-    "floating_ops": 687,
+    "embed_scale": {
+     "dtype": "torch.float64",
+     "equals_sqrt_hidden_float64": true,
+     "equals_sqrt_hidden_rounded_to_float32": false,
+     "sqrt_hidden_float64": 8.94427190999916,
+     "value": 8.94427190999916
+    },
+    "floating_ops": 688,
     "module_boundary_problems": 0,
     "non_f64_ops": 330,
     "non_f64_sites": [
@@ -83,6 +90,28 @@
       "site": "modeling_gemma3.py:305 eager_attention_forward"
      }
     ],
+    "part_3": {
+     "call_totals": {
+      "embedding": 0,
+      "rmsnorm": 0,
+      "rotary": 0,
+      "softmax": 0
+     },
+     "expected_call_totals": {
+      "embedding": 1,
+      "rmsnorm": 25,
+      "rotary": 4,
+      "softmax": 4
+     },
+     "pass": false,
+     "problems": [
+      "patched-function call counts {'rmsnorm': 0, 'rotary': 0, 'softmax': 0, 'embedding': 0} != {'rmsnorm': 25, 'rotary': 4, 'softmax': 4, 'embedding': 1}",
+      "rmsnorm: no f64 witness taken",
+      "rotary: no f64 witness taken",
+      "softmax: no f64 witness taken",
+      "embedding: no f64 witness taken"
+     ]
+    },
     "part_5_pass": false,
     "patches_removed": [
      "embedding",
@@ -166,11 +195,18 @@
      }
     ],
     "environment": {
-     "blas": "unknown",
+     "blas": "accelerate",
      "threads": 8,
      "torch": "2.14.0"
     },
     "floating_ops": 708,
+    "linear_layers": 29,
+    "matmuls": 37,
+    "memory": {
+     "largest_probe_bytes": 264960,
+     "peak_rss_bytes_after_probes": 803782656,
+     "peak_rss_bytes_before_probes": 803782656
+    },
     "non_f64_ops": 0,
     "op_counts": {
      "aten._softmax.default": 4,
@@ -226,6 +262,7 @@
       "op": "aten._softmax.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 18432,
       "reduction_length": 24,
       "signature": {
        "dim": -1,
@@ -254,6 +291,7 @@
       "op": "aten.add.Tensor",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 98376,
       "signature": {},
       "vector_length": 4099
      },
@@ -262,11 +300,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 6.8833827526759706e-15,
+      "f32_counterfactual_error": 7.450581374079945e-08,
       "layout_reproduced": false,
       "op": "aten.bmm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 33792,
       "reduction_length": 32,
       "signature": {
        "a": [
@@ -300,11 +339,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 5.10702591327572e-15,
+      "f32_counterfactual_error": 7.450581196444261e-08,
       "layout_reproduced": false,
       "op": "aten.bmm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 33792,
       "reduction_length": 24,
       "signature": {
        "a": [
@@ -342,6 +382,7 @@
       "op": "aten.cos.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -354,6 +395,7 @@
       "op": "aten.div.Tensor",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 98376,
       "signature": {},
       "vector_length": 4099
      },
@@ -366,6 +408,7 @@
       "op": "aten.gelu.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {
        "approximate": "tanh"
       },
@@ -376,11 +419,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.8626429565404834e-10,
+      "f32_counterfactual_error": 5.587937647322239e-10,
       "layout_reproduced": true,
       "op": "aten.mean.dim",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 15552,
       "reduction_length": 80,
       "signature": {
        "dim": [
@@ -406,11 +450,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.1510571102112408e-16,
+      "f32_counterfactual_error": 1.862645364336668e-09,
       "layout_reproduced": true,
       "op": "aten.mean.dim",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 12672,
       "reduction_length": 32,
       "signature": {
        "dim": [
@@ -438,11 +483,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.1510571102112408e-16,
+      "f32_counterfactual_error": 1.862645364336668e-09,
       "layout_reproduced": true,
       "op": "aten.mean.dim",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 6336,
       "reduction_length": 32,
       "signature": {
        "dim": [
@@ -470,11 +516,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.7541523789077473e-14,
+      "f32_counterfactual_error": 7.450582439894049e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 68608,
       "reduction_length": 80,
       "signature": {
        "a": [
@@ -504,11 +551,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.7541523789077473e-14,
+      "f32_counterfactual_error": 7.450582439894049e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 41984,
       "reduction_length": 80,
       "signature": {
        "a": [
@@ -538,11 +586,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.3988810110276972e-14,
+      "f32_counterfactual_error": 7.450582084622681e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 68608,
       "reduction_length": 64,
       "signature": {
        "a": [
@@ -572,11 +621,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.7541523789077473e-14,
+      "f32_counterfactual_error": 7.450582439894049e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 95232,
       "reduction_length": 80,
       "signature": {
        "a": [
@@ -606,11 +656,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.1094237467877974e-14,
+      "f32_counterfactual_error": 7.450582795165417e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 95232,
       "reduction_length": 96,
       "signature": {
        "a": [
@@ -640,11 +691,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.7541523789077473e-14,
+      "f32_counterfactual_error": 7.450582439894049e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 264960,
       "reduction_length": 80,
       "signature": {
        "a": [
@@ -678,6 +730,7 @@
       "op": "aten.mul.Tensor",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 98376,
       "signature": {},
       "vector_length": 4099
      },
@@ -690,6 +743,7 @@
       "op": "aten.neg.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -702,6 +756,7 @@
       "op": "aten.pow.Scalar",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {
        "base": 10000.0
       },
@@ -716,6 +771,7 @@
       "op": "aten.pow.Scalar",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {
        "base": 1000000.0
       },
@@ -730,6 +786,7 @@
       "op": "aten.pow.Tensor_Scalar",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {
        "exponent": 2.0
       },
@@ -744,6 +801,7 @@
       "op": "aten.reciprocal.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -756,6 +814,7 @@
       "op": "aten.rsqrt.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -768,6 +827,7 @@
       "op": "aten.sin.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      }
@@ -785,8 +845,9 @@
       "elementwise kernels at shapes other than the probe vector: elementwise probes run once per scalar variant on a fixed-length contiguous vector",
       "computation outside torch (numpy, Python math): in the oracle these are the patched functions' float64 numpy witnesses and config scalars",
       "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint",
-      "a float64 tensor holding a value already rounded to float32: dtype is not precision. Gemma 3's embed_scale buffer is built as a float32 tensor and widened by .to(float64), so it is float64 holding sqrt(hidden) rounded to float32; only the patched-function witness (part 3) sees it",
-      "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops"
+      "a float64 tensor holding a value already rounded to float32 (e.g. a buffer computed in float32 at construction and widened later): dtype is not precision. Not observed under A64's load: from_pretrained(dtype=float64) builds buffers in float64, and the backfill records Gemma 3's embed_scale as sqrt(hidden) in float64",
+      "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops",
+      "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer matmuls than the model has nn.Linear modules, which catches a forward run elsewhere, but not a small piece of work moved to another thread"
      ],
      "sees": [
       "every ATen op dispatched during the A64 forward, after autograd and CompositeImplicitAutograd decomposition (F.linear appears as t + mm, a matmul as mm/bmm, softmax(dtype=) as _to_copy + _softmax)",
@@ -803,7 +864,8 @@
   {
    "checkpoint": "<temporary>",
    "control_unpatched": {
-    "floating_ops": 399,
+    "embed_scale": null,
+    "floating_ops": 400,
     "module_boundary_problems": 0,
     "non_f64_ops": 117,
     "non_f64_sites": [
@@ -868,6 +930,25 @@
       "site": "modeling_qwen3.py:64 Qwen3RMSNorm.forward"
      }
     ],
+    "part_3": {
+     "call_totals": {
+      "rmsnorm": 0,
+      "rotary": 0,
+      "softmax": 0
+     },
+     "expected_call_totals": {
+      "rmsnorm": 13,
+      "rotary": 1,
+      "softmax": 3
+     },
+     "pass": false,
+     "problems": [
+      "patched-function call counts {'rmsnorm': 0, 'rotary': 0, 'softmax': 0} != {'rmsnorm': 13, 'rotary': 1, 'softmax': 3}",
+      "rmsnorm: no f64 witness taken",
+      "rotary: no f64 witness taken",
+      "softmax: no f64 witness taken"
+     ]
+    },
     "part_5_pass": false,
     "patches_removed": [
      "rmsnorm",
@@ -949,11 +1030,18 @@
      }
     ],
     "environment": {
-     "blas": "unknown",
+     "blas": "accelerate",
      "threads": 8,
      "torch": "2.14.0"
     },
     "floating_ops": 441,
+    "linear_layers": 22,
+    "matmuls": 28,
+    "memory": {
+     "largest_probe_bytes": 223488,
+     "peak_rss_bytes_after_probes": 803782656,
+     "peak_rss_bytes_before_probes": 803782656
+    },
     "non_f64_ops": 0,
     "op_counts": {
      "aten._softmax.default": 3,
@@ -1009,6 +1097,7 @@
       "op": "aten._softmax.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 36864,
       "reduction_length": 24,
       "signature": {
        "dim": -1,
@@ -1037,6 +1126,7 @@
       "op": "aten.add.Tensor",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 98376,
       "signature": {},
       "vector_length": 4099
      },
@@ -1045,11 +1135,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 6.8833827526759706e-15,
+      "f32_counterfactual_error": 7.450581374079945e-08,
       "layout_reproduced": true,
       "op": "aten.bmm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 67584,
       "reduction_length": 32,
       "signature": {
        "a": [
@@ -1083,11 +1174,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 5.10702591327572e-15,
+      "f32_counterfactual_error": 7.450581196444261e-08,
       "layout_reproduced": true,
       "op": "aten.bmm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 67584,
       "reduction_length": 24,
       "signature": {
        "a": [
@@ -1125,6 +1217,7 @@
       "op": "aten.cos.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -1137,6 +1230,7 @@
       "op": "aten.div.Tensor",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 98376,
       "signature": {},
       "vector_length": 4099
      },
@@ -1145,11 +1239,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.185751579730777e-16,
+      "f32_counterfactual_error": 9.313227931906365e-10,
       "layout_reproduced": true,
       "op": "aten.mean.dim",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 12480,
       "reduction_length": 64,
       "signature": {
        "dim": [
@@ -1175,11 +1270,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.1510571102112408e-16,
+      "f32_counterfactual_error": 1.862645364336668e-09,
       "layout_reproduced": true,
       "op": "aten.mean.dim",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 25344,
       "reduction_length": 32,
       "signature": {
        "dim": [
@@ -1207,11 +1303,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.1510571102112408e-16,
+      "f32_counterfactual_error": 1.862645364336668e-09,
       "layout_reproduced": true,
       "op": "aten.mean.dim",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 12672,
       "reduction_length": 32,
       "signature": {
        "dim": [
@@ -1239,11 +1336,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.3988810110276972e-14,
+      "f32_counterfactual_error": 7.450582084622681e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 102400,
       "reduction_length": 64,
       "signature": {
        "a": [
@@ -1273,11 +1371,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.3988810110276972e-14,
+      "f32_counterfactual_error": 7.450582084622681e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 57344,
       "reduction_length": 64,
       "signature": {
        "a": [
@@ -1307,11 +1406,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.8199664825478976e-14,
+      "f32_counterfactual_error": 7.450583505708153e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 102400,
       "reduction_length": 128,
       "signature": {
        "a": [
@@ -1341,11 +1441,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.3988810110276972e-14,
+      "f32_counterfactual_error": 7.450582084622681e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 79872,
       "reduction_length": 64,
       "signature": {
        "a": [
@@ -1375,11 +1476,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.1094237467877974e-14,
+      "f32_counterfactual_error": 7.450582795165417e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 79872,
       "reduction_length": 96,
       "signature": {
        "a": [
@@ -1409,11 +1511,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.3988810110276972e-14,
+      "f32_counterfactual_error": 7.450582084622681e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 223488,
       "reduction_length": 64,
       "signature": {
        "a": [
@@ -1447,6 +1550,7 @@
       "op": "aten.mul.Tensor",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 98376,
       "signature": {},
       "vector_length": 4099
      },
@@ -1459,6 +1563,7 @@
       "op": "aten.neg.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -1471,6 +1576,7 @@
       "op": "aten.pow.Scalar",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {
        "base": 1000000.0
       },
@@ -1485,6 +1591,7 @@
       "op": "aten.pow.Tensor_Scalar",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {
        "exponent": 2.0
       },
@@ -1499,6 +1606,7 @@
       "op": "aten.reciprocal.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -1511,6 +1619,7 @@
       "op": "aten.rsqrt.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -1523,6 +1632,7 @@
       "op": "aten.silu.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -1535,6 +1645,7 @@
       "op": "aten.sin.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      }
@@ -1552,8 +1663,9 @@
       "elementwise kernels at shapes other than the probe vector: elementwise probes run once per scalar variant on a fixed-length contiguous vector",
       "computation outside torch (numpy, Python math): in the oracle these are the patched functions' float64 numpy witnesses and config scalars",
       "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint",
-      "a float64 tensor holding a value already rounded to float32: dtype is not precision. Gemma 3's embed_scale buffer is built as a float32 tensor and widened by .to(float64), so it is float64 holding sqrt(hidden) rounded to float32; only the patched-function witness (part 3) sees it",
-      "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops"
+      "a float64 tensor holding a value already rounded to float32 (e.g. a buffer computed in float32 at construction and widened later): dtype is not precision. Not observed under A64's load: from_pretrained(dtype=float64) builds buffers in float64, and the backfill records Gemma 3's embed_scale as sqrt(hidden) in float64",
+      "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops",
+      "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer matmuls than the model has nn.Linear modules, which catches a forward run elsewhere, but not a small piece of work moved to another thread"
      ],
      "sees": [
       "every ATen op dispatched during the A64 forward, after autograd and CompositeImplicitAutograd decomposition (F.linear appears as t + mm, a matmul as mm/bmm, softmax(dtype=) as _to_copy + _softmax)",
@@ -1570,7 +1682,14 @@
   {
    "checkpoint": "~/.cache/huggingface/hub/models--google--gemma-3-270m-it/snapshots/ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
    "control_unpatched": {
-    "floating_ops": 3011,
+    "embed_scale": {
+     "dtype": "torch.float64",
+     "equals_sqrt_hidden_float64": true,
+     "equals_sqrt_hidden_rounded_to_float32": false,
+     "sqrt_hidden_float64": 25.298221281347036,
+     "value": 25.298221281347036
+    },
+    "floating_ops": 3012,
     "module_boundary_problems": 0,
     "non_f64_ops": 1450,
     "non_f64_sites": [
@@ -1635,6 +1754,28 @@
       "site": "modeling_gemma3.py:305 eager_attention_forward"
      }
     ],
+    "part_3": {
+     "call_totals": {
+      "embedding": 0,
+      "rmsnorm": 0,
+      "rotary": 0,
+      "softmax": 0
+     },
+     "expected_call_totals": {
+      "embedding": 1,
+      "rmsnorm": 109,
+      "rotary": 18,
+      "softmax": 18
+     },
+     "pass": false,
+     "problems": [
+      "patched-function call counts {'rmsnorm': 0, 'rotary': 0, 'softmax': 0, 'embedding': 0} != {'rmsnorm': 109, 'rotary': 18, 'softmax': 18, 'embedding': 1}",
+      "rmsnorm: no f64 witness taken",
+      "rotary: no f64 witness taken",
+      "softmax: no f64 witness taken",
+      "embedding: no f64 witness taken"
+     ]
+    },
     "part_5_pass": false,
     "patches_removed": [
      "embedding",
@@ -1709,11 +1850,18 @@
      }
     ],
     "environment": {
-     "blas": "unknown",
+     "blas": "accelerate",
      "threads": 8,
      "torch": "2.14.0"
     },
     "floating_ops": 3060,
+    "linear_layers": 127,
+    "matmuls": 163,
+    "memory": {
+     "largest_probe_bytes": 1373711360,
+     "peak_rss_bytes_after_probes": 4671094784,
+     "peak_rss_bytes_before_probes": 4671094784
+    },
     "non_f64_ops": 0,
     "op_counts": {
      "aten._softmax.default": 18,
@@ -1769,6 +1917,7 @@
       "op": "aten._softmax.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 14400,
       "reduction_length": 15,
       "signature": {
        "dim": -1,
@@ -1797,6 +1946,7 @@
       "op": "aten.add.Tensor",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 98376,
       "signature": {},
       "vector_length": 4099
      },
@@ -1805,11 +1955,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 5.6621374255882984e-14,
+      "f32_counterfactual_error": 7.450586347879096e-08,
       "layout_reproduced": false,
       "op": "aten.bmm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 252960,
       "reduction_length": 256,
       "signature": {
        "a": [
@@ -1843,11 +1994,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 3.1086244689504383e-15,
+      "f32_counterfactual_error": 7.450580996604117e-08,
       "layout_reproduced": false,
       "op": "aten.bmm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 252960,
       "reduction_length": 15,
       "signature": {
        "a": [
@@ -1885,6 +2037,7 @@
       "op": "aten.cos.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -1897,6 +2050,7 @@
       "op": "aten.div.Tensor",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 98376,
       "signature": {},
       "vector_length": 4099
      },
@@ -1909,6 +2063,7 @@
       "op": "aten.gelu.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {
        "approximate": "tanh"
       },
@@ -1919,11 +2074,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.3282842667726733e-11,
+      "f32_counterfactual_error": 6.984941488055729e-11,
       "layout_reproduced": true,
       "op": "aten.mean.dim",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 76920,
       "reduction_length": 640,
       "signature": {
        "dim": [
@@ -1949,11 +2105,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.211772431870429e-16,
+      "f32_counterfactual_error": 2.328308648311128e-10,
       "layout_reproduced": true,
       "op": "aten.mean.dim",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 123360,
       "reduction_length": 256,
       "signature": {
        "dim": [
@@ -1981,11 +2138,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.211772431870429e-16,
+      "f32_counterfactual_error": 2.328308648311128e-10,
       "layout_reproduced": true,
       "op": "aten.mean.dim",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 30840,
       "reduction_length": 256,
       "signature": {
        "dim": [
@@ -2013,11 +2171,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.41886502547095e-13,
+      "f32_counterfactual_error": 7.450594874391925e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 5442560,
       "reduction_length": 640,
       "signature": {
        "a": [
@@ -2047,11 +2206,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.41886502547095e-13,
+      "f32_counterfactual_error": 7.450594874391925e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 1418240,
       "reduction_length": 640,
       "signature": {
        "a": [
@@ -2081,11 +2241,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.2715163083830703e-13,
+      "f32_counterfactual_error": 7.450603400904754e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 5442560,
       "reduction_length": 1024,
       "signature": {
        "a": [
@@ -2115,11 +2276,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.41886502547095e-13,
+      "f32_counterfactual_error": 7.450594874391925e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 10808320,
       "reduction_length": 640,
       "signature": {
        "a": [
@@ -2149,11 +2311,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 4.545253062815391e-13,
+      "f32_counterfactual_error": 7.450626138272298e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 10808320,
       "reduction_length": 2048,
       "signature": {
        "a": [
@@ -2183,11 +2346,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 1.41886502547095e-13,
+      "f32_counterfactual_error": 7.450594874391925e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 1373711360,
       "reduction_length": 640,
       "signature": {
        "a": [
@@ -2221,6 +2385,7 @@
       "op": "aten.mul.Tensor",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 98376,
       "signature": {},
       "vector_length": 4099
      },
@@ -2233,6 +2398,7 @@
       "op": "aten.neg.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -2245,6 +2411,7 @@
       "op": "aten.pow.Scalar",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {
        "base": 10000.0
       },
@@ -2259,6 +2426,7 @@
       "op": "aten.pow.Scalar",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {
        "base": 1000000.0
       },
@@ -2273,6 +2441,7 @@
       "op": "aten.pow.Tensor_Scalar",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {
        "exponent": 2.0
       },
@@ -2287,6 +2456,7 @@
       "op": "aten.reciprocal.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -2299,6 +2469,7 @@
       "op": "aten.rsqrt.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -2311,6 +2482,7 @@
       "op": "aten.sin.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      }
@@ -2328,8 +2500,9 @@
       "elementwise kernels at shapes other than the probe vector: elementwise probes run once per scalar variant on a fixed-length contiguous vector",
       "computation outside torch (numpy, Python math): in the oracle these are the patched functions' float64 numpy witnesses and config scalars",
       "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint",
-      "a float64 tensor holding a value already rounded to float32: dtype is not precision. Gemma 3's embed_scale buffer is built as a float32 tensor and widened by .to(float64), so it is float64 holding sqrt(hidden) rounded to float32; only the patched-function witness (part 3) sees it",
-      "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops"
+      "a float64 tensor holding a value already rounded to float32 (e.g. a buffer computed in float32 at construction and widened later): dtype is not precision. Not observed under A64's load: from_pretrained(dtype=float64) builds buffers in float64, and the backfill records Gemma 3's embed_scale as sqrt(hidden) in float64",
+      "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops",
+      "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer matmuls than the model has nn.Linear modules, which catches a forward run elsewhere, but not a small piece of work moved to another thread"
      ],
      "sees": [
       "every ATen op dispatched during the A64 forward, after autograd and CompositeImplicitAutograd decomposition (F.linear appears as t + mm, a matmul as mm/bmm, softmax(dtype=) as _to_copy + _softmax)",
@@ -2346,7 +2519,8 @@
   {
    "checkpoint": "~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/c1899de289a04d12100db370d81485cdf75e47ca",
    "control_unpatched": {
-    "floating_ops": 3424,
+    "embed_scale": null,
+    "floating_ops": 3425,
     "module_boundary_problems": 0,
     "non_f64_ops": 892,
     "non_f64_sites": [
@@ -2411,6 +2585,25 @@
       "site": "modeling_qwen3.py:64 Qwen3RMSNorm.forward"
      }
     ],
+    "part_3": {
+     "call_totals": {
+      "rmsnorm": 0,
+      "rotary": 0,
+      "softmax": 0
+     },
+     "expected_call_totals": {
+      "rmsnorm": 113,
+      "rotary": 1,
+      "softmax": 28
+     },
+     "pass": false,
+     "problems": [
+      "patched-function call counts {'rmsnorm': 0, 'rotary': 0, 'softmax': 0} != {'rmsnorm': 113, 'rotary': 1, 'softmax': 28}",
+      "rmsnorm: no f64 witness taken",
+      "rotary: no f64 witness taken",
+      "softmax: no f64 witness taken"
+     ]
+    },
     "part_5_pass": false,
     "patches_removed": [
      "rmsnorm",
@@ -2482,11 +2675,18 @@
      }
     ],
     "environment": {
-     "blas": "unknown",
+     "blas": "accelerate",
      "threads": 8,
      "torch": "2.14.0"
     },
     "floating_ops": 3766,
+    "linear_layers": 197,
+    "matmuls": 253,
+    "memory": {
+     "largest_probe_bytes": 1261791232,
+     "peak_rss_bytes_after_probes": 8807776256,
+     "peak_rss_bytes_before_probes": 8807776256
+    },
     "non_f64_ops": 0,
     "op_counts": {
      "aten._softmax.default": 28,
@@ -2542,6 +2742,7 @@
       "op": "aten._softmax.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 50176,
       "reduction_length": 14,
       "signature": {
        "dim": -1,
@@ -2570,6 +2771,7 @@
       "op": "aten.add.Tensor",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 98376,
       "signature": {},
       "vector_length": 4099
      },
@@ -2578,11 +2780,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.8199664825478976e-14,
+      "f32_counterfactual_error": 7.450583505708153e-08,
       "layout_reproduced": true,
       "op": "aten.bmm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 483840,
       "reduction_length": 128,
       "signature": {
        "a": [
@@ -2616,11 +2819,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.886579864025407e-15,
+      "f32_counterfactual_error": 7.450580974399656e-08,
       "layout_reproduced": true,
       "op": "aten.bmm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 483840,
       "reduction_length": 14,
       "signature": {
        "a": [
@@ -2658,6 +2862,7 @@
       "op": "aten.cos.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -2670,6 +2875,7 @@
       "op": "aten.div.Tensor",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 98376,
       "signature": {},
       "vector_length": 4099
      },
@@ -2678,11 +2884,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.218277644905342e-16,
+      "f32_counterfactual_error": 5.82078827412319e-11,
       "layout_reproduced": true,
       "op": "aten.mean.dim",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 114800,
       "reduction_length": 1024,
       "signature": {
        "dim": [
@@ -2708,11 +2915,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.203098814490545e-16,
+      "f32_counterfactual_error": 4.656615076176207e-10,
       "layout_reproduced": true,
       "op": "aten.mean.dim",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 231168,
       "reduction_length": 128,
       "signature": {
        "dim": [
@@ -2740,11 +2948,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.203098814490545e-16,
+      "f32_counterfactual_error": 4.656615076176207e-10,
       "layout_reproduced": true,
       "op": "aten.mean.dim",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 115584,
       "reduction_length": 128,
       "signature": {
        "dim": [
@@ -2772,11 +2981,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.2715163083830703e-13,
+      "f32_counterfactual_error": 7.450603400904754e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 17121280,
       "reduction_length": 1024,
       "signature": {
        "a": [
@@ -2806,11 +3016,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.2715163083830703e-13,
+      "f32_counterfactual_error": 7.450603400904754e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 8617984,
       "reduction_length": 1024,
       "signature": {
        "a": [
@@ -2840,11 +3051,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 4.545253062815391e-13,
+      "f32_counterfactual_error": 7.450626138272298e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 17121280,
       "reduction_length": 2048,
       "signature": {
        "a": [
@@ -2874,11 +3086,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.2715163083830703e-13,
+      "f32_counterfactual_error": 7.450603400904754e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 25624576,
       "reduction_length": 1024,
       "signature": {
        "a": [
@@ -2908,11 +3121,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 6.818989817247711e-13,
+      "f32_counterfactual_error": 7.450648875639843e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 25624576,
       "reduction_length": 3072,
       "signature": {
        "a": [
@@ -2942,11 +3156,12 @@
       "class": "accumulating",
       "comparison": "exact",
       "error": 0.0,
-      "f32_counterfactual_error": 2.2715163083830703e-13,
+      "f32_counterfactual_error": 7.450603400904754e-08,
       "layout_reproduced": true,
       "op": "aten.mm.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 1261791232,
       "reduction_length": 1024,
       "signature": {
        "a": [
@@ -2980,6 +3195,7 @@
       "op": "aten.mul.Tensor",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 98376,
       "signature": {},
       "vector_length": 4099
      },
@@ -2992,6 +3208,7 @@
       "op": "aten.neg.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -3004,6 +3221,7 @@
       "op": "aten.pow.Scalar",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {
        "base": 1000000.0
       },
@@ -3018,6 +3236,7 @@
       "op": "aten.pow.Tensor_Scalar",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {
        "exponent": 2.0
       },
@@ -3032,6 +3251,7 @@
       "op": "aten.reciprocal.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -3044,6 +3264,7 @@
       "op": "aten.rsqrt.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -3056,6 +3277,7 @@
       "op": "aten.silu.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      },
@@ -3068,6 +3290,7 @@
       "op": "aten.sin.default",
       "output_dtype": "torch.float64",
       "pass": true,
+      "probe_bytes": 65584,
       "signature": {},
       "vector_length": 4099
      }
@@ -3085,8 +3308,9 @@
       "elementwise kernels at shapes other than the probe vector: elementwise probes run once per scalar variant on a fixed-length contiguous vector",
       "computation outside torch (numpy, Python math): in the oracle these are the patched functions' float64 numpy witnesses and config scalars",
       "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating parameter and buffer is float64, and every parameter against the checkpoint",
-      "a float64 tensor holding a value already rounded to float32: dtype is not precision. Gemma 3's embed_scale buffer is built as a float32 tensor and widened by .to(float64), so it is float64 holding sqrt(hidden) rounded to float32; only the patched-function witness (part 3) sees it",
-      "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops"
+      "a float64 tensor holding a value already rounded to float32 (e.g. a buffer computed in float32 at construction and widened later): dtype is not precision. Not observed under A64's load: from_pretrained(dtype=float64) builds buffers in float64, and the backfill records Gemma 3's embed_scale as sqrt(hidden) in float64",
+      "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with use_cache=False; within it, every state tensor is produced and written by traced ops",
+      "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer matmuls than the model has nn.Linear modules, which catches a forward run elsewhere, but not a small piece of work moved to another thread"
      ],
      "sees": [
       "every ATen op dispatched during the A64 forward, after autograd and CompositeImplicitAutograd decomposition (F.linear appears as t + mm, a matmul as mm/bmm, softmax(dtype=) as _to_copy + _softmax)",

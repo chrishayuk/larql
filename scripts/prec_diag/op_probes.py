@@ -21,12 +21,29 @@ AND the float32 counterfactual misses it, so each probe demonstrably
 discriminates the precision it claims to measure. A probe that cannot tell
 f32 from f64 fails rather than passes.
 
-The accumulation probes are exact. A reduction of `[1, e, e, ..., e]` with
-`e` = float64 machine epsilon (2^-52) is `1 + (K-1)e`; every partial sum, in
-any order, is representable in float64 and in nothing narrower. So a kernel
-whose accumulator has fewer than float64's 52 fraction bits returns a
-different value, whatever its blocking or summation order. `cumprod` uses
-`(1 + sqrt(e))^2 = 1 + 2 sqrt(e) + e`, exact in float64 only.
+The accumulation probes are exact, and test the operands and the
+accumulator together:
+- the accumulator: a reduction of `[h, e, e, ..., e]` with `e` = float64
+  machine epsilon (2^-52) is `h + (K-1)e`. Every partial sum, in any order,
+  is representable in float64 and in nothing narrower, so a kernel whose
+  accumulator has fewer than float64's 52 fraction bits returns a different
+  value, whatever its blocking or summation order;
+- the operands: the head `h` is `1 + 2^-24` (and a matmul's other operand
+  head is `1 + 2^-26`). Neither is representable in float32 or bfloat16, and
+  their product `1 + 2^-24 + 2^-26 + 2^-50` is exact in float64. So a kernel
+  that rounds float64 operands to float32 or bfloat16 and then accumulates in
+  float64 also returns a different value.
+`cumprod` uses `(1 + sqrt(e))^2 = 1 + 2 sqrt(e) + e`: its factor is not
+float32-representable and the product is exact in float64 only.
+
+Memory. A probe runs at the forward's own shapes (an lm_head-shaped `mm` is
+as large as the logits), while the model is still loaded. So a probe builds
+each operand once, in place, at the observed strides; compares a uniform
+output against one scalar in chunks; and runs its float32 counterfactual at
+the probe's own reduction length with every other dimension capped
+(`COUNTERFACTUAL_EXTENT`): whether the values discriminate depends on the
+values and the reduction length only. Each probe records the bytes it
+allocated (`probe_bytes`).
 """
 
 from __future__ import annotations
@@ -38,6 +55,18 @@ import torch
 
 #: float64 machine epsilon (2^-52): the resolution an exact probe tests for.
 F64_EPS = float(np.finfo(np.float64).eps)
+#: float32 machine epsilon (2^-23).
+F32_EPS = float(np.finfo(np.float32).eps)
+#: Operand heads, neither representable in float32 or bfloat16 (1 + 2^-24 and
+#: 1 + 2^-26), whose product 1 + 2^-24 + 2^-26 + 2^-50 is exact in float64.
+HEAD_A = 1.0 + F32_EPS / 2
+HEAD_B = 1.0 + F32_EPS / 8
+#: The float32 counterfactual of a probe keeps the reduction length and caps
+#: every other dimension at this.
+COUNTERFACTUAL_EXTENT = 64
+#: Elements compared per step, so checking a vocabulary-sized output never
+#: allocates a second output-sized tensor.
+COMPARE_CHUNK = 1 << 22
 #: (1 + sqrt(eps))^2 = 1 + 2 sqrt(eps) + eps is exact in float64 and in nothing narrower.
 CUMPROD_FACTOR = 1.0 + math.sqrt(F64_EPS)
 #: A softmax weight below float32's resolution of 1 (2^-30 < 2^-24).
@@ -67,34 +96,44 @@ def layout(t: torch.Tensor) -> list:
     return [list(t.shape), list(t.stride())]
 
 
-def _strided(values: torch.Tensor, lay: list) -> tuple[torch.Tensor, bool]:
-    """`values` laid out with the observed strides when they can be
-    reproduced (no broadcast dimension), else contiguous. Returns the tensor
-    and whether the observed layout was reproduced."""
+def _dense(shape: list, stride: list) -> bool:
+    """The strides are a permutation of a dense layout (no broadcast, no overlap)."""
+    expected = 1
+    for size, st in sorted(zip(shape, stride), key=lambda p: p[1]):
+        if size == 0 or (size > 1 and st != expected):
+            return False
+        expected *= size
+    return True
+
+
+def _pattern(lay: list, fill: float, head: float, head_dims: list[int]) -> tuple[torch.Tensor, bool]:
+    """A float64 tensor at the observed layout when it can be reproduced (a
+    dense permutation), else contiguous: `fill` everywhere and `head` at index
+    0 of every `head_dims` dimension. Built in place, one allocation. Returns
+    the tensor and whether the observed layout was reproduced."""
     shape, stride = lay
-    if 0 in stride or values.numel() == 0:
-        return values.contiguous(), False
-    out = torch.empty_strided(shape, stride, dtype=values.dtype)
-    try:
-        out.copy_(values)
-    except RuntimeError:  # overlapping strides
-        return values.contiguous(), False
-    return out, True
+    reproduced = _dense(shape, stride)
+    t = (torch.empty_strided(shape, stride, dtype=torch.float64) if reproduced
+         else torch.empty(shape, dtype=torch.float64))
+    t.fill_(fill)
+    if head_dims:
+        index = [slice(None)] * len(shape)
+        for d in head_dims:
+            index[d] = 0
+        t[tuple(index)] = head
+    return t, reproduced
+
+
+def _capped(shape: list, keep: list[int]) -> list:
+    """A contiguous counterfactual layout: dimensions in `keep` as they are,
+    the others capped at COUNTERFACTUAL_EXTENT."""
+    capped = [n if i in keep else min(n, COUNTERFACTUAL_EXTENT) for i, n in enumerate(shape)]
+    return [capped, list(torch.empty(capped, device="meta").stride())]
 
 
 def _f64(value: float) -> torch.Tensor:
     """A 0-d float64 tensor (a bare Python scalar in `torch.where` would make float32)."""
     return torch.tensor(value, dtype=torch.float64)
-
-
-def _one_at_start(shape: list, dims: list[int], fill: float, first: float) -> torch.Tensor:
-    """`fill` everywhere, `first` at index 0 of every reduced dimension."""
-    x = torch.full(shape, fill, dtype=torch.float64)
-    index = [slice(None)] * len(shape)
-    for d in dims:
-        index[d] = 0
-    x[tuple(index)] = first
-    return x
 
 
 def _dims(shape: list, dim) -> list[int]:
@@ -138,35 +177,54 @@ def signature(name: str, args: tuple, kwargs: dict):
 
 # ------------------------------------------------------------ comparisons
 
-def _error(got: torch.Tensor, ref: torch.Tensor, metric: str) -> float:
-    g, r = got.detach().to(torch.float64).numpy(), ref.detach().numpy()
-    if g.shape != r.shape:
-        return math.inf
-    diff = np.abs(g - r)
-    if metric == EXACT:
-        return float(diff.max(initial=0.0))
+def _scale(ref, metric: str):
     if metric == RELATIVE:
-        return float((diff / np.abs(r)).max(initial=0.0))
-    return float((diff / np.maximum(np.abs(r), MIXED_FLOOR)).max(initial=0.0))
+        return ref.abs() if isinstance(ref, torch.Tensor) else abs(ref)
+    if metric == MIXED:
+        return ref.abs().clamp(min=MIXED_FLOOR) if isinstance(ref, torch.Tensor) else max(abs(ref), MIXED_FLOOR)
+    return 1.0
+
+
+def _error(got: torch.Tensor, ref, metric: str) -> float:
+    """Max error of `got` against `ref`: a tensor of the same shape (it may be
+    an expanded view), or one scalar for a uniform output, compared in chunks."""
+    if isinstance(ref, torch.Tensor):
+        if tuple(got.shape) != tuple(ref.shape):
+            return math.inf
+        return float(((got.to(torch.float64) - ref).abs() / _scale(ref, metric)).max()) if got.numel() else 0.0
+    flat, worst = got.reshape(-1), 0.0
+    for i in range(0, flat.numel(), COMPARE_CHUNK):
+        part = (flat[i:i + COMPARE_CHUNK].to(torch.float64) - ref).abs().max()
+        worst = max(worst, float(part) / _scale(ref, metric))
+    return worst
 
 
 def _f32(x):
     return x.float() if isinstance(x, torch.Tensor) and x.dtype == torch.float64 else x
 
 
-def _judge(op, args: tuple, kwargs: dict, ref: torch.Tensor, metric: str, extra: dict) -> dict:
+def _bytes(*tensors) -> int:
+    return sum(t.untyped_storage().nbytes() for t in tensors if isinstance(t, torch.Tensor))
+
+
+def _judge(op, args: tuple, kwargs: dict, ref, metric: str, extra: dict, counterfactual_args=None) -> dict:
+    """Run the float64 probe, then its float32 counterfactual (on
+    `counterfactual_args`, a smaller probe of the same values and reduction
+    length, when given). The float64 output is freed before the counterfactual."""
     got = op(*args, **kwargs)
-    counter = op(*[_f32(a) for a in args], **kwargs)
-    err = _error(got, ref, metric)
+    probe_bytes = _bytes(*args, got)
+    err, dtype = _error(got, ref, metric), got.dtype
+    del got
+    counter = op(*[_f32(a) for a in (counterfactual_args or args)], **kwargs)
     cf = _error(counter, ref, metric)
     bound = 0.0 if metric == EXACT else TOLERANCE
     within = err <= bound
     discriminates = cf > bound
     out = {"comparison": metric, "bound": bound, "error": err, "f32_counterfactual_error": cf,
-           "output_dtype": str(got.dtype), "pass": bool(within and discriminates and got.dtype == torch.float64),
-           **extra}
-    if got.dtype != torch.float64:
-        out["detail"] = f"output dtype {got.dtype}"
+           "output_dtype": str(dtype), "probe_bytes": probe_bytes,
+           "pass": bool(within and discriminates and dtype == torch.float64), **extra}
+    if dtype != torch.float64:
+        out["detail"] = f"output dtype {dtype}"
     elif not within:
         out["detail"] = f"error {err:.3e} exceeds {bound:.0e}: the kernel is not float64-accurate"
     elif not discriminates:
@@ -181,41 +239,49 @@ def _no_accumulation(k: int) -> dict:
 
 # ------------------------------------------------------- accumulating ops
 
+def _matmul_args(a_lay: list, b_lay: list, bias_lay: list | None) -> tuple[tuple, bool]:
+    a, a_ok = _pattern(a_lay, F64_EPS, HEAD_A, [len(a_lay[0]) - 1])
+    b, b_ok = _pattern(b_lay, 1.0, HEAD_B, [len(b_lay[0]) - 2])
+    if bias_lay is None:
+        return (a, b), a_ok and b_ok
+    bias, c_ok = _pattern(bias_lay, 0.0, 0.0, [])
+    return (bias, a, b), a_ok and b_ok and c_ok
+
+
 def _matmul(op, sig: dict, with_bias: bool) -> dict:
-    (a_shape, _), (b_shape, _) = sig["a"], sig["b"]
+    """Every output is `HEAD_A * HEAD_B + (K-1) e`, exact in float64."""
+    a_shape, b_shape = sig["a"][0], sig["b"][0]
     k = a_shape[-1]
     if k < 2:
         return _no_accumulation(k)
-    a, a_ok = _strided(_one_at_start(a_shape, [len(a_shape) - 1], F64_EPS, 1.0), sig["a"])
-    b, b_ok = _strided(torch.ones(b_shape, dtype=torch.float64), sig["b"])
-    args = (a, b)
-    reproduced = a_ok and b_ok
-    if with_bias:
-        bias, c_ok = _strided(torch.zeros(sig["bias"][0], dtype=torch.float64), sig["bias"])
-        args, reproduced = (bias, a, b), reproduced and c_ok
-    out_shape = list(a_shape[:-1]) + [b_shape[-1]]
-    ref = torch.full(out_shape, 1.0 + (k - 1) * F64_EPS, dtype=torch.float64)
-    return _judge(op, args, {}, ref, EXACT, {"reduction_length": k, "layout_reproduced": reproduced})
+    args, reproduced = _matmul_args(sig["a"], sig["b"], sig["bias"] if with_bias else None)
+    small = _matmul_args(_capped(a_shape, [len(a_shape) - 1]), _capped(b_shape, [len(b_shape) - 2]),
+                         _capped(sig["bias"][0], []) if with_bias else None)[0]
+    value = HEAD_A * HEAD_B + (k - 1) * F64_EPS
+    return _judge(op, args, {}, value, EXACT, {"reduction_length": k, "layout_reproduced": reproduced},
+                  counterfactual_args=small)
 
 
 def _reduce(op, sig: dict, mean: bool) -> dict:
+    """Every output is `HEAD_A + (K-1) e` (a sum), or that divided by K (a mean)."""
     shape = sig["x"][0]
     dims = _dims(shape, sig.get("dim"))
     k = _reduced_length(shape, dims)
     if k < 2:
         return _no_accumulation(k)
-    x, ok = _strided(_one_at_start(shape, dims, F64_EPS, 1.0), sig["x"])
-    total = 1.0 + (k - 1) * F64_EPS  # exact in float64
+    x, ok = _pattern(sig["x"], F64_EPS, HEAD_A, dims)
+    total = HEAD_A + (k - 1) * F64_EPS  # exact in float64
     args = (x,) if "dim" not in sig else (x, sig["dim"], sig.get("keepdim", False))
-    got = op(*args)
     value = total
     if mean:
         # A mean is the exact sum divided by K, rounded once: `sum / K`, or
         # `sum * (1 / K)` (one more rounding). Either is a float64 kernel.
         quotient, product = total / k, total * (1.0 / k)
-        value = product if quotient != product and bool((got == product).all()) else quotient
-    ref = torch.full(got.shape, value, dtype=torch.float64)
-    return _judge(op, args, {}, ref, EXACT, {"reduction_length": k, "layout_reproduced": ok})
+        if quotient != product and bool((op(*args) == product).all()):
+            value = product
+        else:
+            value = quotient
+    return _judge(op, args, {}, value, EXACT, {"reduction_length": k, "layout_reproduced": ok})
 
 
 def _scan(op, sig: dict, product: bool) -> dict:
@@ -227,13 +293,13 @@ def _scan(op, sig: dict, product: bool) -> dict:
     view[dim] = k
     j = torch.arange(k, dtype=torch.float64).reshape(view)
     if product:
-        x = torch.where(j < 2, _f64(CUMPROD_FACTOR), _f64(1.0)).expand(shape).clone()
-        ref = torch.where(j < 1, _f64(CUMPROD_FACTOR), _f64(CUMPROD_FACTOR * CUMPROD_FACTOR)).expand(shape).clone()
+        x, ok = _pattern(sig["x"], 1.0, CUMPROD_FACTOR, [])
+        x[(slice(None),) * dim + (slice(0, 2),)] = CUMPROD_FACTOR
+        ref = torch.where(j < 1, _f64(CUMPROD_FACTOR), _f64(CUMPROD_FACTOR * CUMPROD_FACTOR))
     else:
-        x = _one_at_start(shape, [dim], F64_EPS, 1.0)
-        ref = (1.0 + j * F64_EPS).expand(shape).clone()
-    x, ok = _strided(x, sig["x"])
-    return _judge(op, (x, sig["dim"]), {}, ref, EXACT, {"reduction_length": k, "layout_reproduced": ok})
+        x, ok = _pattern(sig["x"], F64_EPS, HEAD_A, [dim])
+        ref = HEAD_A + j * F64_EPS  # exact in float64
+    return _judge(op, (x, sig["dim"]), {}, ref.expand(shape), EXACT, {"reduction_length": k, "layout_reproduced": ok})
 
 
 def _softmax(op, sig: dict, log: bool) -> dict:
@@ -242,7 +308,7 @@ def _softmax(op, sig: dict, log: bool) -> dict:
     if k < 2:
         return _no_accumulation(k)
     logit = math.log(SOFTMAX_SMALL_WEIGHT)
-    x, ok = _strided(_one_at_start(shape, [dim], logit, 0.0), sig["x"])
+    x, ok = _pattern(sig["x"], logit, 0.0, [dim])
     small = math.exp(logit)
     total = math.fsum([1.0] + [small] * (k - 1))
     view = [1] * len(shape)
@@ -252,7 +318,7 @@ def _softmax(op, sig: dict, log: bool) -> dict:
         ref = torch.where(first, _f64(-math.log(total)), _f64(logit - math.log(total)))
     else:
         ref = torch.where(first, _f64(1.0 / total), _f64(small / total))
-    ref = ref.expand(shape).clone()
+    ref = ref.expand(shape)
     return _judge(op, (x, sig["dim"], False), {}, ref, MIXED if log else RELATIVE,
                   {"reduction_length": k, "layout_reproduced": ok})
 

@@ -27,20 +27,21 @@ Usage:
 `readings` runs `analysis.analyse` over every run in the three experiments.
 The V0 bridge is separate (`v0.py`).
 
-The operation-level dtype audit (A64 audit part 5, `op_audit.py`, #897) is a
-freeze decision, never a code default, so runs made under an older freeze
-keep the identity they were made with and reports re-read them unchanged.
-An experiment with A64 runs refuses to start unless the freeze decides
-explicitly (`op_audit_policy`):
-- `values.a64_op_audit` = the audit's schema (`op_audit.SCHEMA`): every A64
-  run is made with `--op-audit SCHEMA` (the oracle refuses a schema it does
-  not implement), binds `op_audit.py` and `op_probes.py`, and carries the
-  schema in its identity, so a run made without it is never admitted;
-- `values.a64_op_audit` = "waived", with a reason in
-  `values.a64_op_audit_waiver`: allowed only for a family whose backfill is
-  reported (`OP_AUDIT_BACKFILL`), and recorded as a preflight warning.
-Leaving the value out refuses the experiment, so a new freeze cannot forget
-the audit silently.
+The operation-level dtype audit (A64 audit part 5, `op_audit.py`, #897) is
+mandatory for every new f64 oracle qualification. An experiment with A64
+runs (E1, E3) refuses at preflight (`op_audit_policy`) unless the freeze:
+- sets `values.a64_op_audit` to exactly the `SCHEMA` written in the
+  `op_audit.py` it binds (read with `ast`, never imported), and
+- binds `script.op_audit` and `script.op_probes`.
+Every A64 run is then made with `--op-audit SCHEMA` and carries the schema in
+its identity, so a run made without the audit is never admitted. There is no
+waiver.
+
+Freezes made before the audit existed are unaffected. They set no value, so:
+- their expected identities are unchanged (`expected_identity`);
+- `load_freeze`, `runs_and_identities` and the reports read them as before;
+- only `preflight`, which `run_experiment` alone calls, enforces the rule,
+  and it does so only for experiments with A64 runs, never for E2 or N1.
 
 This module names no schema itself and imports nothing new: the reports
 (`f64_accuracy_v2.py`) import it, and a reporting repair binds exactly the
@@ -50,6 +51,7 @@ modules they import.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import shutil
@@ -81,16 +83,12 @@ READING_EXPERIMENTS = ("E1", "E2", "E3")
 #: The modeling file A64 patches, and the thread settings, are the oracle's own constants.
 HF_THREADS = {"torch_num_threads": 8, "torch_num_interop_threads": 1, "OMP_NUM_THREADS": "8"}
 HF_ENVIRONMENT = {"OMP_NUM_THREADS": "8"}
-#: The freeze value that decides A64's operation-level audit, its waiver, and
-#: the files a freeze that requires it must bind.
+#: The freeze value naming A64's operation-level audit schema, and the files a
+#: freeze that runs A64 must bind.
 OP_AUDIT_VALUE = "a64_op_audit"
-OP_AUDIT_WAIVED = "waived"
-OP_AUDIT_WAIVER = "a64_op_audit_waiver"
 OP_AUDIT_FILES = {"script.op_audit": "op_audit.py", "script.op_probes": "op_probes.py"}
-#: Families whose A64 forward has had the audit backfilled (#897), and where it
-#: is reported. Only these may waive it; a family added later never can.
-OP_AUDIT_BACKFILL_REPORT = "docs/prec-diag-a64-op-audit-backfill.md"
-OP_AUDIT_BACKFILL = {"gemma3_text": OP_AUDIT_BACKFILL_REPORT, "qwen3": OP_AUDIT_BACKFILL_REPORT}
+#: The name of the schema constant in op_audit.py.
+OP_AUDIT_SCHEMA_NAME = "SCHEMA"
 #: FREEZE.json values this runner needs beyond freeze.REQUIRED_*.
 REQUIRED_VALUES = ("larql_environment", "python", "capture_positions", "resource_limits", "packages", "threads")
 
@@ -152,9 +150,9 @@ def load_freeze(path: Path, expected_sha256: str) -> dict:
 
 
 def op_audit_schema(manifest: dict) -> str | None:
-    """The schema of A64's operation-level audit (part 5) the freeze requires, if any."""
+    """The schema of A64's operation-level audit (part 5) the freeze names, if any."""
     value = manifest["values"].get(OP_AUDIT_VALUE)
-    return value if isinstance(value, str) and value and value != OP_AUDIT_WAIVED else None
+    return value if isinstance(value, str) and value else None
 
 
 def op_audit_required(manifest: dict) -> bool:
@@ -165,34 +163,38 @@ def runs_a64(experiment: str) -> bool:
     return any(r["kind"] == "hf" and r["base"] == "A64" for r in plan(experiment))
 
 
-def op_audit_policy(manifest: dict, experiment: str) -> tuple[list[str], list[str]]:
-    """(problems, warnings) of the freeze's decision on A64's operation-level
-    audit, for an experiment about to run. Only experiments with A64 runs are
-    concerned; readings never call this, so runs made before the audit
-    existed are read exactly as before."""
+def bound_op_audit_schema(manifest: dict) -> str | None:
+    """`SCHEMA` as written in the op_audit.py the freeze binds, parsed, not imported."""
+    tree = ast.parse(Path(manifest["files"]["script.op_audit"]["path"]).read_text())
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+                and any(isinstance(t, ast.Name) and t.id == OP_AUDIT_SCHEMA_NAME for t in node.targets)):
+            return node.value.value
+    return None
+
+
+def op_audit_policy(manifest: dict, experiment: str) -> list[str]:
+    """Why an experiment about to run may not, under the rule that every A64
+    run carries the operation-level audit. Empty for an experiment without
+    A64 runs. Readings and reports never call this."""
     if not runs_a64(experiment):
-        return [], []
+        return []
     value = manifest["values"].get(OP_AUDIT_VALUE)
-    if op_audit_required(manifest):
-        missing = [label for label in OP_AUDIT_FILES if label not in manifest["files"]]
-        return [f"values.{OP_AUDIT_VALUE} requires the audit, and the freeze binds no {missing}"] if missing else [], []
-    if value == OP_AUDIT_WAIVED:
-        family = fam.family_of(checkpoint_config(manifest))
-        backfill = OP_AUDIT_BACKFILL.get(family)
-        reason = manifest["values"].get(OP_AUDIT_WAIVER)
-        problems = []
-        if not (isinstance(reason, str) and reason.strip()):
-            problems.append(f"values.{OP_AUDIT_VALUE} is waived with no reason in values.{OP_AUDIT_WAIVER}")
-        if not backfill:
-            problems.append(f"{family} has no operation-level backfill: its A64 runs cannot waive the audit")
-        warning = (f"{experiment}: A64 runs without the operation-level dtype audit (waived: {reason}); "
-                   f"{family} backfill: {backfill}")
-        return problems, [] if problems else [warning]
+    missing = [label for label in OP_AUDIT_FILES if label not in manifest["files"]]
+    problems = [f"{experiment} runs A64, and the freeze binds no {missing}"] if missing else []
     if value is None:
-        return [f"FREEZE.json sets no values.{OP_AUDIT_VALUE}: {experiment}'s A64 runs need the operation-level "
-                f"dtype audit (its schema, op_audit.SCHEMA) or an explicit waiver ({OP_AUDIT_WAIVED!r} with "
-                f"values.{OP_AUDIT_WAIVER})"], []
-    return [f"values.{OP_AUDIT_VALUE} = {value!r}: expected the audit's schema or {OP_AUDIT_WAIVED!r}"], []
+        return problems + [f"FREEZE.json sets no values.{OP_AUDIT_VALUE}: {experiment} runs A64, and every A64 "
+                           "run requires the operation-level dtype audit (op_audit.SCHEMA)"]
+    if missing:
+        return problems
+    try:
+        bound = bound_op_audit_schema(manifest)
+    except (OSError, SyntaxError, UnicodeDecodeError) as e:
+        return [f"the bound op_audit.py cannot be read: {type(e).__name__}: {e}"]
+    if value != bound:
+        problems.append(f"values.{OP_AUDIT_VALUE} = {value!r} is not the schema the bound op_audit.py "
+                        f"implements ({bound!r})")
+    return problems
 
 
 def checkpoint_config(manifest: dict) -> dict:
@@ -322,7 +324,7 @@ def preflight(manifest_path: Path, freeze_sha256: str, root: Path, experiment: s
     """Before an experiment: the frozen world, plus run-once and disk."""
     problems = frozen_world_problems(manifest_path, freeze_sha256)
     manifest = json.loads(Path(manifest_path).read_bytes())
-    problems += op_audit_policy(manifest, experiment)[0]
+    problems += op_audit_policy(manifest, experiment)
     family = fam.family_of(checkpoint_config(manifest))
     if any(r["capture"] for r in plan(experiment)) and not fam.FAMILIES[family]["captures"]:
         problems.append(f"{experiment} captures sites, and the oracle maps no sites for {family}")
@@ -468,8 +470,7 @@ def run_experiment(manifest_path: Path, freeze_sha256: str, root: Path, experime
     if problems:
         pre.fail(ev.ABORTED_PREFLIGHT, problems)
         return [pre.record]
-    warnings = op_audit_policy(manifest, experiment)[1]
-    (pre.run_dir / "checks.json").write_text(json.dumps({"problems": [], "warnings": warnings}))
+    (pre.run_dir / "checks.json").write_text(json.dumps({"problems": []}))
     pre.complete(["checks.json"])
     records, started = [], time.monotonic()
     total = total_limit(manifest, experiment)

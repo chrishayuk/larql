@@ -13,7 +13,7 @@
 - `Rereading`: the hf-f64-accuracy/2 report reads an audit.json written
   before this part existed exactly as before.
 - `Backfill`: the diagnostic backfill (`op_audit_backfill.py`) over the
-  synthetic subjects, and the families' pointer to its committed report.
+  synthetic subjects.
 
 No real checkpoint is read, and nothing is downloaded.
 
@@ -25,13 +25,13 @@ import json
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from prec_diag import evidence as ev  # noqa: E402
-from prec_diag import experiment as ex  # noqa: E402
 from prec_diag import f64_accuracy as fa  # noqa: E402
 from prec_diag import f64_accuracy_v2 as f2  # noqa: E402
 from prec_diag import families as fam  # noqa: E402
@@ -53,6 +53,10 @@ def traced(fn):
     with torch.no_grad(), audit:
         fn()
     return audit.finish()
+
+
+def linear_layers(model) -> int:
+    return sum(isinstance(m, torch.nn.Linear) for m in model.modules())
 
 
 def sites(result, key="violations"):
@@ -121,6 +125,14 @@ class Dispatch(unittest.TestCase):
         self.assertEqual(r["visibility"], oa.VISIBILITY)
         self.assertTrue(any("inside one kernel" in v for v in r["visibility"]["does_not_see"]))
         self.assertEqual(r["environment"]["threads"], torch.get_num_threads())
+        self.assertNotEqual(r["environment"]["blas"], "unknown")
+        self.assertTrue(any("thread-local" in v for v in r["visibility"]["does_not_see"]))
+
+    def test_the_probes_memory_is_recorded(self):
+        r = traced(lambda: self.x @ self.x.T)
+        self.assertEqual(r["memory"]["largest_probe_bytes"], max(p["probe_bytes"] for p in r["probes"]))
+        self.assertGreaterEqual(r["memory"]["peak_rss_bytes_after_probes"],
+                                r["memory"]["peak_rss_bytes_before_probes"])
 
     def test_every_probed_op_is_classified_and_no_op_is_in_two_classes(self):
         self.assertFalse(op.PROBED & oa.EXACT_OPS)
@@ -181,10 +193,44 @@ class Probes(unittest.TestCase):
         self.assertFalse(r["pass"])
 
     def test_a_probe_that_cannot_tell_f32_from_f64_fails(self):
-        # A kernel that widens its inputs computes the f32 counterfactual in f64 too.
-        r = op.probe("aten.mm.default", self.MATRIX, op=lambda a, b: torch.mm(a.double(), b.double()))
+        # A "kernel" that returns the expected value whatever its operands makes
+        # the float32 counterfactual meet the bound too: the probe then proves nothing.
+        def blind(a, b):
+            value = op.HEAD_A * op.HEAD_B + (a.shape[-1] - 1) * op.F64_EPS
+            return torch.full((*a.shape[:-1], b.shape[-1]), value, dtype=F64)
+
+        r = op.probe("aten.mm.default", self.MATRIX, op=blind)
         self.assertFalse(r["pass"])
         self.assertIn("cannot see the difference", r["detail"])
+
+    def test_the_operand_heads_are_not_representable_in_f32_or_bf16(self):
+        for head in (op.HEAD_A, op.HEAD_B, op.CUMPROD_FACTOR):
+            for low in (torch.float32, torch.bfloat16):
+                self.assertNotEqual(torch.tensor(head, dtype=F64).to(low).double().item(), head, (head, low))
+        self.assertEqual(op.HEAD_A * op.HEAD_B, 1 + 2.0 ** -24 + 2.0 ** -26 + 2.0 ** -50)
+
+    def test_rounding_the_operands_fails_every_accumulating_probe(self):
+        """A kernel that rounds float64 operands to float32 or bfloat16 and then
+        accumulates in float64. The float32 counterfactual rounds operands and
+        accumulator together, so only the operand heads can catch this."""
+        for low in (torch.float32, torch.bfloat16):
+            for name in sorted(op.CLASSES[op.ACCUMULATING]):
+                real = op.resolve(name)
+
+                def rounding(*args, real=real, low=low, **kwargs):
+                    rounded = [a.to(low).double() if isinstance(a, torch.Tensor) and a.dtype == F64 else a
+                               for a in args]
+                    return real(*rounded, **kwargs)
+
+                with self.subTest(name=name, operands=str(low)):
+                    r = op.probe(name, self.sig(name), op=rounding)
+                    self.assertFalse(r["pass"], r)
+                    self.assertIn("not float64-accurate", r["detail"])
+
+    def test_every_probe_records_the_bytes_it_allocated(self):
+        r = op.probe("aten.mm.default", self.MATRIX)
+        (m, k), (_, n) = self.MATRIX["a"][0], self.MATRIX["b"][0]
+        self.assertEqual(r["probe_bytes"], 8 * (m * k + k * n + m * n))
 
     def test_the_observed_layout_is_reproduced(self):
         self.assertTrue(op.probe("aten.mm.default", self.MATRIX)["layout_reproduced"])
@@ -223,7 +269,7 @@ class GapTheModuleAuditCannotSee(unittest.TestCase):
         if tamper:
             tamper(model)
         family = ho.Family(family_name)
-        audit, ops = ho.A64Audit(model, family), oa.OpDtypeAudit()
+        audit, ops = ho.A64Audit(model, family), oa.OpDtypeAudit(linear_layers=linear_layers(model))
         with ho.SiteCapture(model, None, family), ho.a64_patches(model, audit, skip), \
                 ho.module_dtype_hooks(model, audit), ops:
             with torch.no_grad():
@@ -260,6 +306,37 @@ class GapTheModuleAuditCannotSee(unittest.TestCase):
                 self.assertTrue(any(c["non_f64"] and c["to"] == "torch.float32" for c in ops["casts"]))
                 self.assertTrue(any(c["non_f64"] and c["to"] == "torch.float64" for c in ops["casts"]))
                 self.assertEqual(self.module_boundary_problems(parts), [])
+
+    def test_a_forward_run_on_another_thread_is_a_partial_trace(self):
+        """A dispatch mode is thread-local: the forward on another thread is
+        not seen at all, and the matmul count derived from the model says so."""
+        model, _ = ho.load(self.ckpts["gemma3_text"], "A64", gemma.BOUNDARY)
+        ops = oa.OpDtypeAudit(linear_layers=linear_layers(model))
+        ids = torch.tensor([gemma.IDS])
+
+        def elsewhere():
+            with torch.no_grad():
+                model(ids, use_cache=False)
+
+        with ops:
+            model.model.embed_tokens(ids)  # a little work here, the forward on another thread
+            worker = threading.Thread(target=elsewhere)
+            worker.start()
+            worker.join()
+        r = ops.finish()
+        self.assertFalse(r["pass"])
+        self.assertTrue(any(p.startswith("partial trace: 0 matmuls") for p in r["problems"]), r["problems"])
+
+    def test_tracing_part_of_the_forward_fails(self):
+        model, _ = ho.load(self.ckpts["gemma3_text"], "A64", gemma.BOUNDARY)
+        hidden = torch.zeros(1, 3, gemma.HIDDEN, dtype=F64)
+        ops = oa.OpDtypeAudit(linear_layers=linear_layers(model))
+        with ops, torch.no_grad():
+            model.lm_head(hidden)
+        r = ops.finish()
+        self.assertFalse(r["pass"])
+        self.assertIn(f"partial trace: 1 matmuls for {linear_layers(model)} nn.Linear modules",
+                      " ".join(r["problems"]))
 
     def test_a_hidden_f32_computation_with_no_patch_fails_only_this_part(self):
         """No patch covers this site, so part 3 has nothing to count or witness,
@@ -409,14 +486,14 @@ class Backfill(unittest.TestCase):
             self.assertTrue(s["existing_audit"]["parts_2_to_4_pass"])
             self.assertFalse(s["control_unpatched"]["part_5_pass"])
             self.assertEqual(s["control_unpatched"]["module_boundary_problems"], 0)
+            self.assertFalse(s["control_unpatched"]["part_3"]["pass"])
             self.assertNotIn("logits", json.dumps(s))
-
-    def test_every_family_points_at_the_committed_report(self):
-        root = Path(__file__).resolve().parent.parent
-        self.assertEqual(set(ex.OP_AUDIT_BACKFILL), set(fam.FAMILIES))
-        for name, report in ex.OP_AUDIT_BACKFILL.items():
-            self.assertTrue((root / report).is_file(), name)
-            self.assertTrue((root / report).with_suffix(".json").is_file(), name)
+        gemma_scale = next(s for s in self.report["subjects"] if s["family"] == "gemma3_text")[
+            "control_unpatched"]["embed_scale"]
+        self.assertEqual(gemma_scale["dtype"], "torch.float64")
+        # A64's float64 load builds the buffer in float64: sqrt(hidden), not a float32-rounded value.
+        self.assertTrue(gemma_scale["equals_sqrt_hidden_float64"])
+        self.assertFalse(gemma_scale["equals_sqrt_hidden_rounded_to_float32"])
 
 
 if __name__ == "__main__":

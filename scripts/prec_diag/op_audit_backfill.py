@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import math
 import platform
 import sys
 import tempfile
@@ -79,12 +80,16 @@ def real_subject(name: str, directory: Path) -> dict:
 def control(model, ids: list[int], family: ho.Family) -> dict:
     """The forward with every A64 patch removed: what part 5 and the
     module-boundary audit (part 2) each see of transformers' own f32 sites."""
-    audit, ops = ho.A64Audit(model, family), oa.OpDtypeAudit()
+    linear = sum(isinstance(m, torch.nn.Linear) for m in model.modules())
+    audit, ops = ho.A64Audit(model, family), oa.OpDtypeAudit(linear_layers=linear)
     every_patch = frozenset(family.expected_calls(1))
     with ho.SiteCapture(model, None, family), ho.a64_patches(model, audit, every_patch), \
             ho.module_dtype_hooks(model, audit), ops, torch.no_grad():
-        model(torch.tensor([ids]), use_cache=False)
+        logits = model(torch.tensor([ids]), use_cache=False).logits[0]
     o = ops.finish()
+    module_problems = sum(p.startswith("module ") for p in audit.problems)
+    part3 = audit.finish(logits, model.config.num_hidden_layers)  # logits read for dtype only
+    part3_problems = [p for p in part3["problems"] if not p.startswith("module ")]
     by_site: dict = {}
     for v in o["violations"]:
         entry = by_site.setdefault(v["site"], {"site": v["site"], "ops": 0,
@@ -92,7 +97,23 @@ def control(model, ids: list[int], family: ho.Family) -> dict:
         entry["ops"] += v["count"]
     return {"patches_removed": sorted(every_patch), "part_5_pass": o["pass"], "non_f64_ops": o["non_f64_ops"],
             "floating_ops": o["floating_ops"], "non_f64_sites": list(by_site.values()),
-            "module_boundary_problems": sum(p.startswith("module ") for p in audit.problems)}
+            "module_boundary_problems": module_problems,
+            "part_3": {"pass": not part3_problems, "problems": part3_problems,
+                       "call_totals": part3["call_totals"], "expected_call_totals": part3["expected_call_totals"]},
+            "embed_scale": embed_scale_check(model)}
+
+
+def embed_scale_check(model) -> dict | None:
+    """Gemma 3's embedding scale buffer, by value: float64 dtype, but is its
+    value sqrt(hidden) in float64, or sqrt(hidden) rounded to float32?"""
+    buffer = getattr(model.model.embed_tokens, "embed_scale", None)
+    if buffer is None:
+        return None
+    exact = math.sqrt(model.config.hidden_size)
+    value = float(buffer)
+    return {"dtype": str(buffer.dtype), "value": value, "sqrt_hidden_float64": exact,
+            "equals_sqrt_hidden_float64": value == exact,
+            "equals_sqrt_hidden_rounded_to_float32": value == float(torch.tensor(exact, dtype=torch.float32))}
 
 
 def audit_subject(subject: dict) -> dict:
@@ -146,21 +167,32 @@ def findings(rep: dict) -> list[str]:
                    + ("; ".join(f"{f} -> {t} at `{site}`" for f, t, site in casts) or "none") + ".")
     gap = [s for s in rep["subjects"] if not s["control_unpatched"]["part_5_pass"]
            and s["control_unpatched"]["module_boundary_problems"] == 0]
+    part3_failed = [s for s in rep["subjects"] if not s["control_unpatched"]["part_3"]["pass"]]
     out.append(f"- **The gap #897 names, on these families**: with A64's patches removed, part 5 fails on "
                f"{len(gap)} of {len(rep['subjects'])} subjects while the module-boundary audit (part 2) reports 0 "
                "problems on the same forward. The shipped float32 sites (RMSNorm, rotary, eager softmax) cast and "
-               "cast back inside one call. A64's existing patches cover exactly these sites, and part 3's call "
-               "counts and witnesses already caught a missing patch; part 5 also catches a float32 site that "
-               "no patch was written for.")
+               f"cast back inside one call. Part 3 (patched-function call counts and witnesses) also fails on "
+               f"{len(part3_failed)} of {len(rep['subjects'])} control forwards, because a removed patch is never "
+               "called; it can only see a site that has a patch, while part 5 needs none.")
     gemma = [s for s in rep["subjects"] if s["family"] == "gemma3_text"]
-    if gemma and not any("ScaledWordEmbedding" in site["site"] for s in gemma
-                         for site in s["control_unpatched"]["non_f64_sites"]):
-        out.append("- **A limit of any dtype audit, shown here**: the control also removed Gemma 3's "
-                   "scaled-embedding patch, and part 5 recorded no embedding site. transformers builds "
-                   "`embed_scale` as a float32 tensor and `.to(float64)` widens it, so the forward multiplies by "
-                   "a float64 tensor holding sqrt(hidden) rounded to float32. Its dtype is float64; only its "
-                   "value is float32-rounded. Part 3's embedding witness is what catches it, so part 5 adds to "
-                   "parts 1-4 and replaces none of them.")
+    rounded = [s for s in gemma if (s["control_unpatched"]["embed_scale"] or {}).get(
+        "equals_sqrt_hidden_rounded_to_float32") and not s["control_unpatched"]["embed_scale"][
+        "equals_sqrt_hidden_float64"]]
+    unseen = not any("ScaledWordEmbedding" in site["site"] for s in gemma
+                     for site in s["control_unpatched"]["non_f64_sites"])
+    exact = [s for s in gemma if (s["control_unpatched"]["embed_scale"] or {}).get("equals_sqrt_hidden_float64")]
+    if rounded and unseen:
+        out.append(f"- **A limit of any dtype audit, shown here**: on {len(rounded)} of {len(gemma)} Gemma 3 "
+                   "subjects, the `embed_scale` buffer is float64 and its value equals sqrt(hidden) rounded to "
+                   "float32 (recorded in `control_unpatched.embed_scale`), and part 5 recorded no embedding site "
+                   "in the control. Dtype is not precision; part 5 adds to parts 1-4 and replaces none of them.")
+    elif gemma and len(exact) == len(gemma) and unseen:
+        out.append(f"- **Gemma 3's scaled embedding is float64 work unpatched**: on {len(exact)} of {len(gemma)} "
+                   "Gemma 3 subjects the `embed_scale` buffer holds sqrt(hidden) in float64, not a float32-rounded "
+                   "value (`from_pretrained(dtype=float64)` builds it in float64; recorded in "
+                   "`control_unpatched.embed_scale`). So the control, which removed the scaled-embedding patch, "
+                   "correctly shows no embedding site: there is no float32 work there under A64's load. Part 5 "
+                   "can still not see a float64 tensor holding a float32-rounded value; none was found here.")
     out.append("- Sealed verdicts are unchanged. This backfill re-evaluates none of them.")
     return out
 
@@ -220,6 +252,16 @@ def markdown(rep: dict) -> str:
             lines.append(f"| {_cell(s['name'])} | {p['op']} | {p.get('reduction_length', '')} | "
                          f"{p['comparison']} | {p.get('error', '')} | {p.get('f32_counterfactual_error', '')} | "
                          f"{'pass' if p['pass'] else 'FAIL'} |")
+    lines += ["", "## Probe memory", "",
+              "The largest single probe's own allocation, and the process peak RSS before and after the probes "
+              "(the model and logits are live throughout).", "",
+              "| subject | matmuls / nn.Linear | largest probe (bytes) | peak RSS before probes | after probes |",
+              "|---|---|---|---|---|"]
+    for s in rep["subjects"]:
+        o = s["operations"]
+        m = o["memory"]
+        lines.append(f"| {_cell(s['name'])} | {o['matmuls']} / {o['linear_layers']} | {m['largest_probe_bytes']} | "
+                     f"{m['peak_rss_bytes_before_probes']} | {m['peak_rss_bytes_after_probes']} |")
     lines += ["", "## Control: the same forward with every A64 patch removed", "",
               "Not an A64 forward: transformers' modeling file as shipped, on the same float64 weights. It shows "
               "that part 5 sees the families' own float32 sites on these very subjects, and that the "
@@ -231,6 +273,14 @@ def markdown(rep: dict) -> str:
         lines.append(f"| {_cell(s['name'])} | {', '.join(c['patches_removed'])} | "
                      f"{c['non_f64_ops']} / {c['floating_ops']} | {'pass' if c['part_5_pass'] else 'FAIL'} | "
                      f"{c['module_boundary_problems']} |")
+    lines += ["", "| subject | part 3 on the control | part 3 problems (first) | embed_scale |", "|---|---|---|---|"]
+    for s in rep["subjects"]:
+        c = s["control_unpatched"]
+        e = c["embed_scale"]
+        scale = ("n/a" if e is None else f"{e['dtype']} {e['value']!r}; float32-rounded: "
+                 f"{e['equals_sqrt_hidden_rounded_to_float32']}; float64 sqrt: {e['equals_sqrt_hidden_float64']}")
+        lines.append(f"| {_cell(s['name'])} | {'pass' if c['part_3']['pass'] else 'FAIL'} | "
+                     f"{_cell(c['part_3']['problems'][0]) if c['part_3']['problems'] else ''} | {_cell(scale)} |")
     lines += ["", "Non-float64 sites in the control:", ""]
     for s in rep["subjects"]:
         for site in s["control_unpatched"]["non_f64_sites"]:
