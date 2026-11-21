@@ -60,6 +60,25 @@ pub fn norm(kind: NormType, x: &[f32], weight: &[f32], weight_offset: f32, eps: 
     match kind {
         NormType::RmsNorm => {
             let ss: f64 = x.iter().map(|v| (*v as f64) * (*v as f64)).sum();
+            match super::diag_c::get().norm {
+                super::diag_c::Alt::D => {
+                    let rms = ((ss / x.len() as f64) + eps).sqrt() as f32;
+                    return x
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| *v / rms * gain(weight, weight_offset, i))
+                        .collect();
+                }
+                super::diag_c::Alt::F64 => {
+                    let inv = 1.0 / ((ss / x.len() as f64) + eps).sqrt();
+                    return x
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| ((*v as f64) * inv * gain(weight, weight_offset, i) as f64) as f32)
+                        .collect();
+                }
+                super::diag_c::Alt::Frozen => {}
+            }
             let inv = 1.0 / ((ss / x.len() as f64) + eps).sqrt();
             x.iter()
                 .enumerate()

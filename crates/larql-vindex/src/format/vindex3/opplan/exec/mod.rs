@@ -36,6 +36,7 @@ pub mod dense_ffn;
 pub mod dense_rows;
 pub mod device;
 pub mod device_refusal;
+pub mod diag_c;
 pub mod down_input_capture;
 mod experts;
 pub mod ffn_restore;

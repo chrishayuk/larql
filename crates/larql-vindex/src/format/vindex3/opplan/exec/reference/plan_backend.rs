@@ -191,6 +191,12 @@ pub(super) fn combine_gate_up_reference(
     u: f32,
 ) -> f32 {
     match policy {
+        larql_models::ExpertGatePolicy::Gated
+            if super::super::diag_c::get().silu_d
+                && activation == larql_models::config::Activation::Silu =>
+        {
+            larql_compute::cpu::ops::geglu::silu(g) * u
+        }
         larql_models::ExpertGatePolicy::Gated => activate(activation, g) * u,
         larql_models::ExpertGatePolicy::ClampedGlu { limit, alpha } => {
             let g = g.min(limit);
@@ -305,10 +311,12 @@ impl PlanBackend for ReferenceBackend {
         tap: &mut dyn FnMut(&[f32]),
     ) -> Result<Vec<f32>, VindexError> {
         super::super::production::require_executable_gate("reference", call.gate_policy)?;
-        let up = matvec(call.up.as_f32()?, call.intermediate, call.hidden, call.x);
+        use super::super::diag_c::{matvec_at, Site};
+        let up = matvec_at(Site::Up, call.up.as_f32()?, call.intermediate, call.hidden, call.x);
         let inner: Vec<f32> = match call.gate {
             Some(gate_weight) => {
-                let gate = matvec(
+                let gate = matvec_at(
+                    Site::Gate,
                     gate_weight.as_f32()?,
                     call.intermediate,
                     call.hidden,
@@ -327,7 +335,8 @@ impl PlanBackend for ReferenceBackend {
             None => up.iter().map(|u| activate(call.activation, *u)).collect(),
         };
         tap(&inner);
-        Ok(matvec(
+        Ok(matvec_at(
+            Site::Down,
             call.down.as_f32()?,
             call.hidden,
             call.intermediate,
@@ -441,7 +450,13 @@ impl PlanBackend for ReferenceBackend {
         multiplier: Option<f64>,
         softcapping: Option<f32>,
     ) -> Result<Vec<f32>, VindexError> {
-        let mut logits = matvec(projection.as_f32()?, vocab, hidden, x);
+        let mut logits = super::super::diag_c::matvec_at(
+            super::super::diag_c::Site::Head,
+            projection.as_f32()?,
+            vocab,
+            hidden,
+            x,
+        );
         for logit in &mut logits {
             if let Some(multiplier) = multiplier {
                 *logit *= multiplier as f32;

@@ -8,6 +8,7 @@ use super::super::kernels::{
     partial_rotary_frequencies, partial_rotary_slice, rope_rotate, rope_rotate_scaled, sigmoid,
     softcap, softmax, softmax_with_sink, yarn_frequencies, FusedHalf, GateMutation,
 };
+use super::super::diag_c::{self as DiagC, Site};
 use super::super::observe::{AttentionHeadRecord, UnpositionedQk};
 use crate::error::VindexError;
 use larql_models::config::NormType;
@@ -128,10 +129,10 @@ impl ReferenceBackend {
                 gate_mutation,
             )
         } else {
-            matvec(call.w_q.as_f32()?, q_rows, call.hidden, pre)
+            DiagC::matvec_at(Site::Q, call.w_q.as_f32()?, q_rows, call.hidden, pre)
         };
-        let mut k = matvec(call.w_k.as_f32()?, kv_rows, call.hidden, pre);
-        let mut v = matvec(call.w_v.as_f32()?, kv_rows, call.hidden, pre);
+        let mut k = DiagC::matvec_at(Site::K, call.w_k.as_f32()?, kv_rows, call.hidden, pre);
+        let mut v = DiagC::matvec_at(Site::V, call.w_v.as_f32()?, kv_rows, call.hidden, pre);
         // Biases belong to the projections: added before anything reads
         // the projected values (QK-norm, rope, the cache).
         if let Some(bias) = &call.bias {
@@ -358,8 +359,16 @@ impl ReferenceBackend {
                     let k_slice =
                         &key_of(key_position)[kv_head * head_dim..(kv_head + 1) * head_dim];
                     let mut dot = 0.0f32;
-                    for (a, b) in q_slice.iter().zip(k_slice) {
-                        dot += a * b;
+                    if DiagC::get().attn_dot_f64 {
+                        let mut d64 = 0.0f64;
+                        for (a, b) in q_slice.iter().zip(k_slice) {
+                            d64 += (*a as f64) * (*b as f64);
+                        }
+                        dot = d64 as f32;
+                    } else {
+                        for (a, b) in q_slice.iter().zip(k_slice) {
+                            dot += a * b;
+                        }
                     }
                     let mut score = dot * call.score_scale as f32;
                     if let Some(cap) = call.logit_softcapping {
@@ -375,15 +384,30 @@ impl ReferenceBackend {
                     let AttentionSinkSpec::SoftmaxDenominator = sinks.spec;
                     softmax_with_sink(&mut scores, sinks.logits[q_head]);
                 }
-                None => softmax(&mut scores),
+                None => DiagC::softmax_at(&mut scores),
             }
             let head_out = &mut concat[q_head * head_dim..(q_head + 1) * head_dim];
+            if DiagC::get().attn_wv_f64 {
+                let mut acc64 = vec![0.0f64; head_dim];
+                for (offset, key_position) in (start..=position).enumerate() {
+                    let v_slice =
+                        &value_of(key_position)[kv_head * head_dim..(kv_head + 1) * head_dim];
+                    let weight = scores[offset] as f64;
+                    for (acc, v) in acc64.iter_mut().zip(v_slice) {
+                        *acc += weight * (*v as f64);
+                    }
+                }
+                for (o, a) in head_out.iter_mut().zip(&acc64) {
+                    *o = *a as f32;
+                }
+            } else {
             for (offset, key_position) in (start..=position).enumerate() {
                 let v_slice = &value_of(key_position)[kv_head * head_dim..(kv_head + 1) * head_dim];
                 let weight = scores[offset];
                 for (acc, v) in head_out.iter_mut().zip(v_slice) {
                     *acc += weight * v;
                 }
+            }
             }
             if tap.is_some() {
                 kept.push(scores);
@@ -530,7 +554,7 @@ impl ReferenceBackend {
             }
         }
 
-        let mut out = matvec(call.w_o.as_f32()?, call.hidden, q_rows, &concat);
+        let mut out = DiagC::matvec_at(Site::O, call.w_o.as_f32()?, call.hidden, q_rows, &concat);
         if let Some(o) = call.bias.as_ref().and_then(|bias| bias.o) {
             add_in_place(&mut out, o);
         }
