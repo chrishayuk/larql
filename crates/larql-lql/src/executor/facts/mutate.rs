@@ -239,7 +239,7 @@ impl Session {
     }
 
     /// Apply a fact op to the bound overlay's KNN store.
-    fn apply_fact_op(&mut self, op: &PatchOp) {
+    pub(crate) fn apply_fact_op(&mut self, op: &PatchOp) {
         let store = match &mut self.backend {
             Backend::Vindex { patched, .. } => &mut patched.knn_store,
             Backend::Vindex3 { overlay, .. } => &mut overlay.knn_store,

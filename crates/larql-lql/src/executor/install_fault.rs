@@ -44,6 +44,13 @@ pub enum InstallFaultPoint {
     /// After the fact is registered for later cross-fact checks, before the patch operation is
     /// recorded.
     BeforeRecord,
+    /// COMPACT MINOR (Gate B, B6 §4): once the promotions are planned, before any of them runs.
+    CompactBeforePromotions,
+    /// COMPACT MINOR: after promotion `promotion` (counted from 1) removed its KNN fact, before
+    /// its compose install.
+    CompactAfterKnnRemoval { promotion: usize },
+    /// COMPACT MINOR: after promotion `promotion` (counted from 1) installed its compose fact.
+    CompactAfterPromotion { promotion: usize },
 }
 
 impl fmt::Display for InstallFaultPoint {
@@ -56,6 +63,13 @@ impl fmt::Display for InstallFaultPoint {
             Self::DuringBalance { iteration } => write!(f, "during-balance-{iteration}"),
             Self::AfterBalance => write!(f, "after-balance"),
             Self::BeforeRecord => write!(f, "before-record"),
+            Self::CompactBeforePromotions => write!(f, "compact-before-promotions"),
+            Self::CompactAfterKnnRemoval { promotion } => {
+                write!(f, "compact-after-knn-removal-{promotion}")
+            }
+            Self::CompactAfterPromotion { promotion } => {
+                write!(f, "compact-after-promotion-{promotion}")
+            }
         }
     }
 }

@@ -5,6 +5,7 @@
 
 mod delete;
 mod insert;
+pub(crate) use insert::InsertSnapshot;
 mod merge;
 mod rebalance;
 mod refit;

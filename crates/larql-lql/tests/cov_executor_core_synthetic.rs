@@ -234,25 +234,7 @@ fn compact_minor_with_populated_l0() {
     );
 }
 
-#[test]
-fn compact_major_low_hidden_dim_errors() {
-    let (mut session, _dir, _) = fresh_session();
-    // hidden_dim 16 < 1024 → COMPACT MAJOR's hidden-dim guard
-    // (compact.rs:105-111) errors before any residual capture, for all
-    // option forms (plain / FULL / WITH LAMBDA).
-    for sql in [
-        "COMPACT MAJOR;",
-        "COMPACT MAJOR FULL;",
-        "COMPACT MAJOR WITH LAMBDA = 0.001;",
-        "COMPACT MAJOR FULL WITH LAMBDA = 0.01;",
-    ] {
-        let err = try_run(&mut session, sql).expect_err("hidden_dim < 1024");
-        assert!(
-            err.contains("hidden_dim") || err.contains("1024"),
-            "expected hidden-dim guard for {sql:?}, got: {err}"
-        );
-    }
-}
+// COMPACT MAJOR refuses on every binding: tests/gate_b_compact_major_refusal.rs.
 
 // ════════════════════════════════════════════════════════════════════
 //  executor/trace.rs — TRACE / EXPLAIN INFER formatting variants

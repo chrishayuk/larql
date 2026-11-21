@@ -3,7 +3,7 @@
 //! MERGE
 //! WALK + EXPLAIN WALK against rich fixture
 //! REBALANCE early-exit
-//! COMPACT MINOR / COMPACT MAJOR short-circuits
+//! COMPACT MINOR short-circuits
 
 use super::*;
 
@@ -346,25 +346,5 @@ fn compact_minor_with_empty_l0_short_circuits_v2() {
     let out = session.execute(&stmt).expect("COMPACT MINOR");
     let joined = out.join("\n");
     assert!(joined.contains("L0 is empty"));
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn compact_major_on_small_hidden_dim_errors() {
-    let (mut session, dir) = vindex_session("compact_major_small_v2");
-    // Synthetic fixture has hidden_dim=4 < 1024 → COMPACT MAJOR errors
-    // with the "requires hidden_dim >= 1024" message.
-    let stmt = parser::parse("COMPACT MAJOR;").unwrap();
-    let err = session.execute(&stmt).unwrap_err();
-    assert!(err.to_string().contains("hidden_dim"));
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn compact_major_with_lambda_clause_parses_and_errors_on_small_dim() {
-    let (mut session, dir) = vindex_session("compact_major_lambda");
-    let stmt = parser::parse("COMPACT MAJOR WITH LAMBDA = 0.001;").unwrap();
-    let err = session.execute(&stmt).unwrap_err();
-    assert!(err.to_string().contains("hidden_dim") || err.to_string().contains("model weights"));
     let _ = std::fs::remove_dir_all(&dir);
 }

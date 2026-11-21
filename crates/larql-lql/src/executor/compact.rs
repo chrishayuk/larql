@@ -1,338 +1,234 @@
-//! Compaction executor: COMPACT MINOR, COMPACT MAJOR.
+//! Compaction executor: COMPACT MINOR, COMPACT MAJOR (Gate B, B6,
+//! `docs/gate-b-b6.md` r3 §3.1 and §3.2).
+//!
+//! COMPACT MINOR promotes every KNN (L0) fact to a keyed compose install.
+//! Each promotion is applied and recorded as `delete_knn_fact(K)` followed by
+//! the keyed compose `Insert` for K, in that order, so the live state is the
+//! one a replay of the recording produces. The statement is one transaction:
+//! it refuses before any change if any fact cannot be promoted, and if a
+//! promotion fails part-way everything it and the earlier promotions wrote is
+//! put back.
+//!
+//! COMPACT MAJOR refuses before any work: a MEMIT cycle has no ledger
+//! representation, so its result could not be replayed (ruling D2).
 
-use super::memit_persist::save_memit_store;
-use super::tuning::{
-    canonical_prompt, MEMIT_COMPACT_LAMBDA as DEFAULT_MEMIT_LAMBDA,
-    MEMIT_MIN_RECONSTRUCTION_COS as MIN_RECONSTRUCTION_COS,
-};
-use super::Session;
+use larql_vindex::{FactKey, PatchOp};
+
+use super::facts::{AssertedFact, FactRealization, FactStatus};
+use super::install_fault::InstallFaultPoint;
+use super::mutation::InsertSnapshot;
+use super::{Backend, Session};
 use crate::ast::InsertMode;
 use crate::error::LqlError;
 
+/// Why COMPACT MAJOR is refused (Gate B, B6 ruling D2).
+pub(crate) const COMPACT_MAJOR_REFUSAL: &str = "COMPACT MAJOR is refused: a MEMIT cycle has no \
+     ledger representation, so its result could not be replayed or reconstructed from a patch. \
+     Restoring this statement needs a ledger-backed MEMIT operation under its own contract. \
+     Nothing was changed.";
+
+/// One planned promotion: a live KNN fact and the layer it occupies.
+struct Promotion {
+    layer: usize,
+    key: FactKey,
+    fact: AssertedFact,
+}
+
+/// What COMPACT MINOR can write, taken before it changes anything: the B5
+/// install snapshot (overlay slots, session journal, caches, install
+/// registry, recording length), widened to the KNN store, the recording
+/// switch and the mutation counters.
+struct CompactSnapshot {
+    insert: InsertSnapshot,
+    knn: larql_vindex::KnnStore,
+    recording_open: bool,
+    auto_patch: bool,
+    epoch: u64,
+    mutations_since_minor: usize,
+    mutations_since_major: usize,
+}
+
+fn refused(reason: String) -> LqlError {
+    LqlError::Execution(format!(
+        "COMPACT MINOR refused, nothing was changed: {reason}"
+    ))
+}
+
+fn describe(fact: &AssertedFact) -> String {
+    format!(
+        "fact {} ({}, {}) → {}",
+        fact.id, fact.entity, fact.relation, fact.target
+    )
+}
+
 impl Session {
-    /// `COMPACT MINOR` — promote L0 (KNN) entries to L1 (arch-A compose edges).
+    /// `COMPACT MINOR`: promote every L0 (KNN) fact to a keyed compose install.
     pub(crate) fn exec_compact_minor(&mut self) -> Result<Vec<String>, LqlError> {
-        let (_path, _config, patched) = self.require_vindex()?;
-
-        let entries_by_layer: Vec<(usize, String, String, String, f32)> = {
-            let all = patched.knn_store.entries();
-            let mut snapshot = Vec::new();
-            for (&layer, entries) in all {
-                for entry in entries {
-                    snapshot.push((
-                        layer,
-                        entry.entity.clone(),
-                        entry.relation.clone(),
-                        entry.target_token.clone(),
-                        entry.confidence,
-                    ));
-                }
-            }
-            snapshot
-        };
-
-        if entries_by_layer.is_empty() {
+        self.require_vindex()?;
+        let plan = self.plan_minor_promotions()?;
+        if plan.is_empty() {
             return Ok(vec![
                 "COMPACT MINOR: L0 is empty, nothing to compact.".into()
             ]);
         }
 
-        let total = entries_by_layer.len();
-        let mut promoted = 0;
-        let mut failed = 0;
-        let mut out = vec![format!(
-            "COMPACT MINOR: promoting {} L0 entries to L1 (arch-A)...",
-            total,
-        )];
-
-        for (layer, entity, relation, target, confidence) in &entries_by_layer {
-            let result = self.exec_insert(
-                entity,
-                relation,
-                target,
-                Some(*layer as u32),
-                Some(*confidence),
-                None,
-                InsertMode::Compose,
-            );
-            match result {
-                Ok(insert_out) => {
-                    promoted += 1;
-                    let (_, _, patched) = self.require_patched_mut()?;
-                    patched
-                        .knn_store
-                        .remove_by_entity_relation(entity, relation);
-                    if let Some(last) = insert_out.last() {
-                        out.push(format!(
-                            "  promoted {entity} —[{relation}]→ {target} @ L{layer}: {last}"
-                        ));
-                    }
+        let snapshot = self.compact_snapshot();
+        let mut out = self.ensure_patch_session();
+        match self.promote_all(&plan) {
+            Ok(lines) => {
+                out.extend(lines);
+                if let Some(note) = self.compose_identity_loss_line() {
+                    out.push(note);
                 }
-                Err(e) => {
-                    failed += 1;
-                    out.push(format!("  failed {entity} —[{relation}]→ {target}: {e}"));
-                }
+                self.advance_epoch();
+                Ok(out)
+            }
+            Err(e) => {
+                self.restore_compact(snapshot);
+                Err(LqlError::Execution(format!(
+                    "COMPACT MINOR failed and was rolled back, nothing was changed: {e}"
+                )))
             }
         }
+    }
 
+    /// The promotions COMPACT MINOR will run, in a defined order (layer,
+    /// then fact key), or a refusal naming the first fact that cannot be
+    /// promoted. Reads only.
+    fn plan_minor_promotions(&self) -> Result<Vec<Promotion>, LqlError> {
+        let ledger = self.ledger()?;
+        let single = |t: &str, id: u32| ledger.is_single(t, id);
+        let catalogue = ledger.catalogue();
+
+        let (_, _, patched) = self.require_vindex()?;
+        let mut keys: Vec<FactKey> = patched
+            .knn_store
+            .ordered_entries()
+            .into_iter()
+            .map(|(_, e)| FactKey::new(&e.entity, &e.relation))
+            .collect();
+        keys.sort();
+        keys.dedup();
+
+        let mut plan = Vec::with_capacity(keys.len());
+        for key in keys {
+            let Some(fact) = catalogue.live(&key, &single) else {
+                return Err(refused(format!(
+                    "the KNN store holds an entry for ({}, {}) that no live fact in the ledger \
+                     accounts for",
+                    key.entity(),
+                    key.relation()
+                )));
+            };
+            if fact.status != FactStatus::Active || fact.realization != FactRealization::Knn {
+                return Err(refused(format!(
+                    "{} is {} ({}); only an active KNN fact can be promoted",
+                    describe(&fact),
+                    fact.status.label(),
+                    fact.realization.label()
+                )));
+            }
+            let [layer] = fact.layers[..] else {
+                return Err(refused(format!(
+                    "{} occupies {} KNN layers; a promotion installs at one layer",
+                    describe(&fact),
+                    fact.layers.len()
+                )));
+            };
+            plan.push(Promotion { layer, key, fact });
+        }
+        plan.sort_by(|a, b| (a.layer, &a.key).cmp(&(b.layer, &b.key)));
+        Ok(plan)
+    }
+
+    /// Runs every promotion in order. On an error the caller restores.
+    fn promote_all(&mut self, plan: &[Promotion]) -> Result<Vec<String>, LqlError> {
+        self.inject_install_fault(InstallFaultPoint::CompactBeforePromotions)?;
+        let mut out = vec![format!(
+            "COMPACT MINOR: promoting {} fact(s) from KNN (L0) to compose (L1):",
+            plan.len()
+        )];
+        for (i, p) in plan.iter().enumerate() {
+            let promotion = i + 1;
+            let fact = &p.fact;
+
+            // Engine order equals recorded order: the KNN fact goes first,
+            // so the install's capture never sees the old KNN override.
+            let delete = PatchOp::DeleteKnnFact {
+                entity: fact.entity.clone(),
+                relation: fact.relation.clone(),
+            };
+            self.apply_fact_op(&delete);
+            self.record_knowledge_op(delete);
+            self.inject_install_fault(InstallFaultPoint::CompactAfterKnnRemoval { promotion })?;
+
+            let version = self
+                .check_fact_insert(&fact.entity, &fact.relation, &fact.target, false)
+                .map_err(|e| LqlError::Execution(format!("{}: {e}", describe(fact))))?;
+            self.exec_insert(
+                &fact.entity,
+                &fact.relation,
+                &fact.target,
+                Some(p.layer as u32),
+                fact.confidence,
+                None,
+                InsertMode::Compose,
+            )
+            .map_err(|e| LqlError::Execution(format!("{}: {e}", describe(fact))))?;
+            self.inject_install_fault(InstallFaultPoint::CompactAfterPromotion { promotion })?;
+
+            out.push(format!(
+                "  promoted {} at L{}: knn → compose (v{} → v{version})",
+                describe(fact),
+                p.layer,
+                fact.version,
+            ));
+        }
         out.push(format!(
-            "COMPACT MINOR complete: {promoted}/{total} promoted, {failed} failed.",
+            "COMPACT MINOR complete: {} fact(s) promoted, recorded as delete_knn_fact then the \
+             keyed compose insert for each.",
+            plan.len()
         ));
-        self.advance_epoch();
         Ok(out)
     }
 
-    /// `COMPACT MAJOR [FULL] [WITH LAMBDA = <f>]` — promote L1 (arch-A) to L2 (MEMIT).
-    ///
-    /// 1. Collect L1 edges: extract entity/relation/target + install layer
-    /// 2. For each edge, capture END-position residual at install layer (the key)
-    /// 3. Look up target token embedding (the target direction)
-    /// 4. Call MEMIT solver: ΔW = T^T (K K^T + λI)^{-1} K
-    /// 5. Verify decomposition quality (cos > 0.95 for all facts)
-    /// 6. Store decomposed (k_i, d_i) pairs in MemitStore
-    /// 7. Report results
+    fn compact_snapshot(&self) -> CompactSnapshot {
+        let knn = match &self.backend {
+            Backend::Vindex { patched, .. } => patched.knn_store.clone(),
+            _ => unreachable!("COMPACT MINOR runs on a VINDEX2 binding only"),
+        };
+        CompactSnapshot {
+            insert: self.insert_snapshot(true),
+            knn,
+            recording_open: self.patch_recording.is_some(),
+            auto_patch: self.auto_patch,
+            epoch: self.epoch,
+            mutations_since_minor: self.mutations_since_minor,
+            mutations_since_major: self.mutations_since_major,
+        }
+    }
+
+    fn restore_compact(&mut self, snapshot: CompactSnapshot) {
+        self.restore_insert(snapshot.insert);
+        if let Backend::Vindex { patched, .. } = &mut self.backend {
+            patched.knn_store = snapshot.knn;
+        }
+        if !snapshot.recording_open {
+            self.patch_recording = None;
+        }
+        self.auto_patch = snapshot.auto_patch;
+        self.epoch = snapshot.epoch;
+        self.mutations_since_minor = snapshot.mutations_since_minor;
+        self.mutations_since_major = snapshot.mutations_since_major;
+    }
+
+    /// `COMPACT MAJOR [FULL] [WITH LAMBDA = <f>]`: refused before any work
+    /// (Gate B, B6 ruling D2). See [`COMPACT_MAJOR_REFUSAL`].
     pub(crate) fn exec_compact_major(
         &mut self,
         _full: bool,
-        lambda: Option<f32>,
+        _lambda: Option<f32>,
     ) -> Result<Vec<String>, LqlError> {
-        let lambda = lambda.unwrap_or(DEFAULT_MEMIT_LAMBDA);
-
-        // ── Phase 1: gather L1 edge metadata ──
-        let (path, config, patched) = self.require_vindex()?;
-        let hidden_dim = patched.hidden_size();
-
-        if hidden_dim < 1024 {
-            return Err(LqlError::Execution(format!(
-                "COMPACT MAJOR requires hidden_dim >= 1024 (model has {}). \
-                 Use COMPACT MINOR for arch-A compaction on this model.",
-                hidden_dim,
-            )));
-        }
-
-        if !config.has_model_weights {
-            return Err(LqlError::Execution(
-                "COMPACT MAJOR requires model weights for residual capture. \
-                 Load a vindex with weights via USE."
-                    .into(),
-            ));
-        }
-
-        // Collect L1 edges from patches.
-        //
-        // Skip Insert ops that lack a relation: the MEMIT prompt is
-        // built as `"The {relation} of {entity} is"`, so a missing
-        // relation captures the wrong residual and bakes junk into
-        // `down_weights.bin`. The skipped count is reported back to
-        // the user.
-        let mut edges: Vec<(usize, String, String, String, u32)> = Vec::new();
-        let mut skipped_no_relation = 0usize;
-        for patch in &patched.patches {
-            for op in &patch.operations {
-                if let larql_vindex::PatchOp::Insert {
-                    layer,
-                    entity,
-                    target,
-                    relation,
-                    ..
-                } = op
-                {
-                    match relation {
-                        Some(rel) => {
-                            edges.push((*layer, entity.clone(), rel.clone(), target.clone(), 0));
-                        }
-                        None => skipped_no_relation += 1,
-                    }
-                }
-            }
-        }
-
-        // Also collect from the gate overlay directly (covers anonymous patches)
-        let overlay_edges: Vec<(usize, usize)> = patched
-            .overrides_gate_iter()
-            .map(|(l, f, _)| (l, f))
-            .collect();
-
-        if edges.is_empty() && overlay_edges.is_empty() {
-            return Ok(vec![
-                "COMPACT MAJOR: L1 is empty, nothing to compact.".into()
-            ]);
-        }
-
-        let n_edges = edges.len().max(overlay_edges.len());
-        let mut out = vec![format!(
-            "COMPACT MAJOR: processing {} L1 edges with lambda={:.1e}...",
-            n_edges, lambda,
-        )];
-        if skipped_no_relation > 0 {
-            out.push(format!(
-                "  Skipped {skipped_no_relation} insert(s) with no relation \
-                 (cannot build canonical MEMIT prompt without one)"
-            ));
-        }
-
-        // ── Phase 2: capture residuals ──
-        let path_owned = path.to_owned();
-        let mut cb = larql_vindex::SilentLoadCallbacks;
-        let weights = larql_vindex::load_model_weights(&path_owned, &mut cb)
-            .map_err(|e| LqlError::exec("failed to load weights", e))?;
-        let tokenizer = larql_vindex::load_vindex_tokenizer(&path_owned)
-            .map_err(|e| LqlError::exec("failed to load tokenizer", e))?;
-        let (embed, embed_scale) = larql_vindex::load_vindex_embeddings(&path_owned)
-            .map_err(|e| LqlError::exec("failed to load embeddings", e))?;
-
-        // For now, use the overlay_edges and run forward passes for each
-        // to capture residuals. Group by layer for efficiency.
-        let install_layer = if !edges.is_empty() {
-            edges[0].0
-        } else if !overlay_edges.is_empty() {
-            overlay_edges[0].0
-        } else {
-            return Ok(out);
-        };
-
-        // Collect per-edge: (entity, relation, target, key_residual, target_embed)
-        // For a real implementation, we'd iterate edges with metadata.
-        // For now, demonstrate the solver pipeline with the edges we have.
-        out.push(format!(
-            "  Install layer: L{install_layer}, hidden_dim: {hidden_dim}",
-        ));
-        out.push(format!(
-            "  L1 patch edges: {}, overlay edges: {}",
-            edges.len(),
-            overlay_edges.len(),
-        ));
-
-        // If we have edges with metadata, run the MEMIT pipeline
-        if !edges.is_empty() {
-            let n = edges.len();
-            let mut keys_vec = Vec::with_capacity(n * hidden_dim);
-            let mut targets_vec = Vec::with_capacity(n * hidden_dim);
-            let mut fact_meta: Vec<(String, String, String)> = Vec::with_capacity(n);
-
-            let (_, _, patched) = self.require_vindex()?;
-            for (layer, entity, relation, target, _tid) in &edges {
-                let prompt = canonical_prompt(relation, entity);
-                let encoding = tokenizer
-                    .encode(prompt.as_str(), true)
-                    .map_err(|e| LqlError::exec("tokenize error", e))?;
-                let token_ids: Vec<u32> = encoding.get_ids().to_vec();
-
-                let walk_ffn = larql_inference::vindex::WalkFfn::new_unlimited_with_trace(
-                    &weights,
-                    patched.base(),
-                );
-                let _result = larql_inference::predict_with_ffn(
-                    &weights, &tokenizer, &token_ids, 1, &walk_ffn,
-                );
-
-                let residuals = walk_ffn.take_residuals();
-                if let Some((_, residual)) = residuals.iter().find(|(l, _)| *l == *layer) {
-                    keys_vec.extend_from_slice(residual);
-                } else {
-                    keys_vec.extend(std::iter::repeat_n(0.0f32, hidden_dim));
-                }
-
-                // Target embedding
-                let spaced = format!(" {target}");
-                let target_enc = tokenizer
-                    .encode(spaced.as_str(), false)
-                    .map_err(|e| LqlError::exec("tokenize error", e))?;
-                let target_id = target_enc.get_ids().first().copied().unwrap_or(0) as usize;
-                let row = embed.row(target_id);
-                for j in 0..hidden_dim {
-                    targets_vec.push(row[j] * embed_scale);
-                }
-
-                fact_meta.push((entity.clone(), relation.clone(), target.clone()));
-            }
-
-            // Build ndarray matrices
-            let keys = ndarray::Array2::from_shape_vec((n, hidden_dim), keys_vec)
-                .map_err(|e| LqlError::Execution(format!("key matrix shape error: {e}")))?;
-            let targets = ndarray::Array2::from_shape_vec((n, hidden_dim), targets_vec)
-                .map_err(|e| LqlError::Execution(format!("target matrix shape error: {e}")))?;
-
-            // Run MEMIT solver
-            out.push(format!(
-                "  Running MEMIT solver (N={n}, d={hidden_dim}, lambda={lambda:.1e})..."
-            ));
-            let result = larql_vindex::memit_solve(&keys, &targets, lambda)
-                .map_err(|e| LqlError::Execution(format!("MEMIT solve: {e}")))?;
-
-            let min_cos = result
-                .reconstruction_cos
-                .iter()
-                .cloned()
-                .fold(f32::INFINITY, f32::min);
-            let mean_cos: f32 = result.reconstruction_cos.iter().sum::<f32>() / n as f32;
-
-            out.push(format!(
-                "  Decomposition quality: mean_cos={mean_cos:.4}, min_cos={min_cos:.4}, \
-                 max_off_diag={:.4}, ||ΔW||={:.6}",
-                result.max_off_diagonal, result.frobenius_norm,
-            ));
-
-            if min_cos < MIN_RECONSTRUCTION_COS {
-                out.push(format!(
-                    "  WARNING: min reconstruction cos {min_cos:.4} < {MIN_RECONSTRUCTION_COS}. \
-                     Some facts may not reconstruct cleanly from decomposed pairs."
-                ));
-            }
-
-            // Build decomposed (k, d) pairs and persist to L2 store.
-            let mut memit_facts = Vec::with_capacity(n);
-            for (i, (entity, relation, target)) in fact_meta.iter().enumerate() {
-                memit_facts.push(larql_vindex::MemitFact {
-                    entity: entity.clone(),
-                    relation: relation.clone(),
-                    target: target.clone(),
-                    key: keys.row(i).to_owned(),
-                    decomposed_down: result.decomposed[i].clone(),
-                    reconstruction_cos: result.reconstruction_cos[i],
-                });
-            }
-
-            let cycle_id = self.memit_store_mut()?.add_cycle(
-                install_layer,
-                memit_facts,
-                result.frobenius_norm,
-                min_cos,
-                result.max_off_diagonal,
-            );
-            out.push(format!(
-                "  Stored {n} decomposed (k, d) pairs as cycle #{cycle_id} at layer {install_layer}."
-            ));
-
-            // Persist the store to disk so the next `USE` rehydrates
-            // the cycle. Without this, COMPACT MAJOR mutations are
-            // session-only and `SHOW COMPACT STATUS` always reports
-            // zero facts after a restart.
-            let vindex_dir = match &self.backend {
-                super::Backend::Vindex { path, .. } => path.clone(),
-                _ => return Err(LqlError::NoBackend),
-            };
-            if let Some(store) = self.memit_store() {
-                if let Err(e) = save_memit_store(&vindex_dir, store) {
-                    out.push(format!(
-                        "  warning: failed to persist memit_store.json: {e}"
-                    ));
-                }
-            }
-
-            out.push(format!(
-                "COMPACT MAJOR complete: {n} facts compiled, {:.0}% quality.",
-                mean_cos * 100.0,
-            ));
-        } else {
-            out.push(
-                "  No edge metadata available for MEMIT solve. \
-                 Use INSERT mode=compose to create L1 edges with metadata, then COMPACT MAJOR."
-                    .into(),
-            );
-        }
-
-        self.advance_epoch();
-        Ok(out)
+        Err(LqlError::Execution(COMPACT_MAJOR_REFUSAL.into()))
     }
 }

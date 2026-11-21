@@ -204,8 +204,10 @@ impl Session {
         }
     }
 
-    /// Mutable access to the Vindex backend's L2 MEMIT store.
-    /// Used by `COMPACT MAJOR` to persist decomposed (k, d) pairs.
+    /// Mutable access to the Vindex backend's L2 MEMIT store. Since Gate B,
+    /// B6 (ruling D2) no statement writes it; tests seed it to check that
+    /// `USE` still rehydrates a store a vindex carries.
+    #[cfg(test)]
     pub(crate) fn memit_store_mut(&mut self) -> Result<&mut larql_vindex::MemitStore, LqlError> {
         match &mut self.backend {
             Backend::Vindex { memit_store, .. } => Ok(memit_store),

@@ -77,37 +77,6 @@ fn describe_on_moe_fixture_unknown_entity_reports_not_found() {
 }
 
 #[test]
-fn compact_major_skips_inserts_with_no_relation() {
-    // A Compose patch with relation=None should be skipped and counted
-    // in the "skipped insert(s)" report, exercising the
-    // `skipped_no_relation` reporting branch. The relation-bearing edge
-    // still flows through MEMIT.
-    let (mut session, dir) = large_vindex_session("compact_major_no_rel");
-    {
-        let (_, _, patched) = session.require_patched_mut().unwrap();
-        patched
-            .patches
-            .push(mk_insert_patch(0, 0, "[1]", None, "[3]"));
-        patched
-            .patches
-            .push(mk_insert_patch(0, 1, "[4]", Some("[2]"), "[5]"));
-    }
-
-    let stmt = parser::parse("COMPACT MAJOR;").unwrap();
-    let out = session.execute(&stmt).expect("COMPACT MAJOR mixed");
-    let joined = out.join("\n");
-    assert!(
-        joined.contains("Skipped 1 insert"),
-        "expected skipped-no-relation message, got: {joined}",
-    );
-    assert!(
-        joined.contains("MEMIT") && joined.contains("complete"),
-        "expected the relation-bearing edge to still flow through MEMIT, got: {joined}",
-    );
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
 fn browse_on_a_weight_backend_points_at_extraction() {
     let session = weight_session();
     let err = match session.browse() {

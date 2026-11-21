@@ -227,7 +227,15 @@ fn the_v2_path_refuses_the_container_lql_serves() {
 fn remaining_mutation_statements_refuse_with_capabilities() {
     let container = v3_container();
     let mut session = bound_session(container.path());
-    for stmt in ["COMPACT MINOR;", "COMPACT MAJOR;"] {
+    // COMPACT MAJOR refuses on every binding, before any work (Gate B, B6
+    // ruling D2): a MEMIT cycle has no ledger representation.
+    let err = session
+        .execute(&parse("COMPACT MAJOR;").unwrap())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("no ledger representation"), "{err}");
+    {
+        let stmt = "COMPACT MINOR;";
         let parsed = parse(stmt).unwrap();
         let err = session.execute(&parsed).unwrap_err().to_string();
         assert!(
@@ -530,7 +538,8 @@ fn every_statement_is_sensible_on_a_v3_binding() {
         // no-op report is honest.
         (r#"REBALANCE;"#.to_string(), Ok),
         (r#"COMPACT MINOR;"#.to_string(), Refuse),
-        (r#"COMPACT MAJOR;"#.to_string(), Refuse),
+        // Refused on every binding (Gate B, B6 ruling D2), not for VINDEX3.
+        (r#"COMPACT MAJOR;"#.to_string(), Err),
         // ── Patch lifecycle (V3-LQL-3C): records and replays over the
         // knowledge overlay ──
         (begin_patch.clone(), Ok),

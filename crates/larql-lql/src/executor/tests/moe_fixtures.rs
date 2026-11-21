@@ -416,35 +416,3 @@ pub(super) fn make_modified_test_vindex_dir(tag: &str) -> std::path::PathBuf {
     std::fs::write(dir.join("tokenizer.json"), tok_json).unwrap();
     dir
 }
-
-/// Build a `VindexPatch` containing a single Insert op. Used to
-/// pre-seat committed patches before invoking COMPACT MAJOR.
-pub(super) fn mk_insert_patch(
-    layer: usize,
-    feature: usize,
-    entity: &str,
-    relation: Option<&str>,
-    target: &str,
-) -> larql_vindex::VindexPatch {
-    larql_vindex::VindexPatch {
-        version: 1,
-        base_model: String::new(),
-        base_checksum: None,
-        created_at: String::new(),
-        description: None,
-        author: None,
-        tags: Vec::new(),
-        operations: vec![larql_vindex::PatchOp::Insert {
-            layer,
-            feature,
-            relation: relation.map(str::to_string),
-            entity: entity.into(),
-            target: target.into(),
-            confidence: Some(0.9),
-            gate_vector_b64: None,
-            up_vector_b64: None,
-            down_vector_b64: None,
-            down_meta: None,
-        }],
-    }
-}

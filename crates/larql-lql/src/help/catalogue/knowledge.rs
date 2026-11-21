@@ -134,13 +134,22 @@ pub(super) static COMPACT_MINOR: StatementHelp = StatementHelp {
     group: HelpGroup::Knowledge,
     syntax: &["COMPACT MINOR;"],
     does: &[
-        "Promotes the session's KNN entries to COMPOSE edges (VINDEX2 storage tiers L0 to L1).",
+        "Promotes every live KNN fact to a keyed COMPOSE install at its layer (VINDEX2 storage tiers",
+        "L0 to L1). Each fact keeps its id; only its representation changes. Each promotion is",
+        "recorded as a KNN delete followed by the keyed insert, so a saved patch replays it.",
+        "The statement is all or nothing: a failure part-way puts everything back.",
     ],
     examples: &["COMPACT MINOR;"],
     needs: &[Need::Vindex2],
-    effect: &["At once, in this session."],
+    effect: &[
+        "At once, in this session; recorded in the open patch (an automatic one if none is open).",
+        "A compose fact's identity does not survive COMPILE.",
+    ],
     operands: &[],
-    refusals: &["A VINDEX3 container is bound: its compaction is COMPACT INTO VINDEX."],
+    refusals: &[
+        "A VINDEX3 container is bound: its compaction is COMPACT INTO VINDEX.",
+        "A KNN fact is not active (multi_token, unverified, ambiguous or inconsistent).",
+    ],
     related: &[
         "COMPACT MAJOR",
         "SHOW COMPACT STATUS",
@@ -154,17 +163,15 @@ pub(super) static COMPACT_MAJOR: StatementHelp = StatementHelp {
     group: HelpGroup::Knowledge,
     syntax: &["COMPACT MAJOR [FULL] [WITH LAMBDA = <f>];"],
     does: &[
-        "Promotes COMPOSE edges to the MEMIT store (VINDEX2 storage tiers L1 to L2) and persists that",
-        "store into the bound vindex directory.",
+        "Refused, on every binding, before any work. A MEMIT cycle has no patch operation, so its",
+        "result could not be replayed or reconstructed. A MEMIT store a vindex already carries is",
+        "still read by USE and shown by SHOW COMPACT STATUS.",
     ],
-    examples: &["COMPACT MAJOR;", "COMPACT MAJOR FULL WITH LAMBDA = 0.001;"],
-    needs: &[Need::Vindex2],
-    effect: &["Writes into the bound vindex directory: the one statement here that does."],
+    examples: &["COMPACT MAJOR;"],
+    needs: &[Need::Nothing],
+    effect: &["None: nothing is changed."],
     operands: &[],
-    refusals: &[
-        "A VINDEX3 container is bound.",
-        "In a batch, after any earlier statement failed (HELP BATCH;).",
-    ],
+    refusals: &["Always."],
     related: &["COMPACT MINOR", "SHOW COMPACT STATUS"],
 };
 

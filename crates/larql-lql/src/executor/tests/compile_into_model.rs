@@ -1,5 +1,4 @@
 //! COMPILE INTO MODEL
-//! COMPACT MAJOR full MEMIT path (large fixture, hidden_dim ≥ 1024)
 
 use super::*;
 
@@ -151,95 +150,5 @@ fn compile_into_model_with_memit_enabled_runs() {
     // The MEMIT solve may or may not converge cleanly with random-init
     // weights — accept either outcome but exercise the path.
     let _ = result;
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn compact_major_against_full_fixture_runs() {
-    // Full fixture has hidden_dim=16 < 1024 — COMPACT MAJOR still
-    // errors on the hidden_dim check, but exercises more of the
-    // pre-check path than the small-fixture variant since model
-    // weights are loadable.
-    let (mut session, dir) = full_vindex_session("compact_major");
-    let stmt = parser::parse("COMPACT MAJOR;").unwrap();
-    let err = session.execute(&stmt).unwrap_err();
-    assert!(err.to_string().contains("hidden_dim"));
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn compact_major_against_large_fixture_with_no_patches_short_circuits() {
-    // Large fixture clears the hidden_dim guard. With no patches and
-    // no overlay edges, COMPACT MAJOR returns the empty-L1 short-circuit.
-    let (mut session, dir) = large_vindex_session("compact_major_empty_l1");
-    let stmt = parser::parse("COMPACT MAJOR;").unwrap();
-    let out = session.execute(&stmt).expect("COMPACT MAJOR no-op");
-    let joined = out.join("\n");
-    assert!(
-        joined.contains("L1 is empty"),
-        "expected empty-L1 message, got: {joined}",
-    );
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn compact_major_against_large_fixture_runs_full_memit_solve() {
-    // Pre-seat one committed patch with a relation so COMPACT MAJOR
-    // runs the full MEMIT pipeline: residual capture, target embedding
-    // lookup, ndarray solve, decomposition-quality report, and persist
-    // to memit_store.json.
-    let (mut session, dir) = large_vindex_session("compact_major_memit");
-    {
-        let (_, _, patched) = session.require_patched_mut().unwrap();
-        patched
-            .patches
-            .push(mk_insert_patch(0, 0, "[1]", Some("[2]"), "[3]"));
-    }
-
-    let stmt = parser::parse("COMPACT MAJOR;").unwrap();
-    let out = session.execute(&stmt).expect("COMPACT MAJOR full path");
-    let joined = out.join("\n");
-
-    assert!(
-        joined.contains("Running MEMIT solver"),
-        "expected MEMIT solver output, got: {joined}",
-    );
-    assert!(
-        joined.contains("Decomposition quality"),
-        "expected quality report, got: {joined}",
-    );
-    assert!(
-        joined.contains("COMPACT MAJOR complete"),
-        "expected completion line, got: {joined}",
-    );
-
-    let memit_path = dir.join("memit_store.json");
-    assert!(
-        memit_path.exists(),
-        "expected memit_store.json to be persisted",
-    );
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn compact_major_against_large_fixture_with_lambda_override() {
-    // WITH LAMBDA = X threads through a non-default lambda; the value
-    // is echoed in the progress report.
-    let (mut session, dir) = large_vindex_session("compact_major_lambda");
-    {
-        let (_, _, patched) = session.require_patched_mut().unwrap();
-        patched
-            .patches
-            .push(mk_insert_patch(0, 0, "[1]", Some("[2]"), "[3]"));
-    }
-
-    let stmt = parser::parse("COMPACT MAJOR WITH LAMBDA = 0.01;").unwrap();
-    let out = session.execute(&stmt).expect("COMPACT MAJOR custom lambda");
-    let joined = out.join("\n");
-    assert!(
-        joined.contains("lambda=1.0e-2") || joined.contains("lambda=1e-2"),
-        "expected custom lambda echo, got: {joined}",
-    );
     let _ = std::fs::remove_dir_all(&dir);
 }
