@@ -448,7 +448,7 @@ class OpAuditPolicy(Tmp):
         self.assertTrue(any("is not the schema" in p for p in problems), problems)
 
     def test_a_schema_typo_refuses_at_preflight_before_any_run(self):
-        w = self.world(a64_op_audit="larql.prec-diag-1.a64-op-audit/2")
+        w = self.world(a64_op_audit=oa.SCHEMA + "-typo")  # a schema no op_audit.py implements
         records = ex.run_experiment(w.freeze, w.sha, w.runs, "E1")
         self.assertEqual(records[0]["status"], ev.ABORTED_PREFLIGHT)
         self.assertTrue(any("is not the schema the bound op_audit.py implements" in p

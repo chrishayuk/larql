@@ -160,6 +160,10 @@ class Probes(unittest.TestCase):
         "aten.pow.Tensor_Scalar": {"exponent": 2.0},
         "aten.pow.Scalar": {"base": 10000.0},
         "aten.gelu.default": {"approximate": "tanh"},
+        # Qwen3.5's depthwise causal conv: channels-last input (the projection transposed), groups = channels.
+        "aten.convolution.default": {"x": [[1, 12, 70], [840, 1, 12]], "w": [[12, 1, 4], [4, 4, 1]], "bias": None,
+                                     "stride": [1], "padding": [3], "dilation": [1], "transposed": False,
+                                     "output_padding": [0], "groups": 12},
     }
 
     def sig(self, name):

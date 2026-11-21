@@ -4,6 +4,12 @@
 
 Issue #897. Audit schema `larql.prec-diag-1.a64-op-audit/1`. Run 2026-11-21 on arm64, torch 2.14.0, transformers 5.5.0, 8 threads. The full record is the JSON beside this file.
 
+**Schema note (added with #901).** This backfill ran under schema `/1`, and this file and its JSON record that run as it was. `op_audit.py` is now at `/2`, for two reasons:
+- The admitted op set grew for the `qwen3_5` family: `constant_pad_nd` and `eye` are exact, and `softplus` and 1-d `convolution` are probed.
+- The "does not see" statement on float32-computed buffers was corrected. The `/1` text below says `from_pretrained(dtype=float64)` builds buffers in float64. In fact a rotary `inv_freq` buffer loads float32 under that call, for Gemma 3 and Qwen3 too. It is then widened by `.to(float64)`, and the A64 rotary patches never read it.
+
+No result here changes: every op these subjects ran is classified the same way under `/2`.
+
 Each subject is one A64 forward made as `hf_oracle.forward` makes it, with the existing patches and the module-boundary hooks, plus audit part 5 (`op_audit.py`).
 
 ## Findings

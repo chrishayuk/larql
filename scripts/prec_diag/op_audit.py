@@ -74,7 +74,9 @@ from prec_diag import op_probes  # noqa: E402
 #: The part's record schema. A freeze requires the part by naming it
 #: (`values.a64_op_audit`); the runner forwards that value to the oracle,
 #: which refuses any schema but this one, so this is its only definition.
-SCHEMA = "larql.prec-diag-1.a64-op-audit/1"
+#: /2 (#901): the admitted op set grew (exact: constant_pad_nd, eye; probed: softplus, 1-d convolution) and
+#: the visibility statement on float32-computed buffers was corrected. /1 is the schema the #899 backfill ran.
+SCHEMA = "larql.prec-diag-1.a64-op-audit/2"
 REQUIRED = {False: torch.float64, True: torch.complex128}  # keyed by is_complex
 #: Python frames recorded per site, innermost first.
 CALLSITE_FRAMES = 3
@@ -110,7 +112,7 @@ EXACT_OPS = frozenset({
     "aten.clone.default", "aten.contiguous.default", "aten.cat.default", "aten.stack.default",
     "aten.embedding.default", "aten.index.Tensor", "aten.index_select.default", "aten.gather.default",
     "aten.repeat.default", "aten.repeat_interleave.self_int", "aten.tril.default", "aten.triu.default",
-    "aten._local_scalar_dense.default",
+    "aten._local_scalar_dense.default", "aten.constant_pad_nd.default",
     # selection and comparison
     "aten.where.self", "aten.masked_fill.Scalar", "aten.masked_fill.Tensor", "aten.masked_fill_.Scalar",
     "aten.eq.Scalar", "aten.eq.Tensor", "aten.ne.Scalar", "aten.ne.Tensor", "aten.lt.Scalar",
@@ -124,7 +126,7 @@ EXACT_OPS = frozenset({
     "aten.zeros.default", "aten.ones.default", "aten.empty.memory_format", "aten.empty_strided.default",
     "aten.zeros_like.default", "aten.ones_like.default", "aten.empty_like.default", "aten.full_like.default",
     "aten.new_ones.default", "aten.new_zeros.default", "aten.new_empty.default", "aten.new_full.default",
-    "aten.fill_.Scalar", "aten.zero_.default",
+    "aten.fill_.Scalar", "aten.zero_.default", "aten.eye.default",
 }) | CAST_OPS
 
 #: What the dispatch level sees and does not see; recorded in every result.
@@ -149,9 +151,14 @@ VISIBILITY = {
         "tensors created before the trace starts (parameters, buffers): audit part 1 checks every floating "
         "parameter and buffer is float64, and every parameter against the checkpoint",
         "a float64 tensor holding a value already rounded to float32 (e.g. a buffer computed in float32 at "
-        "construction and widened later): dtype is not precision. Not observed under A64's load: "
-        "from_pretrained(dtype=float64) builds buffers in float64, and the backfill records Gemma 3's "
-        "embed_scale as sqrt(hidden) in float64",
+        "construction and widened later): dtype is not precision. Buffers can load non-float64: "
+        "from_pretrained(dtype=float64) leaves a rotary inv_freq buffer float32 (computed in float32 at "
+        "construction). Gemma 3 and Qwen3 are then widened by .to(float64), so their inv_freq holds "
+        "float32-computed values in float64 storage; their A64 rotary patches recompute inv_freq in float64 "
+        "and never read it. Qwen3.5 is not widened: its rotary buffers are rebuilt from the float64 formula "
+        "at load (declared in loading.json `rotary_buffers_rebuilt_f64`). Part 1 checks every floating "
+        "buffer's dtype, and for Qwen3.5 the rotary buffers' values against that formula. The backfill "
+        "records Gemma 3's embed_scale as sqrt(hidden) in float64",
         "state carried between forwards (KV or recurrent caches across decode steps): A64 is one prefill with "
         "use_cache=False; within it, every state tensor is produced and written by traced ops",
         "work on another Python thread: a dispatch mode is thread-local. The part fails a trace with fewer "
