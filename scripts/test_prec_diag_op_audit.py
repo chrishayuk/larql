@@ -159,6 +159,12 @@ class Dispatch(unittest.TestCase):
         self.assertNotIn("prims.mul.default", {p["op"] for p in r["probes"]})
         self.assertNotIn(op.BASIC, r["ops_by_class"])
 
+    def test_a_prim_mixing_meta_and_data_is_not_shape_inference(self):
+        # The meta-only rule needs every tensor on meta: a CPU 0-dim operand keeps the call on data.
+        s = torch.tensor(2.0, dtype=torch.float64)
+        r = traced(lambda: torch.ops.prims.mul.default(s, self.x.to("meta")))
+        self.assertEqual(r["shape_inference"], {})
+
     def test_a_float32_prim_on_meta_is_still_a_dtype_fault(self):
         m = torch.empty(3, 4, dtype=torch.float32, device="meta")
         r = traced(lambda: torch.ops.prims.add.default(m, m))
