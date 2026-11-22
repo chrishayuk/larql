@@ -143,13 +143,17 @@ fn main() -> Result<()> {
     let (plan_json, runs) = load_plan(&args[0])?;
     let out_path = &args[1];
     let partial = format!("{out_path}.partial");
-    if Path::new(out_path).exists() || Path::new(&format!("{out_path}.manifest.json")).exists()
-        || Path::new(&partial).exists() {
+    if Path::new(out_path).exists()
+        || Path::new(&format!("{out_path}.manifest.json")).exists()
+        || Path::new(&partial).exists()
+    {
         return refuse("output exists; a run never overwrites");
     }
     let container = Path::new(plan_json["container"].as_str().unwrap_or_default());
     let inspection = inspect_container(container, true)?;
-    let plan = plan_component_ops(&inspection, container, "target")?.plan.ok_or("plan absent")?;
+    let plan = plan_component_ops(&inspection, container, "target")?
+        .plan
+        .ok_or("plan absent")?;
     if plan.layers.iter().any(|l| l.layer_scale.is_some()) {
         return refuse("the plan declares a layer scale");
     }
@@ -157,7 +161,10 @@ fn main() -> Result<()> {
     let backend = ProductionBackend::new();
     let ops = PreparedOperands::load(&plan, &store, &backend, ExecutionSlice::Full)?;
     let layers = plan.layers.len();
-    let mut out = File::options().write(true).create_new(true).open(&partial)?;
+    let mut out = File::options()
+        .write(true)
+        .create_new(true)
+        .open(&partial)?;
     for r in &runs {
         let mut ffn = Ffn::default();
         let mut kv = RowKvState::default();
@@ -174,7 +181,10 @@ fn main() -> Result<()> {
             }
         }
         if firings != 0 || ffn.scaled != 0 {
-            return refuse(format!("{}: a natural run fired or carried a layer scale", r.id));
+            return refuse(format!(
+                "{}: a natural run fired or carried a layer scale",
+                r.id
+            ));
         }
         let (mut carriers, mut kvs) = (serde_json::Map::new(), serde_json::Map::new());
         for layer in 0..layers {
@@ -183,14 +193,23 @@ fn main() -> Result<()> {
             for p in r.lo..=r.hi {
                 let c = match ffn.carriers.get(&(layer, p)) {
                     Some((c, 1)) => c,
-                    _ => return refuse(format!("{}: carrier at {layer}|{p} absent or written twice", r.id)),
+                    _ => {
+                        return refuse(format!(
+                            "{}: carrier at {layer}|{p} absent or written twice",
+                            r.id
+                        ))
+                    }
                 };
                 carriers.insert(format!("{layer}|{p}"), json!(vector_sha256(c)));
                 kvs.insert(format!("{layer}|{p}"), json!(f32_sha(&[&k[p], &v[p]])));
             }
         }
-        writeln!(out, "{}", json!({"id": r.id, "tokens": r.tokens, "positions": [r.lo, r.hi],
-                                   "carriers": carriers, "kv_sha256": kvs, "step_logit_sha256": steps}))?;
+        writeln!(
+            out,
+            "{}",
+            json!({"id": r.id, "tokens": r.tokens, "positions": [r.lo, r.hi],
+                                   "carriers": carriers, "kv_sha256": kvs, "step_logit_sha256": steps})
+        )?;
         eprintln!("sealed {}", r.id);
     }
     drop(out);
@@ -204,6 +223,9 @@ fn main() -> Result<()> {
         "output_sha256": format!("sha256:{:x}", Sha256::digest(&bytes)),
         "runs": runs.len(), "layers": layers,
     });
-    std::fs::write(format!("{out_path}.manifest.json"), serde_json::to_vec_pretty(&manifest)?)?;
+    std::fs::write(
+        format!("{out_path}.manifest.json"),
+        serde_json::to_vec_pretty(&manifest)?,
+    )?;
     Ok(())
 }

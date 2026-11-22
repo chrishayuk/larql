@@ -136,7 +136,9 @@ impl Run {
     fn carrier(&self, layer: usize, pos: usize) -> Result<&Vec<f32>> {
         match self.carriers.ffn.get(&(layer, pos)) {
             Some((v, 1)) => Ok(v),
-            _ => refuse(format!("carrier {layer}|{pos} absent or written more than once")),
+            _ => refuse(format!(
+                "carrier {layer}|{pos} absent or written more than once"
+            )),
         }
     }
 }
@@ -161,7 +163,12 @@ fn load_model(container: &Path, layers: usize) -> Result<Model> {
     let store = OperandStore::open(container, &inspection)?;
     let backend = ProductionBackend::new();
     let ops = PreparedOperands::load(&cplan, &store, &backend, ExecutionSlice::Full)?;
-    Ok(Model { plan: cplan, ops, backend, layers })
+    Ok(Model {
+        plan: cplan,
+        ops,
+        backend,
+        layers,
+    })
 }
 
 fn execute(model: &Model, tokens: &[u32], plan: &InterventionPlan) -> Result<Run> {
@@ -169,7 +176,8 @@ fn execute(model: &Model, tokens: &[u32], plan: &InterventionPlan) -> Result<Run
     let mut kv = RowKvState::default();
     let (mut firings, mut step_logit_sha, mut last_logits) = (0, Vec::new(), Vec::new());
     {
-        let mut session = DecodeSession::over_prepared(&model.plan, &model.ops, &model.backend, &mut kv)?;
+        let mut session =
+            DecodeSession::over_prepared(&model.plan, &model.ops, &model.backend, &mut kv)?;
         let none = HeadInterventionPlan::none();
         for &t in tokens {
             let out = session.step_intervened(t, &mut carriers, plan, &none)?;
@@ -189,11 +197,21 @@ fn execute(model: &Model, tokens: &[u32], plan: &InterventionPlan) -> Result<Run
         keys.push(k);
         values.push(v);
     }
-    Ok(Run { carriers, firings, step_logit_sha, last_logits, keys, values })
+    Ok(Run {
+        carriers,
+        firings,
+        step_logit_sha,
+        last_logits,
+        keys,
+        values,
+    })
 }
 
 fn same(a: &Run, b: &Run) -> bool {
-    a.step_logit_sha == b.step_logit_sha && a.keys == b.keys && a.values == b.values && a.last_logits == b.last_logits
+    a.step_logit_sha == b.step_logit_sha
+        && a.keys == b.keys
+        && a.values == b.values
+        && a.last_logits == b.last_logits
 }
 
 // ── plan ──────────────────────────────────────────────────────────────────
@@ -215,19 +233,39 @@ struct Plan {
 
 fn ids(v: &Value, what: &str) -> Result<Vec<u64>> {
     match v.as_array() {
-        Some(a) if !a.is_empty() => a.iter().map(|x| x.as_u64().ok_or_else(|| format!("REFUSED: {what}").into())).collect(),
+        Some(a) if !a.is_empty() => a
+            .iter()
+            .map(|x| x.as_u64().ok_or_else(|| format!("REFUSED: {what}").into()))
+            .collect(),
         _ => refuse(format!("{what}: empty or not a list")),
     }
 }
 
-fn keyed(v: &Value, what: &str, prefixed: bool, layers: usize, n: usize) -> Result<BTreeMap<(usize, usize), String>> {
-    let m = v.as_object().ok_or_else(|| format!("REFUSED: {what} missing"))?;
+fn keyed(
+    v: &Value,
+    what: &str,
+    prefixed: bool,
+    layers: usize,
+    n: usize,
+) -> Result<BTreeMap<(usize, usize), String>> {
+    let m = v
+        .as_object()
+        .ok_or_else(|| format!("REFUSED: {what} missing"))?;
     let mut out = BTreeMap::new();
     for (k, s) in m {
-        let s = s.as_str().ok_or_else(|| format!("REFUSED: {what} {k} not a string"))?;
-        let body = if prefixed { s.strip_prefix("sha256:") } else { Some(s) };
+        let s = s
+            .as_str()
+            .ok_or_else(|| format!("REFUSED: {what} {k} not a string"))?;
+        let body = if prefixed {
+            s.strip_prefix("sha256:")
+        } else {
+            Some(s)
+        };
         match body {
-            Some(b) if b.len() == 64 && b.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)) => {}
+            Some(b)
+                if b.len() == 64
+                    && b.bytes()
+                        .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)) => {}
             _ => return refuse(format!("{what} {k} malformed")),
         }
         let p: Vec<&str> = k.split('|').collect();
@@ -244,49 +282,111 @@ fn keyed(v: &Value, what: &str, prefixed: bool, layers: usize, n: usize) -> Resu
 }
 
 fn load_plan(path: &Path) -> Result<Plan> {
-    let v: Value = serde_json::from_slice(&std::fs::read(path)?).or_else(|e| refuse(format!("plan is not JSON: {e}")))?;
+    let v: Value = serde_json::from_slice(&std::fs::read(path)?)
+        .or_else(|e| refuse(format!("plan is not JSON: {e}")))?;
     if v["schema"] != PLAN_SCHEMA {
         return refuse("plan schema");
     }
     let container = PathBuf::from(v["container"].as_str().ok_or("REFUSED: no container")?);
-    let layers = v["layers"].as_u64().filter(|&l| l >= 1).ok_or("REFUSED: no layer count")? as usize;
+    let layers = v["layers"]
+        .as_u64()
+        .filter(|&l| l >= 1)
+        .ok_or("REFUSED: no layer count")? as usize;
     let tok = container.join(TOKENIZER_FILE);
     if !tok.exists() || Some(file_sha(&tok)?.as_str()) != v["tokenizer_sha256"].as_str() {
         return refuse("tokenizer hash differs from the plan's");
     }
     let holdout: BTreeSet<String> = match v["holdout"].as_array() {
-        Some(a) if !a.is_empty() => a.iter().filter_map(|x| x.as_str().map(String::from)).collect(),
+        Some(a) if !a.is_empty() => a
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect(),
         _ => return refuse("plan has no holdout list"),
     };
     let mut runs = BTreeMap::new();
-    for (id, r) in v["runs"].as_object().filter(|m| !m.is_empty()).ok_or("REFUSED: no runs")? {
-        let country = r["country"].as_str().ok_or_else(|| format!("REFUSED: run {id}: no country"))?;
+    for (id, r) in v["runs"]
+        .as_object()
+        .filter(|m| !m.is_empty())
+        .ok_or("REFUSED: no runs")?
+    {
+        let country = r["country"]
+            .as_str()
+            .ok_or_else(|| format!("REFUSED: run {id}: no country"))?;
         if holdout.contains(country) || id.split('|').any(|p| holdout.contains(p)) {
             return refuse(format!("run {id}: a holdout country"));
         }
-        let tokens: Vec<u32> = ids(&r["tokens"], &format!("run {id} tokens"))?.into_iter().map(|x| x as u32).collect();
-        let window: Vec<usize> = ids(&r["window"], &format!("run {id} window"))?.into_iter().map(|x| x as usize).collect();
+        let tokens: Vec<u32> = ids(&r["tokens"], &format!("run {id} tokens"))?
+            .into_iter()
+            .map(|x| x as u32)
+            .collect();
+        let window: Vec<usize> = ids(&r["window"], &format!("run {id} window"))?
+            .into_iter()
+            .map(|x| x as usize)
+            .collect();
         let wids = ids(&r["window_ids"], &format!("run {id} window_ids"))?;
         let readout = tokens.len() - 1;
         if window.windows(2).any(|w| w[1] != w[0] + 1) || *window.last().unwrap() >= readout {
-            return refuse(format!("run {id}: window not contiguous or reaches the readout"));
+            return refuse(format!(
+                "run {id}: window not contiguous or reaches the readout"
+            ));
         }
         if wids != window.iter().map(|&p| tokens[p] as u64).collect::<Vec<_>>() {
-            return refuse(format!("run {id}: window token ids differ from the run at those positions"));
+            return refuse(format!(
+                "run {id}: window token ids differ from the run at those positions"
+            ));
         }
-        let carriers = keyed(&r["expected_carrier_sha256"], &format!("run {id} carriers"), false, layers, tokens.len())?;
-        let kv = keyed(&r["expected_kv_sha256"], &format!("run {id} kv"), true, layers, tokens.len())?;
-        let want: BTreeSet<(usize, usize)> = (0..layers).flat_map(|l| window.iter().map(move |&p| (l, p))).collect();
-        if carriers.keys().cloned().collect::<BTreeSet<_>>() != want || kv.keys().cloned().collect::<BTreeSet<_>>() != want {
-            return refuse(format!("run {id}: declared hashes do not cover exactly the window at every layer"));
+        let carriers = keyed(
+            &r["expected_carrier_sha256"],
+            &format!("run {id} carriers"),
+            false,
+            layers,
+            tokens.len(),
+        )?;
+        let kv = keyed(
+            &r["expected_kv_sha256"],
+            &format!("run {id} kv"),
+            true,
+            layers,
+            tokens.len(),
+        )?;
+        let want: BTreeSet<(usize, usize)> = (0..layers)
+            .flat_map(|l| window.iter().map(move |&p| (l, p)))
+            .collect();
+        if carriers.keys().cloned().collect::<BTreeSet<_>>() != want
+            || kv.keys().cloned().collect::<BTreeSet<_>>() != want
+        {
+            return refuse(format!(
+                "run {id}: declared hashes do not cover exactly the window at every layer"
+            ));
         }
         let steps: Vec<String> = match r["expected_step_logit_sha256"].as_array() {
-            Some(a) if a.len() == tokens.len() => a.iter().filter_map(|x| x.as_str().map(String::from)).collect(),
-            _ => return refuse(format!("run {id}: expected step hashes do not match the run length")),
+            Some(a) if a.len() == tokens.len() => a
+                .iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect(),
+            _ => {
+                return refuse(format!(
+                    "run {id}: expected step hashes do not match the run length"
+                ))
+            }
         };
-        runs.insert(id.clone(), CRun { tokens, window, readout, carriers, kv, steps });
+        runs.insert(
+            id.clone(),
+            CRun {
+                tokens,
+                window,
+                readout,
+                carriers,
+                kv,
+                steps,
+            },
+        );
     }
-    Ok(Plan { container, layers, runs })
+    Ok(Plan {
+        container,
+        layers,
+        runs,
+    })
 }
 
 fn file_name(i: usize) -> String {
@@ -314,7 +414,9 @@ fn capture(plan_path: &Path, out: &Path) -> Result<()> {
             return refuse(format!("run {id}: natural replay is not bit-identical"));
         }
         if a.step_logit_sha != r.steps {
-            return refuse(format!("run {id}: step logits differ from the declared hashes"));
+            return refuse(format!(
+                "run {id}: step logits differ from the declared hashes"
+            ));
         }
         for ((l, p), want) in &r.carriers {
             if vector_sha256(a.carrier(*l, *p)?) != *want {
@@ -356,11 +458,18 @@ fn capture(plan_path: &Path, out: &Path) -> Result<()> {
         "schema": MANIFEST_SCHEMA, "status": "complete", "layout": "f32 little-endian [layer][slot][hidden]; slots = window positions then readout",
         "executable_sha256": sha_bytes(&exe), "plan_sha256": file_sha(plan_path)?, "runs": entries,
     });
-    let mut f = std::fs::File::options().write(true).create_new(true).open(partial.join("manifest.json"))?;
+    let mut f = std::fs::File::options()
+        .write(true)
+        .create_new(true)
+        .open(partial.join("manifest.json"))?;
     f.write_all(&serde_json::to_vec_pretty(&manifest)?)?;
     drop(f);
     std::fs::rename(&partial, out)?;
-    println!("captured {} runs; manifest {}", plan.runs.len(), file_sha(&out.join("manifest.json"))?);
+    println!(
+        "captured {} runs; manifest {}",
+        plan.runs.len(),
+        file_sha(&out.join("manifest.json"))?
+    );
     Ok(())
 }
 
@@ -376,12 +485,18 @@ struct Captured {
 
 impl Captured {
     fn vector(&self, layer: usize, pos: usize) -> Result<Vec<f32>> {
-        let slot = self.positions.iter().position(|&p| p == pos).ok_or_else(|| format!("REFUSED: position {pos} not captured"))?;
+        let slot = self
+            .positions
+            .iter()
+            .position(|&p| p == pos)
+            .ok_or_else(|| format!("REFUSED: position {pos} not captured"))?;
         let n = self.positions.len();
         let start = (layer * n + slot) * self.hidden;
         let v = self.data[start..start + self.hidden].to_vec();
         if self.hashes.get(&(layer, pos)) != Some(&vector_sha256(&v)) {
-            return refuse(format!("captured vector {layer}|{pos} differs from the manifest"));
+            return refuse(format!(
+                "captured vector {layer}|{pos} differs from the manifest"
+            ));
         }
         Ok(v)
     }
@@ -395,20 +510,47 @@ fn load_capture(dir: &Path, layers: usize) -> Result<(String, BTreeMap<String, C
         return refuse("capture manifest schema or status");
     }
     let mut out = BTreeMap::new();
-    for (id, e) in m["runs"].as_object().ok_or("REFUSED: manifest has no runs")? {
+    for (id, e) in m["runs"]
+        .as_object()
+        .ok_or("REFUSED: manifest has no runs")?
+    {
         let bytes = std::fs::read(dir.join(e["file"].as_str().ok_or("REFUSED: no file")?))?;
         if Some(sha_bytes(&bytes).as_str()) != e["file_sha256"].as_str() {
             return refuse(format!("run {id}: capture file differs from the manifest"));
         }
-        let positions: Vec<usize> = ids(&e["positions"], "positions")?.into_iter().map(|x| x as usize).collect();
-        let window: Vec<usize> = ids(&e["window"], "window")?.into_iter().map(|x| x as usize).collect();
+        let positions: Vec<usize> = ids(&e["positions"], "positions")?
+            .into_iter()
+            .map(|x| x as usize)
+            .collect();
+        let window: Vec<usize> = ids(&e["window"], "window")?
+            .into_iter()
+            .map(|x| x as usize)
+            .collect();
         let hidden = e["hidden"].as_u64().ok_or("REFUSED: no hidden size")? as usize;
         if bytes.len() != layers * positions.len() * hidden * 4 {
             return refuse(format!("run {id}: capture file has the wrong size"));
         }
-        let data: Vec<f32> = bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
-        let hashes = keyed(&e["vector_sha256"], "manifest vectors", false, layers, usize::MAX)?;
-        out.insert(id.clone(), Captured { positions, window, hidden, data, hashes });
+        let data: Vec<f32> = bytes
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        let hashes = keyed(
+            &e["vector_sha256"],
+            "manifest vectors",
+            false,
+            layers,
+            usize::MAX,
+        )?;
+        out.insert(
+            id.clone(),
+            Captured {
+                positions,
+                window,
+                hidden,
+                data,
+                hashes,
+            },
+        );
     }
     Ok((msha, out))
 }
@@ -426,27 +568,57 @@ fn verify(plan_path: &Path, cap: &Path, vplan_path: &Path, out_path: &Path) -> R
     if vp["capture_manifest_sha256"].as_str() != Some(msha.as_str()) {
         return refuse("verify plan names a different capture manifest");
     }
-    let reinject: Vec<String> = vp["reinject"].as_array().ok_or("REFUSED: no reinject list")?
-        .iter().filter_map(|x| x.as_str().map(String::from)).collect();
+    let reinject: Vec<String> = vp["reinject"]
+        .as_array()
+        .ok_or("REFUSED: no reinject list")?
+        .iter()
+        .filter_map(|x| x.as_str().map(String::from))
+        .collect();
     let arms = vp["arms"].as_array().ok_or("REFUSED: no arms")?;
     // static arm checks before the model loads
     let mut parsed = Vec::new();
     for a in arms {
         let id = a["id"].as_str().ok_or("REFUSED: arm id")?.to_string();
-        let (t, d) = (a["target_run"].as_str().unwrap_or_default(), a["donor_run"].as_str().unwrap_or_default());
+        let (t, d) = (
+            a["target_run"].as_str().unwrap_or_default(),
+            a["donor_run"].as_str().unwrap_or_default(),
+        );
         let (tr, dc) = match (plan.runs.get(t), captured.get(d)) {
             (Some(tr), Some(dc)) => (tr, dc),
             _ => return refuse(format!("{id}: unknown target or donor run")),
         };
-        let src: Vec<usize> = ids(&a["source_span"], "source_span")?.into_iter().map(|x| x as usize).collect();
-        let tgt: Vec<usize> = ids(&a["target_span"], "target_span")?.into_iter().map(|x| x as usize).collect();
-        if src.len() != tgt.len() || !src.iter().all(|p| dc.window.contains(p)) || !tgt.iter().all(|p| tr.window.contains(p)) {
+        let src: Vec<usize> = ids(&a["source_span"], "source_span")?
+            .into_iter()
+            .map(|x| x as usize)
+            .collect();
+        let tgt: Vec<usize> = ids(&a["target_span"], "target_span")?
+            .into_iter()
+            .map(|x| x as usize)
+            .collect();
+        if src.len() != tgt.len()
+            || !src.iter().all(|p| dc.window.contains(p))
+            || !tgt.iter().all(|p| tr.window.contains(p))
+        {
             return refuse(format!("{id}: slot map outside the captured windows"));
         }
-        let from = a["from_layer"].as_u64().filter(|&f| f >= 1 && (f as usize) < plan.layers)
+        let from = a["from_layer"]
+            .as_u64()
+            .filter(|&f| f >= 1 && (f as usize) < plan.layers)
             .ok_or_else(|| format!("REFUSED: {id}: from_layer"))? as usize;
-        let want = a["expect_last_logit_sha256"].as_str().ok_or_else(|| format!("REFUSED: {id}: no expected hash"))?.to_string();
-        parsed.push((id, t.to_string(), d.to_string(), src, tgt, from, want, a["kv_dump"].as_bool().unwrap_or(false)));
+        let want = a["expect_last_logit_sha256"]
+            .as_str()
+            .ok_or_else(|| format!("REFUSED: {id}: no expected hash"))?
+            .to_string();
+        parsed.push((
+            id,
+            t.to_string(),
+            d.to_string(),
+            src,
+            tgt,
+            from,
+            want,
+            a["kv_dump"].as_bool().unwrap_or(false),
+        ));
     }
     for id in &reinject {
         if !plan.runs.contains_key(id) || !captured.contains_key(id) {
@@ -463,16 +635,31 @@ fn verify(plan_path: &Path, cap: &Path, vplan_path: &Path, out_path: &Path) -> R
         for l in 0..plan.layers {
             for &p in &r.window {
                 let v = c.vector(l, p)?;
-                let prov = VectorProvenance::Captured { run_id: id.clone(), layer: l, site: SublayerSite::Ffn, position: p, sha256: vector_sha256(&v) };
-                ip = ip.with(Intervention::replace(Address::new(l, SublayerSite::Ffn, [p])?, v, prov)?)?;
+                let prov = VectorProvenance::Captured {
+                    run_id: id.clone(),
+                    layer: l,
+                    site: SublayerSite::Ffn,
+                    position: p,
+                    sha256: vector_sha256(&v),
+                };
+                ip = ip.with(Intervention::replace(
+                    Address::new(l, SublayerSite::Ffn, [p])?,
+                    v,
+                    prov,
+                )?)?;
                 n += 1;
             }
         }
         let run = execute(&model, &r.tokens, &ip)?;
         if run.firings != n || !same(&run, &natural) {
-            return refuse(format!("reinject {id}: not bit-identical to the natural run"));
+            return refuse(format!(
+                "reinject {id}: not bit-identical to the natural run"
+            ));
         }
-        rein.insert(id.clone(), json!({"replacements": n, "bit_identical": true}));
+        rein.insert(
+            id.clone(),
+            json!({"replacements": n, "bit_identical": true}),
+        );
         eprintln!("reinjected {id}");
     }
     let mut arm_out = serde_json::Map::new();
@@ -483,14 +670,27 @@ fn verify(plan_path: &Path, cap: &Path, vplan_path: &Path, out_path: &Path) -> R
         for l in from - 1..plan.layers {
             for (&sp, &tp) in src.iter().zip(&tgt) {
                 let v = dc.vector(l, sp)?;
-                let prov = VectorProvenance::Captured { run_id: d.clone(), layer: l, site: SublayerSite::Ffn, position: sp, sha256: vector_sha256(&v) };
-                ip = ip.with(Intervention::replace(Address::new(l, SublayerSite::Ffn, [tp])?, v, prov)?)?;
+                let prov = VectorProvenance::Captured {
+                    run_id: d.clone(),
+                    layer: l,
+                    site: SublayerSite::Ffn,
+                    position: sp,
+                    sha256: vector_sha256(&v),
+                };
+                ip = ip.with(Intervention::replace(
+                    Address::new(l, SublayerSite::Ffn, [tp])?,
+                    v,
+                    prov,
+                )?)?;
                 n += 1;
             }
         }
         let run = execute(&model, &tr.tokens, &ip)?;
         if run.firings != n {
-            return refuse(format!("{id}: {} firings for {n} replacements", run.firings));
+            return refuse(format!(
+                "{id}: {} firings for {n} replacements",
+                run.firings
+            ));
         }
         let got = logits_sha(&run.last_logits);
         let mut rec = json!({"replacements": n, "last_logit_sha256": got, "expected": want, "reproduced": got == want});
@@ -510,7 +710,10 @@ fn verify(plan_path: &Path, cap: &Path, vplan_path: &Path, out_path: &Path) -> R
     let exe = std::fs::read(std::env::current_exe()?)?;
     let res = json!({"schema": RESULT_SCHEMA, "executable_sha256": sha_bytes(&exe), "capture_manifest_sha256": msha,
                      "verify_plan_sha256": file_sha(vplan_path)?, "reinject": rein, "arms": arm_out});
-    let mut f = std::fs::File::options().write(true).create_new(true).open(out_path)?;
+    let mut f = std::fs::File::options()
+        .write(true)
+        .create_new(true)
+        .open(out_path)?;
     f.write_all(&serde_json::to_vec(&res)?)?;
     Ok(())
 }

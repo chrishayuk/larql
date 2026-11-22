@@ -57,6 +57,7 @@ import gwelem_plan as P  # noqa: E402
 import gwtemplate_baseline_plan as bp  # noqa: E402
 import gwtemplate_test3_capture_run as crun  # noqa: E402
 import gwtemplate_test3_holdout_run as hr  # noqa: E402
+import gwelem_spent as SPENT  # noqa: E402
 
 EL = ROOT / "output/gw-element-1"
 QUAL = EL / "confirm-qual-03"
@@ -138,6 +139,8 @@ def prepare(out: Path, cfg=None):
         raise SystemExit(f"{out} exists")
     if Path(cfg["global_marker"]).exists():
         raise SystemExit("FAIL CLOSED: the confirmation has already been opened")
+    if cfg["label"] == "confirmation":
+        SPENT.refuse_if_spent(ROOT / "docs/gw-element-1-confirmation-protocol.md", cfg["targets"])
     out.mkdir(parents=True)
     pops = D.verify_populations()
     files = verify_identities(cfg)
@@ -185,6 +188,8 @@ def execute(out: Path, go_file: Path, cfg=None, hooks=None) -> dict:
     marker = Path(cfg["global_marker"])
     if marker.exists():
         raise SystemExit("FAIL CLOSED: the confirmation has already been opened; no second execution")
+    if cfg["label"] == "confirmation":
+        SPENT.refuse_if_spent(ROOT / "docs/gw-element-1-confirmation-protocol.md", cfg["targets"])
     if (out / "integrity.json").exists() or (out / "EXECUTION-STARTED").exists():
         raise SystemExit("FAIL CLOSED: this directory has already executed")
     go = Path(go_file).read_text().strip()

@@ -49,11 +49,14 @@ impl StepObserver for Seen {
     }
 }
 
+/// Per-layer cached keys and values.
+type LayerKv = (Vec<Vec<f32>>, Vec<Vec<f32>>);
+
 struct Pass {
     seen: Seen,
     steps: Vec<String>,
     last: Vec<f32>,
-    kv: Vec<(Vec<Vec<f32>>, Vec<Vec<f32>>)>,
+    kv: Vec<LayerKv>,
 }
 
 fn sha_f32(parts: &[&[f32]]) -> String {
@@ -67,27 +70,47 @@ fn sha_f32(parts: &[&[f32]]) -> String {
 }
 
 fn toks(v: &Value) -> Vec<u32> {
-    v.as_array().map(|a| a.iter().filter_map(|x| x.as_u64().map(|y| y as u32)).collect()).unwrap_or_default()
+    v.as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_u64().map(|y| y as u32))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn positions(v: &Value) -> Vec<usize> {
-    v.as_array().map(|a| a.iter().filter_map(|x| x.as_u64().map(|y| y as usize)).collect()).unwrap_or_default()
+    v.as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_u64().map(|y| y as usize))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 4 {
-        return Err("Usage: gwtemplate_xpos_spotcheck PLAN.json RUNNER_OUT.jsonl REPORT.json ID [ID ...]".into());
+        return Err(
+            "Usage: gwtemplate_xpos_spotcheck PLAN.json RUNNER_OUT.jsonl REPORT.json ID [ID ...]"
+                .into(),
+        );
     }
     let plan: Value = serde_json::from_slice(&std::fs::read(&args[0])?)?;
     let records: BTreeMap<String, Value> = std::fs::read_to_string(&args[1])?
         .lines()
         .filter(|l| !l.trim().is_empty())
-        .map(|l| serde_json::from_str::<Value>(l).map(|v| (v["id"].as_str().unwrap_or("").to_string(), v)))
+        .map(|l| {
+            serde_json::from_str::<Value>(l)
+                .map(|v| (v["id"].as_str().unwrap_or("").to_string(), v))
+        })
         .collect::<std::result::Result<_, _>>()?;
     let container = std::path::Path::new(plan["container"].as_str().ok_or("container")?);
     let inspection = inspect_container(container, true)?;
-    let cplan = plan_component_ops(&inspection, container, "target")?.plan.ok_or("plan absent")?;
+    let cplan = plan_component_ops(&inspection, container, "target")?
+        .plan
+        .ok_or("plan absent")?;
     let store = OperandStore::open(container, &inspection)?;
     let backend = ProductionBackend::new();
     let ops = PreparedOperands::load(&cplan, &store, &backend, ExecutionSlice::Full)?;
@@ -112,15 +135,26 @@ fn main() -> Result<()> {
             kvs.prepare_layer(l);
             kv.push(kvs.rows(l).to_owned_rows());
         }
-        Ok(Pass { seen, steps, last, kv })
+        Ok(Pass {
+            seen,
+            steps,
+            last,
+            kv,
+        })
     };
 
     let mut report = serde_json::Map::new();
     let mut total_diffs = 0usize;
     for id in &args[3..] {
-        let t = plan["targets"].as_array().ok_or("targets")?.iter()
-            .find(|t| t["id"] == id.as_str()).ok_or(format!("{id}: not in the plan"))?;
-        let rec = records.get(id).ok_or(format!("{id}: not in the runner output"))?;
+        let t = plan["targets"]
+            .as_array()
+            .ok_or("targets")?
+            .iter()
+            .find(|t| t["id"] == id.as_str())
+            .ok_or(format!("{id}: not in the plan"))?;
+        let rec = records
+            .get(id)
+            .ok_or(format!("{id}: not in the runner output"))?;
         let ttoks = toks(&plan["runs"][t["run"].as_str().unwrap_or("")]["tokens"]);
         let cands = toks(&plan["candidate_sets"][t["candidate_set"].as_str().unwrap_or("")]);
         let natural = pass(&ttoks, &InterventionPlan::none())?;
@@ -135,7 +169,10 @@ fn main() -> Result<()> {
             let got = &rec["arms"][name];
             let drun = a["donor_run"].as_str().unwrap_or("").to_string();
             if !donor_cache.contains_key(&drun) {
-                let d = pass(&toks(&plan["runs"][&drun]["tokens"]), &InterventionPlan::none())?;
+                let d = pass(
+                    &toks(&plan["runs"][&drun]["tokens"]),
+                    &InterventionPlan::none(),
+                )?;
                 donor_cache.insert(drun.clone(), d);
             }
             let donor = &donor_cache[&drun];
@@ -148,15 +185,25 @@ fn main() -> Result<()> {
                 for (&sp, &tp) in src.iter().zip(&tgt) {
                     let mut v = donor.seen.0.get(&(l, sp)).ok_or("donor carrier")?.clone();
                     if scale {
-                        let n = |x: &[f32]| x.iter().map(|y| (*y as f64).powi(2)).sum::<f64>().sqrt();
+                        let n =
+                            |x: &[f32]| x.iter().map(|y| (*y as f64).powi(2)).sum::<f64>().sqrt();
                         let s = n(natural.seen.0.get(&(l, tp)).ok_or("target carrier")?) / n(&v);
                         v = v.iter().map(|y| (*y as f64 * s) as f32).collect();
                     }
                     let h = vector_sha256(&v);
                     want.insert(format!("{l}|{tp}"), h.clone());
-                    let prov = VectorProvenance::Captured { run_id: drun.clone(), layer: l, site: SublayerSite::Ffn,
-                                                            position: sp, sha256: h };
-                    iv = iv.with(Intervention::replace(Address::new(l, SublayerSite::Ffn, [tp])?, v, prov)?)?;
+                    let prov = VectorProvenance::Captured {
+                        run_id: drun.clone(),
+                        layer: l,
+                        site: SublayerSite::Ffn,
+                        position: sp,
+                        sha256: h,
+                    };
+                    iv = iv.with(Intervention::replace(
+                        Address::new(l, SublayerSite::Ffn, [tp])?,
+                        v,
+                        prov,
+                    )?)?;
                 }
             }
             let run = pass(&ttoks, &iv)?;
@@ -192,7 +239,10 @@ fn main() -> Result<()> {
             checked += 1;
         }
         total_diffs += diffs.len();
-        report.insert(id.clone(), json!({"arms_checked": checked, "differences": diffs}));
+        report.insert(
+            id.clone(),
+            json!({"arms_checked": checked, "differences": diffs}),
+        );
         eprintln!("spot-checked {id}");
     }
     let out = json!({"schema": "larql.gwtemplate.xpos-spotcheck.v1", "targets": report,

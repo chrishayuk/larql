@@ -775,6 +775,38 @@
         {
           "name": "walker_demo",
           "path": "examples/vindex/walker_demo.rs"
+        },
+        {
+          "name": "gwbreadcrumb2_seal",
+          "path": "examples/inference/gwbreadcrumb2_seal.rs"
+        },
+        {
+          "name": "gwtemplate_baseline",
+          "path": "examples/inference/gwtemplate_baseline.rs"
+        },
+        {
+          "name": "gwtemplate_xpos_runner",
+          "path": "examples/inference/gwtemplate_xpos_runner.rs"
+        },
+        {
+          "name": "gwtemplate_test3_capture",
+          "path": "examples/inference/gwtemplate_test3_capture.rs"
+        },
+        {
+          "name": "gwtemplate_test3_derived_runner",
+          "path": "examples/inference/gwtemplate_test3_derived_runner.rs"
+        },
+        {
+          "name": "gwcompress_band_runner",
+          "path": "examples/inference/gwcompress_band_runner.rs"
+        },
+        {
+          "name": "gwelem_band_runner",
+          "path": "examples/inference/gwelem_band_runner.rs"
+        },
+        {
+          "name": "gwtemplate_xpos_spotcheck",
+          "path": "examples/inference/gwtemplate_xpos_spotcheck.rs"
         }
       ]
     },

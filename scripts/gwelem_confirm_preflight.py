@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import gwelem_design as D  # noqa: E402
 import gwelem_confirm as G  # noqa: E402
+import gwelem_spent as SPENT  # noqa: E402
 
 EXPECTED_COUNT = 25
 LITERAL = (5, 7, 22, 23, 24, 26, 27, 28, 36, 47, 49, 58, 61, 64, 68, 79, 80, 86, 87, 90, 95, 96, 97, 101, 110)
@@ -39,6 +40,7 @@ def sha(p):
 
 
 def main(out: Path) -> int:
+    SPENT.refuse_if_spent(PROTOCOL, LITERAL)  # confirm-01 is spent: this preflight can never pass again
     fails, src = [], {}
     if sha(PROTOCOL) != PROTOCOL_SHA:
         fails.append("protocol r2 sha differs")

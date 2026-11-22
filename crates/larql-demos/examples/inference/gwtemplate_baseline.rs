@@ -126,7 +126,11 @@ fn readout(l: &[f32], candidates: &[u32], top_k: usize) -> Result<Value> {
     let lse = max + l.iter().map(|v| (*v as f64 - max).exp()).sum::<f64>().ln();
     let cand: Vec<f64> = candidates
         .iter()
-        .map(|&c| l.get(c as usize).map(|v| *v as f64).ok_or("candidate id out of vocabulary"))
+        .map(|&c| {
+            l.get(c as usize)
+                .map(|v| *v as f64)
+                .ok_or("candidate id out of vocabulary")
+        })
         .collect::<std::result::Result<_, _>>()?;
     let mut order: Vec<usize> = (0..l.len()).collect();
     order.sort_by(|&a, &b| l[b].partial_cmp(&l[a]).expect("finite").then(a.cmp(&b)));
@@ -136,9 +140,11 @@ fn readout(l: &[f32], candidates: &[u32], top_k: usize) -> Result<Value> {
     }
     let top_ids: Vec<u32> = order.iter().map(|&i| i as u32).collect();
     let top_logits: Vec<f64> = order.iter().map(|&i| l[i] as f64).collect();
-    Ok(json!({"next": best, "log_normalizer": lse, "candidate_logits": cand,
+    Ok(
+        json!({"next": best, "log_normalizer": lse, "candidate_logits": cand,
               "top_k_ids": top_ids, "top_k_logits": top_logits,
-              "next_logit_sha256": logits_sha(l)}))
+              "next_logit_sha256": logits_sha(l)}),
+    )
 }
 
 struct Span {
@@ -193,9 +199,15 @@ fn positions(v: &Value, what: &str) -> Result<Vec<usize>> {
 }
 
 fn char_span(v: &Value, what: &str) -> Result<(usize, usize)> {
-    match (v.get(0).and_then(Value::as_u64), v.get(1).and_then(Value::as_u64), v.as_array().map(Vec::len)) {
+    match (
+        v.get(0).and_then(Value::as_u64),
+        v.get(1).and_then(Value::as_u64),
+        v.as_array().map(Vec::len),
+    ) {
         (Some(a), Some(b), Some(2)) if a < b => Ok((a as usize, b as usize)),
-        _ => refuse(format!("{what}: character span is not [start, end) with start < end")),
+        _ => refuse(format!(
+            "{what}: character span is not [start, end) with start < end"
+        )),
     }
 }
 
@@ -204,7 +216,13 @@ fn char_span(v: &Value, what: &str) -> Result<(usize, usize)> {
 /// only if that character is a space (the tokenizer's leading-space marker),
 /// and no token may extend past s1 or begin before s0 - 1. The span must
 /// cover [s0, s1) exactly.
-fn locate(offsets: &[(usize, usize)], chars: &[char], s0: usize, s1: usize, what: &str) -> Result<Vec<usize>> {
+fn locate(
+    offsets: &[(usize, usize)],
+    chars: &[char],
+    s0: usize,
+    s1: usize,
+    what: &str,
+) -> Result<Vec<usize>> {
     let toks: Vec<usize> = offsets
         .iter()
         .enumerate()
@@ -218,7 +236,9 @@ fn locate(offsets: &[(usize, usize)], chars: &[char], s0: usize, s1: usize, what
         let (a, b) = offsets[i];
         let early_ok = a >= s0 || (a + 1 == s0 && chars.get(a) == Some(&' '));
         if !early_ok || b > s1 {
-            return refuse(format!("{what}: token boundaries do not align with the span"));
+            return refuse(format!(
+                "{what}: token boundaries do not align with the span"
+            ));
         }
     }
     let first = offsets[toks[0]].0;
@@ -250,7 +270,11 @@ fn load_plan(path: &str) -> Result<Plan> {
     };
     let continuation = match plan["continuation_tokens"].as_u64() {
         Some(c) if (1..=MAX_CONTINUATION).contains(&c) => c as usize,
-        _ => return refuse(format!("continuation_tokens must be 1..={MAX_CONTINUATION}")),
+        _ => {
+            return refuse(format!(
+                "continuation_tokens must be 1..={MAX_CONTINUATION}"
+            ))
+        }
     };
     let top_k = match plan["top_k"].as_u64() {
         Some(k) if (1..=MAX_TOP_K).contains(&k) => k as usize,
@@ -264,7 +288,8 @@ fn load_plan(path: &str) -> Result<Plan> {
     if !tok_path.exists() || file_sha(&tok_path)? != want_tok {
         return refuse("tokenizer hash differs from the plan's");
     }
-    let tokenizer = Tokenizer::from_file(&tok_path).or_else(|e| refuse(format!("tokenizer: {e}")))?;
+    let tokenizer =
+        Tokenizer::from_file(&tok_path).or_else(|e| refuse(format!("tokenizer: {e}")))?;
     let vocab = tokenizer.get_vocab_size(true) as u32;
 
     let mut sets = BTreeMap::new();
@@ -324,12 +349,16 @@ fn load_plan(path: &str) -> Result<Plan> {
                 None => return refuse(format!("{id} {role}: no text")),
             };
             if s1 > chars.len() || chars[s0..s1].iter().collect::<String>() != want {
-                return refuse(format!("{id} {role}: character span does not hold its text"));
+                return refuse(format!(
+                    "{id} {role}: character span does not hold its text"
+                ));
             }
             let declared = positions(&r["tokens"], &format!("{id} {role} tokens"))?;
             let located = locate(offsets, &chars, s0, s1, &format!("{id} {role}"))?;
             if declared != located {
-                return refuse(format!("{id} {role}: declared token span differs from the located span"));
+                return refuse(format!(
+                    "{id} {role}: declared token span differs from the located span"
+                ));
             }
             spans.push(Span { tokens: declared });
         }
@@ -348,9 +377,23 @@ fn load_plan(path: &str) -> Result<Plan> {
         if s_last >= readout || r_last >= readout {
             return refuse(format!("{id}: a span reaches the readout position"));
         }
-        cells.push(Cell { id, prompt, candidate_set: set, subject, relation, readout, text });
+        cells.push(Cell {
+            id,
+            prompt,
+            candidate_set: set,
+            subject,
+            relation,
+            readout,
+            text,
+        });
     }
-    Ok(Plan { json: plan, cells, sets, continuation, top_k })
+    Ok(Plan {
+        json: plan,
+        cells,
+        sets,
+        continuation,
+        top_k,
+    })
 }
 
 fn run_cell(model: &Model, plan: &Plan, c: &Cell) -> Result<Value> {
@@ -363,7 +406,8 @@ fn run_cell(model: &Model, plan: &Plan, c: &Cell) -> Result<Value> {
     let mut firings = 0usize;
     let first;
     {
-        let mut session = DecodeSession::over_prepared(&model.plan, &model.ops, &model.backend, &mut kv)?;
+        let mut session =
+            DecodeSession::over_prepared(&model.plan, &model.ops, &model.backend, &mut kv)?;
         let mut last = Vec::new();
         for &t in &c.prompt {
             let out = session.step_intervened(t, &mut watch, &nothing, &none)?;
@@ -436,8 +480,15 @@ fn main() -> Result<()> {
     let backend = ProductionBackend::new();
     let ops = PreparedOperands::load(&cplan, &store, &backend, ExecutionSlice::Full)?;
     let layers = cplan.layers.len();
-    let model = Model { plan: cplan, ops, backend };
-    let mut out = File::options().write(true).create_new(true).open(&partial)?;
+    let model = Model {
+        plan: cplan,
+        ops,
+        backend,
+    };
+    let mut out = File::options()
+        .write(true)
+        .create_new(true)
+        .open(&partial)?;
     for c in &plan.cells {
         let record = run_cell(&model, &plan, c)?;
         writeln!(out, "{record}")?;
@@ -456,6 +507,9 @@ fn main() -> Result<()> {
         "cells": plan.cells.len(), "layers": layers,
         "continuation_tokens": plan.continuation, "top_k": plan.top_k,
     });
-    std::fs::write(format!("{out_path}.manifest.json"), serde_json::to_vec_pretty(&manifest)?)?;
+    std::fs::write(
+        format!("{out_path}.manifest.json"),
+        serde_json::to_vec_pretty(&manifest)?,
+    )?;
     Ok(())
 }

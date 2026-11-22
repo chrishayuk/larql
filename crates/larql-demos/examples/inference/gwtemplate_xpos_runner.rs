@@ -161,7 +161,8 @@ fn execute(model: &Model, tokens: &[u32], plan: &InterventionPlan) -> Result<Run
     let mut kv = RowKvState::default();
     let (mut firings, mut step_logit_sha, mut last_logits) = (0, Vec::new(), Vec::new());
     {
-        let mut session = DecodeSession::over_prepared(&model.plan, &model.ops, &model.backend, &mut kv)?;
+        let mut session =
+            DecodeSession::over_prepared(&model.plan, &model.ops, &model.backend, &mut kv)?;
         let none = HeadInterventionPlan::none();
         for &t in tokens {
             let out = session.step_intervened(t, &mut carriers, plan, &none)?;
@@ -181,7 +182,14 @@ fn execute(model: &Model, tokens: &[u32], plan: &InterventionPlan) -> Result<Run
         keys.push(k);
         values.push(v);
     }
-    Ok(Run { carriers, firings, step_logit_sha, last_logits, keys, values })
+    Ok(Run {
+        carriers,
+        firings,
+        step_logit_sha,
+        last_logits,
+        keys,
+        values,
+    })
 }
 
 fn argmax(logits: &[f32]) -> Result<usize> {
@@ -208,7 +216,11 @@ fn readout(l: &[f32], candidates: &[u32], top_k: usize) -> Result<Value> {
     let lse = max + l.iter().map(|v| (*v as f64 - max).exp()).sum::<f64>().ln();
     let cand: Vec<f64> = candidates
         .iter()
-        .map(|&c| l.get(c as usize).map(|v| *v as f64).ok_or("candidate id out of vocabulary"))
+        .map(|&c| {
+            l.get(c as usize)
+                .map(|v| *v as f64)
+                .ok_or("candidate id out of vocabulary")
+        })
         .collect::<std::result::Result<_, _>>()?;
     let mut order: Vec<usize> = (0..l.len()).collect();
     order.sort_by(|&a, &b| l[b].partial_cmp(&l[a]).expect("finite").then(a.cmp(&b)));
@@ -216,10 +228,12 @@ fn readout(l: &[f32], candidates: &[u32], top_k: usize) -> Result<Value> {
     if order.first() != Some(&best) {
         return refuse("top-k does not begin with the greedy token");
     }
-    Ok(json!({"next": best, "log_normalizer": lse, "candidate_logits": cand,
+    Ok(
+        json!({"next": best, "log_normalizer": lse, "candidate_logits": cand,
               "top_k_ids": order.iter().map(|&i| i as u32).collect::<Vec<_>>(),
               "top_k_logits": order.iter().map(|&i| l[i] as f64).collect::<Vec<_>>(),
-              "next_logit_sha256": logits_sha(l)}))
+              "next_logit_sha256": logits_sha(l)}),
+    )
 }
 
 fn hex_f32(v: &[f32]) -> String {
@@ -233,7 +247,10 @@ fn hex_f32(v: &[f32]) -> String {
 }
 
 fn norm(v: &[f32]) -> f64 {
-    v.iter().map(|x| (*x as f64) * (*x as f64)).sum::<f64>().sqrt()
+    v.iter()
+        .map(|x| (*x as f64) * (*x as f64))
+        .sum::<f64>()
+        .sqrt()
 }
 
 // ── plan ──────────────────────────────────────────────────────────────────
@@ -344,7 +361,8 @@ fn load_plan(path: &str) -> Result<Plan> {
     if !tok_path.exists() || file_sha(&tok_path)? != want_tok {
         return refuse("tokenizer hash differs from the plan's");
     }
-    let tokenizer = Tokenizer::from_file(&tok_path).or_else(|e| refuse(format!("tokenizer: {e}")))?;
+    let tokenizer =
+        Tokenizer::from_file(&tok_path).or_else(|e| refuse(format!("tokenizer: {e}")))?;
     let vocab = tokenizer.get_vocab_size(true) as u32;
 
     let mut sets = BTreeMap::new();
@@ -352,8 +370,12 @@ fn load_plan(path: &str) -> Result<Plan> {
         Some(m) if !m.is_empty() => {
             for (name, v) in m {
                 let s = ids(v, &format!("candidate set {name}"))?;
-                if s.iter().collect::<BTreeSet<_>>().len() != s.len() || s.iter().any(|&t| t >= vocab) {
-                    return refuse(format!("candidate set {name}: repeated or outside the vocabulary"));
+                if s.iter().collect::<BTreeSet<_>>().len() != s.len()
+                    || s.iter().any(|&t| t >= vocab)
+                {
+                    return refuse(format!(
+                        "candidate set {name}: repeated or outside the vocabulary"
+                    ));
                 }
                 sets.insert(name.clone(), s);
             }
@@ -374,7 +396,9 @@ fn load_plan(path: &str) -> Result<Plan> {
                         .encode_char_offsets(text, true)
                         .or_else(|e| refuse(format!("run {id}: tokenizer: {e}")))?;
                     if enc.get_ids() != tokens.as_slice() {
-                        return refuse(format!("run {id}: tokens differ from the re-tokenised text"));
+                        return refuse(format!(
+                            "run {id}: tokens differ from the re-tokenised text"
+                        ));
                     }
                 } else if !r["text"].is_null() {
                     return refuse(format!("run {id}: text is not a string"));
@@ -387,14 +411,26 @@ fn load_plan(path: &str) -> Result<Plan> {
                             let parts: Vec<&str> = k.split('|').collect();
                             let lp = match (parts.as_slice(), v.as_str()) {
                                 // vector_sha256's form: 64 lowercase hex digits, no prefix.
-                                ([l, p], Some(s)) if s.len() == 64
-                                    && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) => {
+                                ([l, p], Some(s))
+                                    if s.len() == 64
+                                        && s.bytes().all(|b| {
+                                            b.is_ascii_digit() || (b'a'..=b'f').contains(&b)
+                                        }) =>
+                                {
                                     match (l.parse::<usize>(), p.parse::<usize>()) {
                                         (Ok(l), Ok(p)) if l < layers && p < tokens.len() => (l, p),
-                                        _ => return refuse(format!("run {id}: declared carrier key {k} out of range")),
+                                        _ => {
+                                            return refuse(format!(
+                                                "run {id}: declared carrier key {k} out of range"
+                                            ))
+                                        }
                                     }
                                 }
-                                _ => return refuse(format!("run {id}: declared carrier {k} malformed")),
+                                _ => {
+                                    return refuse(format!(
+                                        "run {id}: declared carrier {k} malformed"
+                                    ))
+                                }
                             };
                             expected.insert(lp, v.as_str().unwrap().to_string());
                         }
@@ -470,13 +506,17 @@ fn load_plan(path: &str) -> Result<Plan> {
             let sids = ids(&a["source_span_ids"], &format!("{what} source_span_ids"))?;
             let tids = ids(&a["target_span_ids"], &format!("{what} target_span_ids"))?;
             if sids != source.iter().map(|&p| dtoks[p]).collect::<Vec<_>>() {
-                return refuse(format!("{what}: source span token ids differ from the donor run at those positions"));
+                return refuse(format!(
+                    "{what}: source span token ids differ from the donor run at those positions"
+                ));
             }
             if tids != target.iter().map(|&p| ttoks[p]).collect::<Vec<_>>() {
-                return refuse(format!("{what}: target span token ids differ from the target run at those positions"));
+                return refuse(format!(
+                    "{what}: target span token ids differ from the target run at those positions"
+                ));
             }
             let from = match a["from_layer"].as_u64() {
-                Some(f) if f >= 1 && (f as usize) <= layers - 1 => f as usize,
+                Some(f) if f >= 1 && (f as usize) < layers => f as usize,
                 _ => return refuse(format!("{what}: from_layer must be 1..={}", layers - 1)),
             };
             let mode = match a["mode"].as_str() {
@@ -487,16 +527,40 @@ fn load_plan(path: &str) -> Result<Plan> {
             let identity = a["identity"].as_bool().unwrap_or(false);
             let self_transplant = donor == run && source == target;
             if identity != self_transplant {
-                return refuse(format!("{what}: identity must be declared exactly for a self-transplant"));
+                return refuse(format!(
+                    "{what}: identity must be declared exactly for a self-transplant"
+                ));
             }
             if identity && mode != Mode::Replace {
                 return refuse(format!("{what}: an identity arm must use replace"));
             }
-            arms.push(Arm { name, donor, source, target, from, mode, identity });
+            arms.push(Arm {
+                name,
+                donor,
+                source,
+                target,
+                from,
+                mode,
+                identity,
+            });
         }
-        targets.push(Target { id, run, set, expect_natural, arms });
+        targets.push(Target {
+            id,
+            run,
+            set,
+            expect_natural,
+            arms,
+        });
     }
-    Ok(Plan { json: plan, runs, targets, sets, top_k, layers, kv_dump })
+    Ok(Plan {
+        json: plan,
+        runs,
+        targets,
+        sets,
+        top_k,
+        layers,
+        kv_dump,
+    })
 }
 
 // ── one target ────────────────────────────────────────────────────────────
@@ -505,7 +569,11 @@ fn check_declared(id: &str, tr: &TokenRun, run: &Run) -> Result<()> {
     for ((l, p), want) in &tr.expected {
         match run.carriers.ffn.get(&(*l, *p)) {
             Some((v, 1)) if vector_sha256(v) == *want => {}
-            _ => return refuse(format!("run {id}: carrier {l}|{p} differs from its declared hash")),
+            _ => {
+                return refuse(format!(
+                    "run {id}: carrier {l}|{p} differs from its declared hash"
+                ))
+            }
         }
     }
     Ok(())
@@ -516,8 +584,11 @@ fn run_target(model: &Model, plan: &Plan, t: &Target) -> Result<Value> {
     let tokens = &tr.tokens;
     let natural = execute(model, tokens, &InterventionPlan::none())?;
     let replay = execute(model, tokens, &InterventionPlan::none())?;
-    if natural.step_logit_sha != replay.step_logit_sha || natural.keys != replay.keys
-        || natural.values != replay.values || natural.last_logits != replay.last_logits {
+    if natural.step_logit_sha != replay.step_logit_sha
+        || natural.keys != replay.keys
+        || natural.values != replay.values
+        || natural.last_logits != replay.last_logits
+    {
         return refuse(format!("{}: natural replay is not bit-identical", t.id));
     }
     if natural.firings != 0 {
@@ -525,7 +596,10 @@ fn run_target(model: &Model, plan: &Plan, t: &Target) -> Result<Value> {
     }
     if let Some(want) = &t.expect_natural {
         if natural.step_logit_sha.last() != Some(want) {
-            return refuse(format!("{}: natural readout differs from the declared baseline hash", t.id));
+            return refuse(format!(
+                "{}: natural readout differs from the declared baseline hash",
+                t.id
+            ));
         }
     }
     check_declared(&t.run, tr, &natural)?;
@@ -538,7 +612,10 @@ fn run_target(model: &Model, plan: &Plan, t: &Target) -> Result<Value> {
             let dr = &plan.runs[&arm.donor];
             let run = execute(model, &dr.tokens, &InterventionPlan::none())?;
             if run.firings != 0 {
-                return refuse(format!("run {}: a donor's natural run reported a firing", arm.donor));
+                return refuse(format!(
+                    "run {}: a donor's natural run reported a firing",
+                    arm.donor
+                ));
             }
             check_declared(&arm.donor, dr, &run)?;
             donors.insert(arm.donor.clone(), run);
@@ -556,30 +633,48 @@ fn run_target(model: &Model, plan: &Plan, t: &Target) -> Result<Value> {
                 let vector = match arm.mode {
                     Mode::Replace => dv,
                     Mode::NormMatch => {
-                        let tv = &natural.carriers.ffn.get(&(layer, tp)).ok_or("target carrier absent")?.0;
+                        let tv = &natural
+                            .carriers
+                            .ffn
+                            .get(&(layer, tp))
+                            .ok_or("target carrier absent")?
+                            .0;
                         let (nt, nd) = (norm(tv), norm(&dv));
                         if nd == 0.0 {
                             return refuse(format!("{what}: zero donor carrier at {layer}|{sp}"));
                         }
                         let s = nt / nd;
                         let out: Vec<f32> = dv.iter().map(|x| (*x as f64 * s) as f32).collect();
-                        norms.insert(format!("{layer}|{tp}"),
-                                     json!({"target": nt, "donor": nd, "injected": norm(&out)}));
+                        norms.insert(
+                            format!("{layer}|{tp}"),
+                            json!({"target": nt, "donor": nd, "injected": norm(&out)}),
+                        );
                         out
                     }
                 };
                 let sha = vector_sha256(&vector);
                 let provenance = VectorProvenance::Captured {
-                    run_id: arm.donor.clone(), layer, site: SublayerSite::Ffn, position: sp, sha256: sha.clone(),
+                    run_id: arm.donor.clone(),
+                    layer,
+                    site: SublayerSite::Ffn,
+                    position: sp,
+                    sha256: sha.clone(),
                 };
                 iplan = iplan.with(Intervention::replace(
-                    Address::new(layer, SublayerSite::Ffn, [tp])?, vector, provenance)?)?;
+                    Address::new(layer, SublayerSite::Ffn, [tp])?,
+                    vector,
+                    provenance,
+                )?)?;
                 injected.push(((layer, tp), sha));
             }
         }
         let run = execute(model, tokens, &iplan)?;
         if run.firings != injected.len() {
-            return refuse(format!("{what}: {} firings for {} addresses", run.firings, injected.len()));
+            return refuse(format!(
+                "{what}: {} firings for {} addresses",
+                run.firings,
+                injected.len()
+            ));
         }
         for ((layer, position), sha) in &injected {
             match run.carriers.ffn.get(&(*layer, *position)) {
@@ -594,7 +689,9 @@ fn run_target(model: &Model, plan: &Plan, t: &Target) -> Result<Value> {
         for layer in 0..model.layers {
             for position in 0..first {
                 if run.kv_sha(layer, position) != natural.kv_sha(layer, position) {
-                    return refuse(format!("{what}: earlier position {position} changed at layer {layer}"));
+                    return refuse(format!(
+                        "{what}: earlier position {position} changed at layer {layer}"
+                    ));
                 }
             }
         }
@@ -605,11 +702,15 @@ fn run_target(model: &Model, plan: &Plan, t: &Target) -> Result<Value> {
             for layer in 0..model.layers {
                 if layer < arm.from {
                     if !(run.k_eq(&natural, layer, tp, tp) && run.v_eq(&natural, layer, tp, tp)) {
-                        return refuse(format!("{what}: provenance at {layer}|{tp}: not natural below the start layer"));
+                        return refuse(format!(
+                            "{what}: provenance at {layer}|{tp}: not natural below the start layer"
+                        ));
                     }
                 } else if arm.mode == Mode::Replace {
                     if !run.v_eq(donor, layer, tp, sp) {
-                        return refuse(format!("{what}: provenance at {layer}|{tp}: V is not the donor's"));
+                        return refuse(format!(
+                            "{what}: provenance at {layer}|{tp}: V is not the donor's"
+                        ));
                     }
                     let keq = run.k_eq(donor, layer, tp, sp);
                     if sp == tp && !keq {
@@ -617,10 +718,13 @@ fn run_target(model: &Model, plan: &Plan, t: &Target) -> Result<Value> {
                     }
                     k_equal_donor.insert(format!("{layer}|{tp}"), json!(keq));
                     if plan.kv_dump {
-                        dump.insert(format!("{layer}|{sp}|{tp}"), json!({
-                            "target_k": hex_f32(&run.keys[layer][tp]),
-                            "donor_k": hex_f32(&donor.keys[layer][sp]),
-                        }));
+                        dump.insert(
+                            format!("{layer}|{sp}|{tp}"),
+                            json!({
+                                "target_k": hex_f32(&run.keys[layer][tp]),
+                                "donor_k": hex_f32(&donor.keys[layer][sp]),
+                            }),
+                        );
                     }
                 }
                 kv_hashes.insert(format!("{layer}|{tp}"), json!(run.kv_sha(layer, tp)));
@@ -648,9 +752,14 @@ fn run_target(model: &Model, plan: &Plan, t: &Target) -> Result<Value> {
             record["kv_dump"] = Value::Object(dump);
         }
         if arm.identity {
-            if run.step_logit_sha != natural.step_logit_sha || run.keys != natural.keys
-                || run.values != natural.values || run.last_logits != natural.last_logits {
-                return refuse(format!("{what}: identity is not bit-identical to the natural run"));
+            if run.step_logit_sha != natural.step_logit_sha
+                || run.keys != natural.keys
+                || run.values != natural.values
+                || run.last_logits != natural.last_logits
+            {
+                return refuse(format!(
+                    "{what}: identity is not bit-identical to the natural run"
+                ));
             }
             record["identity_bit_exact"] = json!(true);
         }
@@ -670,7 +779,12 @@ fn main() -> Result<()> {
     if args.len() == 2 && args[0] == "--check" {
         let plan = load_plan(&args[1])?;
         let arms: usize = plan.targets.iter().map(|t| t.arms.len()).sum();
-        println!("checked {} targets, {} arms, {} runs", plan.targets.len(), arms, plan.runs.len());
+        println!(
+            "checked {} targets, {} arms, {} runs",
+            plan.targets.len(),
+            arms,
+            plan.runs.len()
+        );
         return Ok(());
     }
     if args.len() != 2 {
@@ -679,7 +793,11 @@ fn main() -> Result<()> {
     let plan = load_plan(&args[0])?;
     let out_path = &args[1];
     let partial = format!("{out_path}.partial");
-    for p in [out_path.clone(), partial.clone(), format!("{out_path}.manifest.json")] {
+    for p in [
+        out_path.clone(),
+        partial.clone(),
+        format!("{out_path}.manifest.json"),
+    ] {
         if Path::new(&p).exists() {
             return refuse("output exists; a run never overwrites");
         }
@@ -698,8 +816,16 @@ fn main() -> Result<()> {
     let backend = ProductionBackend::new();
     let ops = PreparedOperands::load(&cplan, &store, &backend, ExecutionSlice::Full)?;
     let layers = cplan.layers.len();
-    let model = Model { plan: cplan, ops, backend, layers };
-    let mut out = File::options().write(true).create_new(true).open(&partial)?;
+    let model = Model {
+        plan: cplan,
+        ops,
+        backend,
+        layers,
+    };
+    let mut out = File::options()
+        .write(true)
+        .create_new(true)
+        .open(&partial)?;
     for t in &plan.targets {
         let record = run_target(&model, &plan, t)?;
         writeln!(out, "{record}")?;
@@ -717,6 +843,9 @@ fn main() -> Result<()> {
         "tokenizer_sha256": plan.json["tokenizer_sha256"],
         "targets": plan.targets.len(), "layers": layers, "top_k": plan.top_k, "kv_dump": plan.kv_dump,
     });
-    std::fs::write(format!("{out_path}.manifest.json"), serde_json::to_vec_pretty(&manifest)?)?;
+    std::fs::write(
+        format!("{out_path}.manifest.json"),
+        serde_json::to_vec_pretty(&manifest)?,
+    )?;
     Ok(())
 }

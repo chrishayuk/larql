@@ -79,8 +79,8 @@ const MANIFEST_SCHEMA: &str = "larql.gwcompress.band-manifest.v1";
 /// The 28 Test 3 holdout countries, spent on 2026-11-20 (run …01238). No
 /// plan can execute them, whatever its own holdout list says.
 const SPENT_HOLDOUT: [&str; 28] = [
-    "AF", "AS", "AW", "BF", "CR", "CZ", "ET", "GH", "IN", "KY", "LA", "MM", "MW", "NE",
-    "NG", "PK", "RS", "SB", "SN", "SS", "SY", "TO", "TR", "UA", "VE", "VI", "YE", "ZA",
+    "AF", "AS", "AW", "BF", "CR", "CZ", "ET", "GH", "IN", "KY", "LA", "MM", "MW", "NE", "NG", "PK",
+    "RS", "SB", "SN", "SS", "SY", "TO", "TR", "UA", "VE", "VI", "YE", "ZA",
 ];
 const TOKENIZER_FILE: &str = "tokenizer.json";
 const MAX_TOP_K: usize = 256;
@@ -120,7 +120,9 @@ fn hex_f32(v: &[f32]) -> String {
 }
 
 fn is_hex64(s: &str) -> bool {
-    s.len() == 64 && s.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    s.len() == 64
+        && s.bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
 }
 
 // ── execution (as the qualified runner) ──────────────────────────────────
@@ -174,7 +176,8 @@ fn execute(model: &Model, tokens: &[u32], plan: &InterventionPlan) -> Result<Run
     let (mut firings, mut step_logit_sha, mut last_logits) = (0, Vec::new(), Vec::new());
     let mut fired = Vec::new();
     {
-        let mut session = DecodeSession::over_prepared(&model.plan, &model.ops, &model.backend, &mut kv)?;
+        let mut session =
+            DecodeSession::over_prepared(&model.plan, &model.ops, &model.backend, &mut kv)?;
         let none = HeadInterventionPlan::none();
         for &t in tokens {
             let out = session.step_intervened(t, &mut carriers, plan, &none)?;
@@ -195,7 +198,15 @@ fn execute(model: &Model, tokens: &[u32], plan: &InterventionPlan) -> Result<Run
         keys.push(k);
         values.push(v);
     }
-    Ok(Run { carriers, firings, fired, step_logit_sha, last_logits, keys, values })
+    Ok(Run {
+        carriers,
+        firings,
+        fired,
+        step_logit_sha,
+        last_logits,
+        keys,
+        values,
+    })
 }
 
 fn argmax(l: &[f32]) -> Result<usize> {
@@ -219,10 +230,12 @@ fn readout(l: &[f32], candidates: &[u32], top_k: usize) -> Result<Value> {
     let mut order: Vec<usize> = (0..l.len()).collect();
     order.sort_by(|&a, &b| l[b].partial_cmp(&l[a]).expect("finite").then(a.cmp(&b)));
     order.truncate(top_k);
-    Ok(json!({"next": best, "log_normalizer": lse, "candidate_logits": cand,
+    Ok(
+        json!({"next": best, "log_normalizer": lse, "candidate_logits": cand,
               "top_k_ids": order.iter().map(|&i| i as u32).collect::<Vec<_>>(),
               "top_k_logits": order.iter().map(|&i| l[i] as f64).collect::<Vec<_>>(),
-              "next_logit_sha256": logits_sha(l)}))
+              "next_logit_sha256": logits_sha(l)}),
+    )
 }
 
 // ── plan ──────────────────────────────────────────────────────────────────
@@ -273,19 +286,29 @@ struct Plan {
 
 fn u64s(v: &Value, what: &str) -> Result<Vec<u64>> {
     match v.as_array() {
-        Some(a) if !a.is_empty() => a.iter().map(|x| x.as_u64().ok_or_else(|| format!("REFUSED: {what}").into())).collect(),
+        Some(a) if !a.is_empty() => a
+            .iter()
+            .map(|x| x.as_u64().ok_or_else(|| format!("REFUSED: {what}").into()))
+            .collect(),
         _ => refuse(format!("{what}: empty or not a list")),
     }
 }
 
 fn load_plan(path: &Path) -> Result<Plan> {
-    let v: Value = serde_json::from_slice(&std::fs::read(path)?).or_else(|e| refuse(format!("plan is not JSON: {e}")))?;
+    let v: Value = serde_json::from_slice(&std::fs::read(path)?)
+        .or_else(|e| refuse(format!("plan is not JSON: {e}")))?;
     if v["schema"] != PLAN_SCHEMA {
         return refuse("plan schema");
     }
     let container = PathBuf::from(v["container"].as_str().ok_or("REFUSED: no container")?);
-    let layers = v["layers"].as_u64().filter(|&l| l >= 1).ok_or("REFUSED: no layer count")? as usize;
-    let top_k = v["top_k"].as_u64().filter(|&k| k >= 1 && (k as usize) <= MAX_TOP_K).ok_or("REFUSED: top_k")? as usize;
+    let layers = v["layers"]
+        .as_u64()
+        .filter(|&l| l >= 1)
+        .ok_or("REFUSED: no layer count")? as usize;
+    let top_k = v["top_k"]
+        .as_u64()
+        .filter(|&k| k >= 1 && (k as usize) <= MAX_TOP_K)
+        .ok_or("REFUSED: top_k")? as usize;
     let kv_dump = match &v["kv_dump"] {
         Value::Bool(b) => *b,
         Value::Null => false,
@@ -296,100 +319,222 @@ fn load_plan(path: &Path) -> Result<Plan> {
         _ => return refuse("propagation_check must be declared as a boolean"),
     };
     let tok = container.join(TOKENIZER_FILE);
-    if !tok.exists() || Some(sha_bytes(&std::fs::read(&tok)?).as_str()) != v["tokenizer_sha256"].as_str() {
+    if !tok.exists()
+        || Some(sha_bytes(&std::fs::read(&tok)?).as_str()) != v["tokenizer_sha256"].as_str()
+    {
         return refuse("tokenizer hash differs from the plan's");
     }
     let holdout: BTreeSet<String> = match v["holdout"].as_array() {
-        Some(a) if !a.is_empty() => a.iter().filter_map(|x| x.as_str().map(String::from)).collect(),
+        Some(a) if !a.is_empty() => a
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect(),
         _ => return refuse("plan has no holdout list"),
     };
     let mut sets = BTreeMap::new();
-    for (k, s) in v["candidate_sets"].as_object().ok_or("REFUSED: no candidate_sets")? {
-        sets.insert(k.clone(), u64s(s, "candidate set")?.into_iter().map(|x| x as u32).collect());
+    for (k, s) in v["candidate_sets"]
+        .as_object()
+        .ok_or("REFUSED: no candidate_sets")?
+    {
+        sets.insert(
+            k.clone(),
+            u64s(s, "candidate set")?
+                .into_iter()
+                .map(|x| x as u32)
+                .collect(),
+        );
     }
     let st = &v["vector_store"];
     let store = PathBuf::from(st["file"].as_str().ok_or("REFUSED: no vector store file")?);
-    let store_sha = st["sha256"].as_str().ok_or("REFUSED: no vector store sha")?.to_string();
+    let store_sha = st["sha256"]
+        .as_str()
+        .ok_or("REFUSED: no vector store sha")?
+        .to_string();
     let hidden = st["hidden"].as_u64().ok_or("REFUSED: no hidden size")? as usize;
     let mut index = BTreeMap::new();
     for (vid, e) in st["index"].as_object().ok_or("REFUSED: no vector index")? {
-        let sha = e["sha256"].as_str().filter(|s| is_hex64(s)).ok_or_else(|| format!("REFUSED: vector {vid} sha"))?;
-        let recipe = e["recipe_sha256"].as_str().filter(|s| s.starts_with("sha256:")).ok_or_else(|| format!("REFUSED: vector {vid} recipe"))?;
-        let offset = e["offset"].as_u64().ok_or_else(|| format!("REFUSED: vector {vid} offset"))? as usize;
-        index.insert(vid.clone(), VEntry { offset, sha: sha.into(), recipe: recipe.into() });
+        let sha = e["sha256"]
+            .as_str()
+            .filter(|s| is_hex64(s))
+            .ok_or_else(|| format!("REFUSED: vector {vid} sha"))?;
+        let recipe = e["recipe_sha256"]
+            .as_str()
+            .filter(|s| s.starts_with("sha256:"))
+            .ok_or_else(|| format!("REFUSED: vector {vid} recipe"))?;
+        let offset = e["offset"]
+            .as_u64()
+            .ok_or_else(|| format!("REFUSED: vector {vid} offset"))? as usize;
+        index.insert(
+            vid.clone(),
+            VEntry {
+                offset,
+                sha: sha.into(),
+                recipe: recipe.into(),
+            },
+        );
     }
     let mut runs = BTreeMap::new();
-    for (id, r) in v["runs"].as_object().filter(|m| !m.is_empty()).ok_or("REFUSED: no runs")? {
-        let country = r["country"].as_str().ok_or_else(|| format!("REFUSED: run {id}: no country"))?;
+    for (id, r) in v["runs"]
+        .as_object()
+        .filter(|m| !m.is_empty())
+        .ok_or("REFUSED: no runs")?
+    {
+        let country = r["country"]
+            .as_str()
+            .ok_or_else(|| format!("REFUSED: run {id}: no country"))?;
         if holdout.contains(country) {
             return refuse(format!("run {id}: a holdout country"));
         }
         if SPENT_HOLDOUT.contains(&country) {
             return refuse(format!("run {id}: a spent Test 3 holdout country"));
         }
-        let tokens: Vec<u32> = u64s(&r["tokens"], "tokens")?.into_iter().map(|x| x as u32).collect();
-        let window: Vec<usize> = u64s(&r["window"], "window")?.into_iter().map(|x| x as usize).collect();
-        if u64s(&r["window_ids"], "window_ids")? != window.iter().map(|&p| tokens[p] as u64).collect::<Vec<_>>() {
+        let tokens: Vec<u32> = u64s(&r["tokens"], "tokens")?
+            .into_iter()
+            .map(|x| x as u32)
+            .collect();
+        let window: Vec<usize> = u64s(&r["window"], "window")?
+            .into_iter()
+            .map(|x| x as usize)
+            .collect();
+        if u64s(&r["window_ids"], "window_ids")?
+            != window.iter().map(|&p| tokens[p] as u64).collect::<Vec<_>>()
+        {
             return refuse(format!("run {id}: window token ids differ from the run"));
         }
-        if window.windows(2).any(|w| w[1] != w[0] + 1) || *window.last().unwrap() + 1 >= tokens.len() {
-            return refuse(format!("run {id}: window not contiguous or reaches the readout"));
+        if window.windows(2).any(|w| w[1] != w[0] + 1)
+            || *window.last().unwrap() + 1 >= tokens.len()
+        {
+            return refuse(format!(
+                "run {id}: window not contiguous or reaches the readout"
+            ));
         }
         let steps: Vec<String> = match r["expected_step_logit_sha256"].as_array() {
-            Some(a) if a.len() == tokens.len() => a.iter().filter_map(|x| x.as_str().map(String::from)).collect(),
+            Some(a) if a.len() == tokens.len() => a
+                .iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect(),
             _ => return refuse(format!("run {id}: step hashes")),
         };
-        runs.insert(id.clone(), TRun { tokens, window, steps });
+        runs.insert(
+            id.clone(),
+            TRun {
+                tokens,
+                window,
+                steps,
+            },
+        );
     }
     let mut targets = Vec::new();
     let mut seen = BTreeSet::new();
-    for t in v["targets"].as_array().filter(|a| !a.is_empty()).ok_or("REFUSED: no targets")? {
+    for t in v["targets"]
+        .as_array()
+        .filter(|a| !a.is_empty())
+        .ok_or("REFUSED: no targets")?
+    {
         let id = t["id"].as_str().ok_or("REFUSED: target id")?.to_string();
         if !seen.insert(id.clone()) {
             return refuse(format!("{id}: repeated"));
         }
-        let run = t["run"].as_str().filter(|r| runs.contains_key(*r)).ok_or_else(|| format!("REFUSED: {id}: unknown run"))?.to_string();
-        let set = t["candidate_set"].as_str().filter(|s| sets.contains_key(*s)).ok_or_else(|| format!("REFUSED: {id}: candidate set"))?.to_string();
+        let run = t["run"]
+            .as_str()
+            .filter(|r| runs.contains_key(*r))
+            .ok_or_else(|| format!("REFUSED: {id}: unknown run"))?
+            .to_string();
+        let set = t["candidate_set"]
+            .as_str()
+            .filter(|s| sets.contains_key(*s))
+            .ok_or_else(|| format!("REFUSED: {id}: candidate set"))?
+            .to_string();
         let tr = &runs[&run];
         let mut arms = Vec::new();
         let mut names = BTreeSet::new();
-        for a in t["arms"].as_array().filter(|a| !a.is_empty()).ok_or_else(|| format!("REFUSED: {id}: no arms"))? {
+        for a in t["arms"]
+            .as_array()
+            .filter(|a| !a.is_empty())
+            .ok_or_else(|| format!("REFUSED: {id}: no arms"))?
+        {
             let name = a["name"].as_str().ok_or("REFUSED: arm name")?.to_string();
             if !names.insert(name.clone()) {
                 return refuse(format!("{id} {name}: repeated"));
             }
             let what = format!("{id} {name}");
-            let from = a["from_layer"].as_u64().filter(|&f| f >= 1 && (f as usize) <= layers).ok_or_else(|| format!("REFUSED: {what}: from_layer"))? as usize;
-            let span: Vec<usize> = u64s(&a["target_span"], "target_span")?.into_iter().map(|x| x as usize).collect();
-            let to = a["to_layer"].as_u64().ok_or_else(|| format!("REFUSED: {what}: to_layer"))? as usize;
+            let from = a["from_layer"]
+                .as_u64()
+                .filter(|&f| f >= 1 && (f as usize) <= layers)
+                .ok_or_else(|| format!("REFUSED: {what}: from_layer"))?
+                as usize;
+            let span: Vec<usize> = u64s(&a["target_span"], "target_span")?
+                .into_iter()
+                .map(|x| x as usize)
+                .collect();
+            let to = a["to_layer"]
+                .as_u64()
+                .ok_or_else(|| format!("REFUSED: {what}: to_layer"))? as usize;
             if to + 1 < from || to >= layers {
-                return refuse(format!("{what}: band [{}, {to}] is not inside 0..{}", from - 1, layers - 1));
+                return refuse(format!(
+                    "{what}: band [{}, {to}] is not inside 0..{}",
+                    from - 1,
+                    layers - 1
+                ));
             }
-            if !span.iter().all(|p| tr.window.contains(p)) || span.windows(2).any(|w| w[1] != w[0] + 1) {
+            if !span.iter().all(|p| tr.window.contains(p))
+                || span.windows(2).any(|w| w[1] != w[0] + 1)
+            {
                 return refuse(format!("{what}: target span outside the window"));
             }
             if span.iter().any(|&p| p + 1 >= tr.tokens.len()) {
                 return refuse(format!("{what}: the span reaches the readout"));
             }
             let mut vectors = BTreeMap::new();
-            for (k, vid) in a["vectors"].as_object().ok_or_else(|| format!("REFUSED: {what}: no vectors"))? {
+            for (k, vid) in a["vectors"]
+                .as_object()
+                .ok_or_else(|| format!("REFUSED: {what}: no vectors"))?
+            {
                 let p: Vec<&str> = k.split('|').collect();
                 let lp = match p.as_slice() {
                     [l, q] => (l.parse::<usize>()?, q.parse::<usize>()?),
                     _ => return refuse(format!("{what}: vector key {k}")),
                 };
-                let vid = vid.as_str().filter(|x| index.contains_key(*x)).ok_or_else(|| format!("REFUSED: {what}: unknown vector {k}"))?;
+                let vid = vid
+                    .as_str()
+                    .filter(|x| index.contains_key(*x))
+                    .ok_or_else(|| format!("REFUSED: {what}: unknown vector {k}"))?;
                 vectors.insert(lp, vid.to_string());
             }
-            let want: BTreeSet<(usize, usize)> = (from - 1..=to).flat_map(|l| span.iter().map(move |&p| (l, p))).collect();
+            let want: BTreeSet<(usize, usize)> = (from - 1..=to)
+                .flat_map(|l| span.iter().map(move |&p| (l, p)))
+                .collect();
             if vectors.keys().cloned().collect::<BTreeSet<_>>() != want {
-                return refuse(format!("{what}: vectors do not cover exactly layers {}..={to} × the span", from - 1));
+                return refuse(format!(
+                    "{what}: vectors do not cover exactly layers {}..={to} × the span",
+                    from - 1
+                ));
             }
-            arms.push(Arm { name, from, to, span, vectors, identity: a["identity"].as_bool().unwrap_or(false) });
+            arms.push(Arm {
+                name,
+                from,
+                to,
+                span,
+                vectors,
+                identity: a["identity"].as_bool().unwrap_or(false),
+            });
         }
         targets.push(Target { id, run, set, arms });
     }
-    Ok(Plan { container, layers, top_k, kv_dump, propagation_check, hidden, store, store_sha, index, runs, sets, targets })
+    Ok(Plan {
+        container,
+        layers,
+        top_k,
+        kv_dump,
+        propagation_check,
+        hidden,
+        store,
+        store_sha,
+        index,
+        runs,
+        sets,
+        targets,
+    })
 }
 
 fn load_store(plan: &Plan) -> Result<Vec<f32>> {
@@ -397,9 +542,14 @@ fn load_store(plan: &Plan) -> Result<Vec<f32>> {
     if sha_bytes(&bytes) != plan.store_sha {
         return refuse("vector store differs from its declared sha");
     }
-    let data: Vec<f32> = bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+    let data: Vec<f32> = bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
     for (vid, e) in &plan.index {
-        let v = data.get(e.offset..e.offset + plan.hidden).ok_or_else(|| format!("REFUSED: vector {vid} out of range"))?;
+        let v = data
+            .get(e.offset..e.offset + plan.hidden)
+            .ok_or_else(|| format!("REFUSED: vector {vid} out of range"))?;
         if vector_sha256(v) != e.sha {
             return refuse(format!("vector {vid} differs from its index hash"));
         }
@@ -426,11 +576,17 @@ fn run_target(model: &Model, plan: &Plan, store: &[f32], t: &Target) -> Result<V
     let tr = &plan.runs[&t.run];
     let natural = execute(model, &tr.tokens, &InterventionPlan::none())?;
     let replay = execute(model, &tr.tokens, &InterventionPlan::none())?;
-    if natural.step_logit_sha != replay.step_logit_sha || natural.keys != replay.keys || natural.values != replay.values {
+    if natural.step_logit_sha != replay.step_logit_sha
+        || natural.keys != replay.keys
+        || natural.values != replay.values
+    {
         return refuse(format!("{}: natural replay is not bit-identical", t.id));
     }
     if natural.step_logit_sha != tr.steps {
-        return refuse(format!("{}: natural steps differ from the declared hashes", t.id));
+        return refuse(format!(
+            "{}: natural steps differ from the declared hashes",
+            t.id
+        ));
     }
     let cands = &plan.sets[&t.set];
     let mut arms = serde_json::Map::new();
@@ -442,21 +598,34 @@ fn run_target(model: &Model, plan: &Plan, store: &[f32], t: &Target) -> Result<V
         for ((l, p), vid) in &a.vectors {
             let e = &plan.index[vid];
             let v = store[e.offset..e.offset + plan.hidden].to_vec();
-            ip = ip.with(Intervention::replace(Address::new(*l, SublayerSite::Ffn, [*p])?, v,
-                                               VectorProvenance::Literal { sha256: e.sha.clone() })?)?;
+            ip = ip.with(Intervention::replace(
+                Address::new(*l, SublayerSite::Ffn, [*p])?,
+                v,
+                VectorProvenance::Literal {
+                    sha256: e.sha.clone(),
+                },
+            )?)?;
             injected.push(((*l, *p), e.sha.clone()));
             *recipes.entry(e.recipe.clone()).or_insert(0usize) += 1;
         }
         let run = execute(model, &tr.tokens, &ip)?;
         if run.firings != injected.len() {
-            return refuse(format!("{what}: {} firings for {} addresses", run.firings, injected.len()));
+            return refuse(format!(
+                "{what}: {} firings for {} addresses",
+                run.firings,
+                injected.len()
+            ));
         }
         let fired: BTreeSet<(usize, usize)> = run.fired.iter().map(|&(l, _, p)| (l, p)).collect();
         if fired.len() != run.fired.len()
-            || run.fired.iter().any(|&(l, s, p)| s != SublayerSite::Ffn || l + 1 < a.from || l > a.to || !a.span.contains(&p))
+            || run.fired.iter().any(|&(l, s, p)| {
+                s != SublayerSite::Ffn || l + 1 < a.from || l > a.to || !a.span.contains(&p)
+            })
             || fired != a.vectors.keys().cloned().collect::<BTreeSet<_>>()
         {
-            return refuse(format!("{what}: a firing outside the declared band × span, or repeated"));
+            return refuse(format!(
+                "{what}: a firing outside the declared band × span, or repeated"
+            ));
         }
         for ((l, p), sha) in &injected {
             match run.carriers.ffn.get(&(*l, *p)) {
@@ -477,14 +646,20 @@ fn run_target(model: &Model, plan: &Plan, store: &[f32], t: &Target) -> Result<V
             if l < a.from {
                 for &p in &a.span {
                     if run.kv_sha(l, p) != natural.kv_sha(l, p) {
-                        return refuse(format!("{what}: K/V at {l}|{p} not natural below the start layer"));
+                        return refuse(format!(
+                            "{what}: K/V at {l}|{p} not natural below the start layer"
+                        ));
                     }
                 }
             }
             if l + 1 < a.from {
                 for &p in &a.span {
-                    if run.carriers.ffn.get(&(l, p)).map(|c| &c.0) != natural.carriers.ffn.get(&(l, p)).map(|c| &c.0) {
-                        return refuse(format!("{what}: carrier at {l}|{p} not natural below the band"));
+                    if run.carriers.ffn.get(&(l, p)).map(|c| &c.0)
+                        != natural.carriers.ffn.get(&(l, p)).map(|c| &c.0)
+                    {
+                        return refuse(format!(
+                            "{what}: carrier at {l}|{p} not natural below the band"
+                        ));
                     }
                 }
             }
@@ -492,13 +667,20 @@ fn run_target(model: &Model, plan: &Plan, store: &[f32], t: &Target) -> Result<V
         let mut changed_above = Vec::new();
         for l in a.to + 1..model.layers {
             for &p in &a.span {
-                match (run.carriers.ffn.get(&(l, p)), natural.carriers.ffn.get(&(l, p))) {
+                match (
+                    run.carriers.ffn.get(&(l, p)),
+                    natural.carriers.ffn.get(&(l, p)),
+                ) {
                     (Some((v, 1)), Some((n, _))) => {
                         if v != n {
                             changed_above.push(format!("{l}|{p}"));
                         }
                     }
-                    _ => return refuse(format!("{what}: carrier at {l}|{p} above the band was not written exactly once")),
+                    _ => {
+                        return refuse(format!(
+                        "{what}: carrier at {l}|{p} above the band was not written exactly once"
+                    ))
+                    }
                 }
             }
         }
@@ -510,21 +692,37 @@ fn run_target(model: &Model, plan: &Plan, store: &[f32], t: &Target) -> Result<V
                 for &p in &a.span {
                     let v = run.carriers.ffn[&(l, p)].0.clone();
                     let sha = vector_sha256(&v);
-                    ip2 = ip2.with(Intervention::replace(Address::new(l, SublayerSite::Ffn, [p])?, v,
-                                                         VectorProvenance::Literal { sha256: sha })?)?;
+                    ip2 = ip2.with(Intervention::replace(
+                        Address::new(l, SublayerSite::Ffn, [p])?,
+                        v,
+                        VectorProvenance::Literal { sha256: sha },
+                    )?)?;
                     n2 += 1;
                 }
             }
             let re = execute(model, &tr.tokens, &ip2)?;
-            let same_carriers = run.carriers.ffn.iter().all(|(k, (v, _))| re.carriers.ffn.get(k).map(|c| &c.0) == Some(v));
-            if re.firings != n2 || re.step_logit_sha != run.step_logit_sha || re.keys != run.keys || re.values != run.values || !same_carriers {
+            let same_carriers = run
+                .carriers
+                .ffn
+                .iter()
+                .all(|(k, (v, _))| re.carriers.ffn.get(k).map(|c| &c.0) == Some(v));
+            if re.firings != n2
+                || re.step_logit_sha != run.step_logit_sha
+                || re.keys != run.keys
+                || re.values != run.values
+                || !same_carriers
+            {
                 return refuse(format!("{what}: above-band states are not a fixed point of the model's own computation"));
             }
             fixpoint = json!({"bit_exact": true, "replayed_addresses": n2 - injected.len()});
         }
-        let identical = run.step_logit_sha == natural.step_logit_sha && run.keys == natural.keys && run.values == natural.values;
+        let identical = run.step_logit_sha == natural.step_logit_sha
+            && run.keys == natural.keys
+            && run.values == natural.values;
         if a.identity && !identical {
-            return refuse(format!("{what}: identity is not bit-identical to the natural run"));
+            return refuse(format!(
+                "{what}: identity is not bit-identical to the natural run"
+            ));
         }
         let mut rec = json!({
             "from_layer": a.from, "to_layer": a.to, "band": [a.from - 1, a.to],
@@ -539,7 +737,10 @@ fn run_target(model: &Model, plan: &Plan, store: &[f32], t: &Target) -> Result<V
             let mut d = serde_json::Map::new();
             for l in a.from..=a.to.min(model.layers - 1) {
                 for &p in &a.span {
-                    d.insert(format!("{l}|{p}"), json!({"k": hex_f32(&run.keys[l][p]), "v": hex_f32(&run.values[l][p])}));
+                    d.insert(
+                        format!("{l}|{p}"),
+                        json!({"k": hex_f32(&run.keys[l][p]), "v": hex_f32(&run.values[l][p])}),
+                    );
                 }
             }
             rec["kv_dump"] = Value::Object(d);
@@ -558,7 +759,12 @@ fn main() -> Result<()> {
         let plan = load_plan(Path::new(&a[1]))?;
         load_store(&plan)?;
         let arms: usize = plan.targets.iter().map(|t| t.arms.len()).sum();
-        println!("checked {} targets, {} arms, {} vectors", plan.targets.len(), arms, plan.index.len());
+        println!(
+            "checked {} targets, {} arms, {} vectors",
+            plan.targets.len(),
+            arms,
+            plan.index.len()
+        );
         return Ok(());
     }
     if a.len() != 2 {
@@ -573,7 +779,9 @@ fn main() -> Result<()> {
     }
     let store = load_store(&plan)?;
     let inspection = inspect_container(&plan.container, true)?;
-    let cplan = plan_component_ops(&inspection, &plan.container, "target")?.plan.ok_or("plan absent")?;
+    let cplan = plan_component_ops(&inspection, &plan.container, "target")?
+        .plan
+        .ok_or("plan absent")?;
     if cplan.layers.iter().any(|l| l.layer_scale.is_some()) || cplan.layers.len() != plan.layers {
         return refuse("the model plan differs from the declared layers or declares a layer scale");
     }
@@ -581,8 +789,16 @@ fn main() -> Result<()> {
     let backend = ProductionBackend::new();
     let ops = PreparedOperands::load(&cplan, &ostore, &backend, ExecutionSlice::Full)?;
     let layers = cplan.layers.len();
-    let model = Model { plan: cplan, ops, backend, layers };
-    let mut f = std::fs::File::options().write(true).create_new(true).open(&partial)?;
+    let model = Model {
+        plan: cplan,
+        ops,
+        backend,
+        layers,
+    };
+    let mut f = std::fs::File::options()
+        .write(true)
+        .create_new(true)
+        .open(&partial)?;
     for t in &plan.targets {
         writeln!(f, "{}", run_target(&model, &plan, &store, t)?)?;
         eprintln!("ran {}", t.id);
