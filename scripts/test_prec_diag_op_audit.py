@@ -4,6 +4,9 @@
   what is recorded, and that a cast undone later is still seen at both ends.
 - `Probes`: every kernel probe passes on this build, discriminates float32
   from float64, and fails a deliberately float32 kernel.
+- `ForwardAD`: a forward-mode AD JVP through a tiny random Qwen3 passes
+  with every op classified (probed, or exact with a stated reason), and a
+  custom `autograd.Function` whose `jvp` computes in float32 is a fault.
 - `GapTheModuleAuditCannotSee`: on the tiny random Gemma 3 and Qwen3
   checkpoints of the oracle's own tests, one known float32 site left
   unpatched (or one hidden float32 computation with no patch at all) fails
@@ -44,6 +47,7 @@ import test_prec_diag_hf_oracle as gemma  # noqa: E402
 import test_prec_diag_hf_oracle_qwen3 as qwen3  # noqa: E402
 
 import torch  # noqa: E402
+import torch.autograd.forward_ad as fwAD  # noqa: E402
 
 HERE = Path(__file__).name
 F64 = torch.float64
@@ -139,6 +143,33 @@ class Dispatch(unittest.TestCase):
         self.assertFalse(op.PROBED & oa.EXACT_OPS)
         names = [n for names in op.CLASSES.values() for n in names]
         self.assertEqual(len(names), len(set(names)))
+        # The meta-only rule is narrower than a class: off meta these ops are probed.
+        self.assertTrue(oa.SHAPE_INFERENCE_OPS <= op.CLASSES[op.BASIC])
+        self.assertFalse(oa.SHAPE_INFERENCE_OPS & oa.EXACT_OPS)
+
+    def test_a_prim_on_data_is_probed_and_on_meta_is_shape_inference(self):
+        a, b = self.x, self.x + 0.5
+        r = traced(lambda: torch.ops.prims.add.default(a, b))
+        self.assertTrue(r["pass"], r["problems"])
+        self.assertEqual(r["shape_inference"], {})
+        self.assertIn("prims.add.default", {p["op"] for p in r["probes"]})
+        r = traced(lambda: torch.ops.prims.mul.default(a.to("meta"), b.to("meta")))
+        self.assertTrue(r["pass"], r["problems"])
+        self.assertEqual(r["shape_inference"], {"prims.mul.default": 1})
+        self.assertNotIn("prims.mul.default", {p["op"] for p in r["probes"]})
+        self.assertNotIn(op.BASIC, r["ops_by_class"])
+
+    def test_a_float32_prim_on_meta_is_still_a_dtype_fault(self):
+        m = torch.empty(3, 4, dtype=torch.float32, device="meta")
+        r = traced(lambda: torch.ops.prims.add.default(m, m))
+        self.assertFalse(r["pass"])
+        self.assertIn(("prims.add.default", "input", "torch.float32"),
+                      {(v["op"], v["role"], v["dtype"]) for v in r["violations"]})
+
+    def test_an_aten_op_on_meta_is_not_shape_inference(self):
+        # Only the named primitives have the meta-only rule; any other op keeps its class.
+        r = traced(lambda: torch.atan2(self.x.to("meta"), self.x.to("meta")))
+        self.assertEqual(r["unclassified"], {"aten.atan2.default": 1})
 
 
 class Probes(unittest.TestCase):
@@ -164,7 +195,15 @@ class Probes(unittest.TestCase):
         "aten.convolution.default": {"x": [[1, 12, 70], [840, 1, 12]], "w": [[12, 1, 4], [4, 4, 1]], "bias": None,
                                      "stride": [1], "padding": [3], "dilation": [1], "transposed": False,
                                      "output_padding": [0], "groups": 12},
+        # rsqrt's tangent in RMSNorm under forward AD: -0.5 * rsqrt^3 * t.
+        "aten.mul.Scalar": {"scalar_operand": 1, "scalar": -0.5},
     }
+    #: The basic-arithmetic probes forward-mode AD added (#897), at every scalar variant the forward used.
+    FORWARD_AD_BASIC = (("aten.mul.Scalar", {"scalar_operand": 1, "scalar": 2.0}),
+                        ("aten.mul.Scalar", {"scalar_operand": 1, "scalar": -0.5}),
+                        ("aten.div_.Tensor", {}),
+                        ("prims.add.default", {}), ("prims.add.default", {"scalar_operand": 1, "scalar": 0.0}),
+                        ("prims.mul.default", {}), ("prims.mul.default", {"scalar_operand": 0, "scalar": 1.5}))
 
     def sig(self, name):
         return self.SIGNATURES.get(name, {})
@@ -196,6 +235,52 @@ class Probes(unittest.TestCase):
     def test_a_float32_elementwise_kernel_fails_its_probe(self):
         r = op.probe("aten.exp.default", {}, op=lambda x: torch.exp(x.float()).double())
         self.assertFalse(r["pass"])
+
+    def test_every_forward_ad_basic_probe_passes_and_fails_a_float32_kernel(self):
+        for name, sig in self.FORWARD_AD_BASIC:
+            real = op.resolve(name)
+
+            def f32_kernel(*args, real=real):
+                return real(*[a.float() if isinstance(a, torch.Tensor) else a for a in args]).double()
+
+            with self.subTest(name=name, sig=sig):
+                ok = op.probe(name, sig)
+                self.assertTrue(ok["pass"], ok)
+                self.assertEqual(ok["error"], 0.0)
+                bad = op.probe(name, sig, op=f32_kernel)
+                self.assertFalse(bad["pass"], bad)
+                self.assertIn("not float64-accurate", bad["detail"])
+
+    def test_a_kernel_that_rounds_its_scalar_to_float32_fails(self):
+        def rounded_scalar(x, scalar):
+            return torch.ops.aten.mul.Scalar(x, float(torch.tensor(scalar, dtype=torch.float32)))
+
+        sig = {"scalar_operand": 1, "scalar": 1.0 / 3.0}
+        self.assertTrue(op.probe("aten.mul.Scalar", sig)["pass"])
+        r = op.probe("aten.mul.Scalar", sig, op=rounded_scalar)
+        self.assertFalse(r["pass"], r)
+        self.assertIn("not float64-accurate", r["detail"])
+
+    def test_the_in_place_probe_reads_unmodified_operands(self):
+        # div_ writes into its first operand: a probe that let it would feed the f32 counterfactual x / y / y.
+        seen = []
+
+        def spy(a, b):
+            seen.append(a.double().clone())
+            return torch.ops.aten.div_.Tensor(a, b)
+
+        r = op.probe("aten.div_.Tensor", {}, op=spy)
+        self.assertTrue(r["pass"], r)
+        f64_operand, f32_operand = seen
+        self.assertTrue(torch.equal(f64_operand.float().double(), f32_operand))
+
+    def test_a_float32_silu_backward_fails_its_probe(self):
+        real = torch.ops.aten.silu_backward.default
+        for kernel in (lambda g, x: real(g.float(), x.float()).double(),  # both operands
+                       lambda g, x: real(g, x.float().double())):  # only x rounded
+            r = op.probe("aten.silu_backward.default", {}, op=kernel)
+            self.assertFalse(r["pass"], r)
+            self.assertIn("not float64-accurate", r["detail"])
 
     def test_a_probe_that_cannot_tell_f32_from_f64_fails(self):
         # A "kernel" that returns the expected value whatever its operands makes
@@ -331,6 +416,9 @@ class GapTheModuleAuditCannotSee(unittest.TestCase):
                 self.assertTrue(ops["pass"], ops["problems"])
                 self.assertEqual(ops["non_f64_ops"], 0)
                 self.assertGreater(ops["probes_run"], 0)
+                # Without forward AD nothing is shape inference, and none of its op kinds appear.
+                self.assertEqual(ops["shape_inference"], {})
+                self.assertFalse(set(ops["op_counts"]) & set(ForwardAD.AD_OPS), ops["op_counts"])
 
     def test_one_known_f32_site_left_unpatched_fails_and_the_module_audit_sees_nothing(self):
         # Gemma 3 rotary and Qwen3's eager softmax each cast to float32 and back inside
@@ -419,6 +507,104 @@ class GapTheModuleAuditCannotSee(unittest.TestCase):
         self.assertEqual({v["site"].split(" ")[1] for v in ops["violations"]},
                          {"GapTheModuleAuditCannotSee.test_a_hidden_f32_computation_with_no_patch_fails_only_this_part"
                           ".<locals>.f32_inside"})
+
+
+class _F32Jvp(torch.autograd.Function):
+    """`x @ w.T`: float64 forward, but a jvp that computes in float32."""
+
+    @staticmethod
+    def forward(x, w):
+        return x @ w.T
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        ctx.save_for_forward(*inputs)
+
+    @staticmethod
+    def jvp(ctx, gx, gw):
+        x, w = ctx.saved_tensors
+        return (gx.float() @ w.float().T).double()
+
+
+class ForwardAD(unittest.TestCase):
+    """A forward-mode AD JVP (`torch.autograd.forward_ad`, dual tensors)
+    through a tiny random Qwen3 with the oracle's A64 patches. The tangent of
+    the logits in the input embeddings is computed by ordinary ATen ops below
+    autograd, so the audit sees and classifies every one of them."""
+
+    LAYERS, VOCAB = 2, 512
+    #: The op kinds the JVP adds to the plain forward, and the class each call of it is counted in.
+    AD_OPS = {"aten._efficientzerotensor.default": oa.EXACT, "aten.is_same_size.default": oa.EXACT,
+              "aten._has_same_storage_numel.default": oa.EXACT, "aten.mul.Scalar": op.BASIC,
+              "aten.div_.Tensor": op.BASIC, "aten.silu_backward.default": op.ELEMENTWISE,
+              "prims.add.default": oa.EXACT, "prims.mul.default": oa.EXACT}  # on meta only: shape inference
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.ckpt = qwen3.make_checkpoint(Path(cls._tmp.name) / "qwen3", num_hidden_layers=cls.LAYERS,
+                                         vocab_size=cls.VOCAB)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def jvp(self, tamper=None):
+        model, _ = ho.load(self.ckpt, "A64", qwen3.BOUNDARY)
+        self.assertEqual(model.config._attn_implementation, "eager")
+        self.assertEqual((model.config.hidden_size, model.config.num_hidden_layers, model.config.vocab_size),
+                         (qwen3.HIDDEN, self.LAYERS, self.VOCAB))
+        if tamper:
+            tamper(model)
+        family = ho.Family("qwen3")
+        audit, ops = ho.A64Audit(model, family), oa.OpDtypeAudit(linear_layers=linear_layers(model))
+        with torch.no_grad():
+            embeds = model.model.embed_tokens(torch.tensor([qwen3.IDS]))
+        tangent = torch.linspace(-1, 1, embeds.numel(), dtype=F64).reshape(embeds.shape)
+        with ho.a64_patches(model, audit), ops, torch.no_grad(), fwAD.dual_level():
+            out = model(inputs_embeds=fwAD.make_dual(embeds, tangent), use_cache=False).logits
+            logits, jvp = fwAD.unpack_dual(out)
+        self.assertEqual(jvp.dtype, F64)
+        self.assertGreater(float(jvp.abs().max()), 0.0)
+        return audit.finish(logits[0], self.LAYERS), ops.finish()
+
+    def test_a_jvp_passes_with_every_op_classified(self):
+        parts, ops = self.jvp()
+        self.assertTrue(parts["pass"], parts["problems"])
+        self.assertTrue(ops["pass"], ops["problems"])
+        self.assertEqual(ops["unclassified"], {})
+        self.assertEqual(ops["non_f64_ops"], 0)
+        self.assertTrue(set(self.AD_OPS) <= set(ops["op_counts"]), set(self.AD_OPS) - set(ops["op_counts"]))
+        for name, kind in self.AD_OPS.items():
+            if name in oa.SHAPE_INFERENCE_OPS:
+                self.assertEqual(op.class_of(name), op.BASIC)  # probed when it runs on data
+            else:
+                self.assertEqual(op.class_of(name) or (oa.EXACT if name in oa.EXACT_OPS else None), kind, name)
+        # Every prim call was the ZeroTensor kernels' shape inference on meta; none computed, none was probed.
+        self.assertEqual(ops["shape_inference"], {n: ops["op_counts"][n] for n in oa.SHAPE_INFERENCE_OPS})
+        probed = {p["op"] for p in ops["probes"]}
+        self.assertFalse(probed & oa.SHAPE_INFERENCE_OPS)
+        self.assertTrue({n for n, k in self.AD_OPS.items() if k != oa.EXACT} <= probed)
+        self.assertEqual({p["signature"]["scalar"] for p in ops["probes"] if p["op"] == "aten.mul.Scalar"},
+                         {2.0, -0.5})  # pow(2)'s and rsqrt's tangents
+        self.assertEqual(sum(ops["ops_by_class"].values()), ops["floating_ops"])
+
+    def test_a_float32_jvp_is_a_dtype_fault(self):
+        """The negative control: one MLP's down_proj runs a custom Function
+        whose forward is float64 and whose jvp computes in float32."""
+        def tamper(model):
+            proj = model.model.layers[1].mlp.down_proj
+            proj.forward = lambda x: _F32Jvp.apply(x, proj.weight)
+
+        parts, ops = self.jvp(tamper)
+        self.assertTrue(parts["pass"], parts["problems"])
+        self.assertFalse(ops["pass"])
+        self.assertEqual(ops["unclassified"], {})
+        self.assertEqual(sites(ops), {HERE})
+        self.assertEqual({v["site"].split(" ")[1] for v in ops["violations"]}, {"_F32Jvp.jvp"})
+        self.assertIn(("aten.mm.default", "input", "torch.float32"),
+                      {(v["op"], v["role"], v["dtype"]) for v in ops["violations"]})
+        self.assertTrue(any(c["non_f64"] and c["to"] == "torch.float32" for c in ops["casts"]))
 
 
 class Wiring(unittest.TestCase):

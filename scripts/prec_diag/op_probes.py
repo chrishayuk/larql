@@ -12,8 +12,14 @@ that, on the same backend and thread settings as the forward, after it:
 - elementwise transcendental ops (`exp`, `rsqrt`, `cos`, `gelu`, `softplus`, `pow`, ...)
   are probed once per scalar variant on a fixed-length vector against
   Python's `math` (double precision);
+- `silu_backward` (the tangent of `silu` under forward-mode AD: grad times
+  silu's derivative) is an elementwise probe of two operands;
 - basic IEEE arithmetic (`add`, `mul`, `div`, ...) is probed for bit-exact
-  agreement with numpy float64 arithmetic, which is correctly rounded.
+  agreement with numpy float64 arithmetic, which is correctly rounded. A
+  scalar variant (`mul.Scalar`, a `prims` op given a Python number) is
+  probed once per scalar the forward used; an in-place op (`div_`) is
+  probed on a copy of its first operand, so the f32 counterfactual reads
+  the same operands.
 
 Every probe also runs the same op on float32 copies of its inputs (the
 "f32 counterfactual"). A probe passes only if the float64 op meets the bound
@@ -187,6 +193,11 @@ def signature(name: str, args: tuple, kwargs: dict):
         return {"base": float(args[0])}
     if name == "aten.gelu.default":
         return {"approximate": kwargs.get("approximate", args[1] if len(args) > 1 else "none")}
+    if name == "aten.mul.Scalar":
+        return {"scalar_operand": 1, "scalar": float(args[1])}
+    if name in ("prims.add.default", "prims.mul.default"):
+        scalar = [i for i, a in enumerate(args[:2]) if isinstance(a, (int, float)) and not isinstance(a, bool)]
+        return {"scalar_operand": scalar[0], "scalar": float(args[scalar[0]])} if scalar else {}
     return {}
 
 
@@ -423,6 +434,12 @@ def _softplus_ref(sig: dict):
     return lambda x: x if beta * x > threshold else math.log1p(math.exp(beta * x)) / beta
 
 
+def _silu_backward_ref(grad: float, x: float) -> float:
+    """`grad * d/dx silu(x)`, with silu'(x) = s (1 + x (1 - s)) and s = sigmoid(x)."""
+    s = 1.0 / (1.0 + math.exp(-x))
+    return grad * s * (1.0 + x * (1.0 - s))
+
+
 def _gelu_ref(approximate: str):
     if approximate == "tanh":
         c = math.sqrt(2.0 / math.pi)
@@ -446,7 +463,13 @@ _ELEMENTWISE = {
     "aten.softplus.default": ((-20.0, 30.0, "lin"), _softplus_ref, MIXED),
     "aten.pow.Tensor_Scalar": ((0.5, 2.0, "lin"), lambda s: (lambda x: math.pow(x, s["exponent"])), RELATIVE),
     "aten.pow.Scalar": ((0.0, 1.0, "lin"), lambda s: (lambda x: math.pow(s["base"], x)), RELATIVE),
+    # silu's tangent under forward-mode AD: (grad, x) -> grad * silu'(x). Its zero crossing in x (near -1.28)
+    # cancels, so the metric is absolute there.
+    "aten.silu_backward.default": ((-8.0, 8.0, "lin"), lambda s: _silu_backward_ref, MIXED),
 }
+#: Elementwise ops of two operands `(grad, x)`: `grad` is drawn as the basic-arithmetic probe values
+#: (almost none float32-representable), `x` spans the op's domain.
+_GRAD_ELEMENTWISE = frozenset({"aten.silu_backward.default"})
 
 
 def _domain(lo: float, hi: float, spacing: str) -> torch.Tensor:
@@ -459,6 +482,11 @@ def _elementwise(name: str, op, sig: dict) -> dict:
     (lo, hi, spacing), ref_of, metric = _ELEMENTWISE[name]
     x = _domain(lo, hi, spacing)
     fn = ref_of(sig)
+    if name in _GRAD_ELEMENTWISE:
+        grad = torch.from_numpy(np.random.default_rng(PROBE_SEED).uniform(-BASIC_RANGE, BASIC_RANGE,
+                                                                           ELEMENTWISE_LENGTH))
+        ref = torch.tensor([fn(g, v) for g, v in zip(grad.tolist(), x.tolist())], dtype=torch.float64)
+        return _judge(op, (grad, x), {}, ref, metric, {"vector_length": ELEMENTWISE_LENGTH})
     ref = torch.tensor([fn(v) for v in x.tolist()], dtype=torch.float64)
     if name == "aten.pow.Tensor_Scalar":
         args, kwargs = (x, sig["exponent"]), {}
@@ -483,15 +511,34 @@ _BASIC = {
     "aten.div.Tensor": (2, np.divide),
     "aten.neg.default": (1, np.negative),
     "aten.reciprocal.default": (1, lambda x: np.divide(1.0, x)),
+    # Forward-mode AD tangent formulas (#897): pow's 2 x t, rsqrt's -0.5 r^3 t, softmax's in-place division.
+    "aten.mul.Scalar": (2, np.multiply),
+    "aten.div_.Tensor": (2, np.divide),
+    # The primitives torch._refs lowers add and mul to. In the forward-AD trace they run only on meta tensors
+    # (the ZeroTensor kernels' shape inference: op_audit.SHAPE_INFERENCE_OPS); on data they are probed here.
+    "prims.add.default": (2, np.add),
+    "prims.mul.default": (2, np.multiply),
 }
+#: Basic ops that write their result into their first operand: probed on a copy of it.
+_IN_PLACE = frozenset({"aten.div_.Tensor"})
 
 
-def _basic(name: str, op) -> dict:
+def _basic(name: str, op, sig: dict) -> dict:
+    """Bit-exact against numpy on fixed random operands. A scalar variant
+    (`sig["scalar_operand"]`) takes the observed Python scalar there."""
     arity, ref_fn = _BASIC[name]
     rng = np.random.default_rng(PROBE_SEED)
     xs = [rng.uniform(-BASIC_RANGE, BASIC_RANGE, ELEMENTWISE_LENGTH) for _ in range(arity)]
-    ref = torch.from_numpy(ref_fn(*xs))
-    args = tuple(torch.from_numpy(x) for x in xs)
+    at = sig.get("scalar_operand")
+    operands = [sig["scalar"] if i == at else x for i, x in enumerate(xs)]
+    ref = torch.from_numpy(np.asarray(ref_fn(*operands), dtype=np.float64))
+    args = tuple(o if i == at else torch.from_numpy(o) for i, o in enumerate(operands))
+    if name in _IN_PLACE:
+        inner = op
+
+        def op(first, *rest, **kwargs):
+            return inner(first.clone(), *rest, **kwargs)
+
     return _judge(op, args, {}, ref, EXACT, {"vector_length": ELEMENTWISE_LENGTH})
 
 
@@ -522,9 +569,9 @@ def class_of(name: str) -> str | None:
 
 
 def resolve(name: str):
-    """The ATen OpOverload named `aten.<op>.<overload>`."""
-    _, packet, overload = name.split(".")
-    return getattr(getattr(torch.ops.aten, packet), overload)
+    """The OpOverload named `<namespace>.<op>.<overload>` (`aten` or `prims`)."""
+    namespace, packet, overload = name.split(".")
+    return getattr(getattr(getattr(torch.ops, namespace), packet), overload)
 
 
 def probe(name: str, sig: dict, op=None) -> dict:
@@ -547,7 +594,7 @@ def _probe(name: str, sig: dict, op, kind: str) -> dict:
         elif kind == ELEMENTWISE:
             out = _elementwise(name, op, sig)
         elif kind == BASIC:
-            out = _basic(name, op)
+            out = _basic(name, op, sig)
         else:
             raise KeyError(f"no probe for {name}")
     return {"op": name, "class": kind, "signature": sig, **out}

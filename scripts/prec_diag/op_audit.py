@@ -29,7 +29,16 @@ forward. For every ATen op it records:
     forward (`op_probes.py`), at every distinct shape and stride the forward
     used for accumulating ops.
   An op in no class is a fault ("no precision evidence"), so a new op is
-  never passed silently.
+  never passed silently. One narrower rule: `prims.add` / `prims.mul`
+  (`SHAPE_INFERENCE_OPS`) are exact only on a call whose every tensor is on
+  the meta device, where they compute no values (the ZeroTensor kernels of
+  forward-mode AD infer their output shape so); on data they are probed as
+  basic arithmetic.
+
+The trace runs the same under forward-mode AD (`torch.autograd.forward_ad`):
+a JVP formula's tangent arithmetic dispatches as ordinary ATen ops, so it is
+audited like the primal's (a custom `autograd.Function` whose `jvp` computes
+in float32 is a dtype fault).
 
 What the dispatch level cannot see is listed in `VISIBILITY`, and recorded in
 every result. The main limit is that arithmetic inside one kernel (an `mm`'s
@@ -76,7 +85,10 @@ from prec_diag import op_probes  # noqa: E402
 #: which refuses any schema but this one, so this is its only definition.
 #: /2 (#901): the admitted op set grew (exact: constant_pad_nd, eye; probed: softplus, 1-d convolution) and
 #: the visibility statement on float32-computed buffers was corrected. /1 is the schema the #899 backfill ran.
-SCHEMA = "larql.prec-diag-1.a64-op-audit/2"
+#: /3 (#897): forward-mode AD's op set is admitted (exact: _efficientzerotensor, is_same_size,
+#: _has_same_storage_numel, prims.add/prims.mul on meta tensors only; probed: mul.Scalar, div_, prims.add,
+#: prims.mul, silu_backward), the record gains `shape_inference`, and `ops_by_class` counts per call.
+SCHEMA = "larql.prec-diag-1.a64-op-audit/3"
 REQUIRED = {False: torch.float64, True: torch.complex128}  # keyed by is_complex
 #: Python frames recorded per site, innermost first.
 CALLSITE_FRAMES = 3
@@ -127,7 +139,21 @@ EXACT_OPS = frozenset({
     "aten.zeros_like.default", "aten.ones_like.default", "aten.empty_like.default", "aten.full_like.default",
     "aten.new_ones.default", "aten.new_zeros.default", "aten.new_empty.default", "aten.new_full.default",
     "aten.fill_.Scalar", "aten.zero_.default", "aten.eye.default",
+    # Forward-mode AD (#897). A ZeroTensor is the tangent of a tensor with no tangent (a weight under a JVP in
+    # the input): it has no storage and every value is 0, so making it computes nothing. Its dtype= argument
+    # is still checked like any factory's.
+    "aten._efficientzerotensor.default",
+    # Metadata queries the forward-AD wrappers make to check a tangent matches its primal (sizes, and storage
+    # numel for a view); they read no values and return a bool.
+    "aten.is_same_size.default", "aten._has_same_storage_numel.default",
 }) | CAST_OPS
+#: Ops that are exact only on a call whose every tensor is on the meta device. Meta tensors have no
+#: storage, so such a call computes no values: it is shape inference. Under forward-mode AD the
+#: ZeroTensor kernels (`add`/`mul` with a ZeroTensor operand) move their operands to meta and run the op
+#: there to infer the output's shape, and the meta kernel of aten.add/aten.mul (torch._refs) dispatches
+#: these primitives. On any other device they compute, and are probed as basic arithmetic
+#: (`op_probes._BASIC`).
+SHAPE_INFERENCE_OPS = frozenset({"prims.add.default", "prims.mul.default"})
 
 #: What the dispatch level sees and does not see; recorded in every result.
 VISIBILITY = {
@@ -139,6 +165,9 @@ VISIBILITY = {
         "every dtype conversion, with the Python call site that issued it, so a cast that is undone later still "
         "appears at both ends",
         "tensors created inside the forward in the default dtype (float32), e.g. torch.tensor(x) or torch.zeros(n)",
+        "under forward-mode AD, every tangent op a JVP formula dispatches (including a custom autograd.Function's "
+        "jvp), and the ZeroTensor kernels' shape inference on meta tensors (prims.add/prims.mul, which compute no "
+        "values: recorded in shape_inference)",
     ],
     "does_not_see": [
         "arithmetic inside one kernel (accumulators, internal temporaries of mm, mean, _softmax, cumsum, "
@@ -254,6 +283,7 @@ class OpDtypeAudit(TorchDispatchMode):
         self.casts: collections.Counter = collections.Counter()
         self.writes: dict = collections.defaultdict(collections.Counter)
         self.unclassified: collections.Counter = collections.Counter()
+        self.shape_inference: collections.Counter = collections.Counter()
         self.chains: dict = {}
         self.cast_non_f64: dict = {}
         self.signatures: dict = collections.defaultdict(dict)
@@ -296,8 +326,12 @@ class OpDtypeAudit(TorchDispatchMode):
                 self.cast_non_f64[key] = cast[2]
                 self.chains.setdefault(("cast",) + key, chain)
                 self.casts[key] += 1
+        tensors = ins + outs
+        on_meta = bool(tensors) and all(t.device.type == "meta" for t in tensors)
         if faults:
             self.non_f64_ops += 1
+        elif name in SHAPE_INFERENCE_OPS and on_meta:
+            self.shape_inference[name] += 1
         elif name not in EXACT_OPS and op_probes.class_of(name) is None:
             self.unclassified[name] += 1
         elif op_probes.class_of(name) is not None:
@@ -350,6 +384,10 @@ class OpDtypeAudit(TorchDispatchMode):
         by_class = collections.Counter()
         for name, count in self.op_counts.items():
             by_class[op_probes.class_of(name) or (EXACT if name in EXACT_OPS else UNCLASSIFIED)] += count
+        for name, count in self.shape_inference.items():  # per call: these calls computed nothing
+            by_class[op_probes.class_of(name)] -= count
+            by_class[EXACT] += count
+        by_class = +by_class  # drop a class left with no calls
         return {"schema": SCHEMA, "pass": not problems, "problems": problems[:MAX_PROBLEMS],
                 "problem_count": len(problems), "ops_traced": self.ops_traced,
                 "floating_ops": self.floating_ops, "non_f64_ops": self.non_f64_ops,
@@ -358,6 +396,7 @@ class OpDtypeAudit(TorchDispatchMode):
                 "casts": cast_rows[:MAX_ROWS], "cast_sites": len(cast_rows),
                 "writes": {k: dict(v) for k, v in sorted(self.writes.items())},
                 "unclassified": dict(sorted(self.unclassified.items())),
+                "shape_inference": dict(sorted(self.shape_inference.items())),
                 "probes": probes, "probes_run": len(probes), "memory": memory,
                 "matmuls": matmuls, "linear_layers": self.linear_layers,
                 "environment": {"torch": torch.__version__, "threads": torch.get_num_threads(),
