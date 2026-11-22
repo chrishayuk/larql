@@ -277,5 +277,39 @@ name = "walker_demo"
 path = "examples/vindex/walker_demo.rs"
 
 
+# GW-ELEMENT-1 archive (and the Test 3 / GW-COMPRESS binaries it runs)
+[[example]]
+name = "gwbreadcrumb2_seal"
+path = "examples/inference/gwbreadcrumb2_seal.rs"
+
+[[example]]
+name = "gwtemplate_baseline"
+path = "examples/inference/gwtemplate_baseline.rs"
+
+[[example]]
+name = "gwtemplate_xpos_runner"
+path = "examples/inference/gwtemplate_xpos_runner.rs"
+
+[[example]]
+name = "gwtemplate_test3_capture"
+path = "examples/inference/gwtemplate_test3_capture.rs"
+
+[[example]]
+name = "gwtemplate_test3_derived_runner"
+path = "examples/inference/gwtemplate_test3_derived_runner.rs"
+
+[[example]]
+name = "gwcompress_band_runner"
+path = "examples/inference/gwcompress_band_runner.rs"
+
+[[example]]
+name = "gwelem_band_runner"
+path = "examples/inference/gwelem_band_runner.rs"
+
+[[example]]
+name = "gwtemplate_xpos_spotcheck"
+path = "examples/inference/gwtemplate_xpos_spotcheck.rs"
+
+
 [lints]
 workspace = true
