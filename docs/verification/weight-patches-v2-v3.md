@@ -257,11 +257,14 @@ Performed with the base container, the compiled container, the compiled containe
 Nothing the engine wrote is used as an expected value: each recorded value is checked against what is recomputed or
 read from the containers.
 
-1. **Read the inputs.** Both containers must be directories of regular files (a symlink is refused), with the edited
-   and re-derived segments passing the validating reader and every other segment file hashing to its own index entry
-   (v4 §7 step 4). The compiled `index.json` must name a ledger, and the base's must not: a container with a ledger is
-   a compiled edit, the engine refuses to stage an edit on one, and so it is the base of no compile (not judged). The
-   ledger is read as strict JSON (no duplicate keys, no non-finite constants).
+1. **Read the inputs.** Both containers must be directories of regular files, read as
+   [contract-protocol.md](contract-protocol.md#how-a-container-directory-is-read-pack-residency-and-ledger-contracts)
+   states (a symlink is followed only to a regular file inside the container or its Hugging Face snapshot's `blobs/`,
+   and refused otherwise), with the edited and re-derived segments passing the validating reader and every other
+   segment file hashing to its own index entry (v4 §7 step 4). The compiled `index.json` must name a ledger, and the
+   base's must not: a container with a ledger is a compiled edit, the engine refuses to stage an edit on one, and so
+   it is the base of no compile (not judged). The ledger is read as strict JSON (no duplicate keys, no non-finite
+   constants).
 2. **The schema must be the contract's.** `WEIGHT_PATCHES_V2` judges `weight-patches/v2` and nothing else;
    `WEIGHT_PATCHES_V3` judges `weight-patches/v3` and nothing else. Any other schema, including the other contract's
    and v4, is not judged.
@@ -313,7 +316,7 @@ This follows v4 §7a. "Not evaluated" is `could_not_evaluate`; a half that is no
 
 | Defect | Numerical half | Ledger half |
 |---|---|---|
-| A container that cannot be read, a symlink in one, no ledger named, an input nested too deeply to read | not evaluated | not evaluated |
+| A container that cannot be read, a symlink in one that is refused, no ledger named, an input nested too deeply to read | not evaluated | not evaluated |
 | A ledger of another schema than the contract's | not evaluated | not evaluated |
 | An edit `encoding` or a `rounding` rule the contract does not know | not evaluated where it is needed | not evaluated |
 | A ledger that is not JSON, has a duplicate key, or is not an object | not evaluated | violated |

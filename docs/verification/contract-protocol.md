@@ -179,6 +179,39 @@ There's no `source`.
 
 **What it does not establish:** the derived (quantised) representations a compile re-derives, the digest the op carries (which detects accidental damage, not tampering), and the operand's `origin`. It recomputes with exact rational arithmetic, not by running LARQL's interpreter, so agreement between the two is evidence that neither shares the other's mistake; the interpreter's profile definitions are the common specification.
 
+## How a container directory is read: pack, residency and ledger contracts
+
+A container is its files, by relative path and bytes. A regular file is read where it is. A symlink is followed only to
+a regular file whose real path is inside the trusted boundary, and every link the chain passes through must be inside
+it too:
+
+- an ordinary container: the container directory itself, so a link from one of its files to another is followed;
+- a Hugging Face snapshot, the layout `larql pull` leaves (`<cache>/models--<org>--<name>/snapshots/<revision>/`, each
+  file a link to `../../blobs/<sha256>`): the snapshot directory, and that repository's `blobs/`. The layout is
+  decided from the structure, `snapshots/<revision>` with a real directory `blobs/` (not a symlink) beside
+  `snapshots/`, in a repository directory named `models--…`. A directory merely named `snapshots` is an ordinary
+  container. A link into another snapshot, `refs/` or anywhere else in the cache is outside the boundary.
+
+Anything else is `could_not_evaluate`, with the reason:
+
+| Entry | Reason |
+|---|---|
+| A link whose chain leaves the boundary | `<path> is a symlink that escapes its boundary: it resolves to <place>, outside <boundary> (<layout> layout)` |
+| A link to nothing | `<path> is a dangling symlink: its target '<target>' does not exist` |
+| A link to a directory | `<path> is a symlink to a directory (<place>); this contract reads regular files only` |
+| A link to a FIFO, device or socket | `<path> is a symlink to a file that is not a regular file (<place>); this contract reads regular files only` |
+| A link loop | `<path> is a symlink loop: it never resolves to a file` |
+| A FIFO, device or socket itself | `<path> is not a regular file; this contract reads regular files only` |
+
+A file reached through a link is read and hashed at the real path that was checked, exactly as a regular file is: the
+container digest, the file comparisons and every recomputation cover the same bytes as for a regular copy of the
+container, and the answer is the same apart from where the files were read. That is reported for each container as
+`<side>.resolution` (`layout`, `boundaries`, `symlinks_followed`) and as the measurement `<side>: where its files were
+read`, where `<side>` is `container` or, for a ledger contract, `base`.
+
+The patch file of a ledger contract is not a container: it is read only as a regular file, never through a symlink.
+The operator contracts read a container with no symlinks at all (above).
+
 ## Pack contracts: `larql-verify-pack/1`
 
 The same arrangement, for whether a container's re-derived (quantised) representations are what their declared derivation
