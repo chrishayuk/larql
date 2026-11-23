@@ -273,6 +273,39 @@ def _fetch_via_sparql(pid: str, label: str, limit: int, max_retries: int) -> lis
 
 def main() -> None:
     """Fetch Wikidata triples for top properties and save to JSON."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Fetch Wikidata example triples (API/SPARQL, or fast local Ladybug path)."
+    )
+    parser.add_argument(
+        "--from-lbdb",
+        default=None,
+        help="Read pairs from a local wikidata.lbdb via ladybug instead of "
+        "the network API/SPARQL (falls back per-property on empty).",
+    )
+    parser.add_argument(
+        "--export-lbdb",
+        default=None,
+        help="Also export the fetched relations into a new small .lbdb file.",
+    )
+    parser.add_argument("--limit", type=int, default=30, help="Pairs per property.")
+    args = parser.parse_args()
+
+    lbdb_conn = None
+    lbdb_counts: dict[int, int] = {}
+    if args.from_lbdb is not None:
+        import sys as _sys
+
+        _sys.path.insert(0, str(Path(__file__).parent))
+        import wikidata_lbdb
+
+        source = wikidata_lbdb.find_source_db(args.from_lbdb)
+        print(f"Using local Ladybug source: {source}")
+        lbdb_conn = wikidata_lbdb.connect_readonly(source)
+        pids = [int(pid[1:]) for pid, _ in TOP_PROPERTIES]
+        lbdb_counts = wikidata_lbdb.property_counts(lbdb_conn, pids)
+
     print(f"Fetching triples for {len(TOP_PROPERTIES)} properties...")
 
     output_dir = Path(__file__).parent.parent / "data"
@@ -295,7 +328,25 @@ def main() -> None:
             print(f"  {pid:6s} {label:<30s} (cached: {len(all_triples[label]['pairs'])} pairs)")
             continue
 
-        pairs = fetch_triples_for_property(pid, label, limit=30)
+        pairs: list = []
+        used_network = lbdb_conn is None
+        if lbdb_conn is not None:
+            import wikidata_lbdb
+
+            pid_num = int(pid[1:])
+            lbdb_pairs = wikidata_lbdb.fetch_pairs(
+                lbdb_conn, pid_num, args.limit, lbdb_counts.get(pid_num)
+            )
+            pairs = [(s, o) for s, o in lbdb_pairs]
+            if pairs:
+                print(f"  {pid:6s} {label:<30s} {len(pairs)} pairs (lbdb)")
+            else:
+                # No entity-entity edges locally (dates, literals) — fall back.
+                print(f"  {pid:6s} {label:<30s} (lbdb empty, falling back to API/SPARQL)")
+                pairs = fetch_triples_for_property(pid, label, limit=args.limit)
+                used_network = True
+        else:
+            pairs = fetch_triples_for_property(pid, label, limit=args.limit)
         if pairs:
             all_triples[label] = {
                 "pid": pid,
@@ -309,8 +360,10 @@ def main() -> None:
         else:
             print(f"  {pid:6s} {label:<30s} (no results)")
 
-        # Rate limit — be gentle with the endpoint
-        time.sleep(2)
+        # Rate limit — be gentle with the endpoint (network path only;
+        # the local Ladybug path needs no throttling).
+        if used_network:
+            time.sleep(2)
 
     # Final save
     with open(output_path, "w") as f:
@@ -325,6 +378,20 @@ def main() -> None:
         pairs = data["pairs"][:3]
         pair_str = ", ".join(f"{s}→{o}" for s, o in pairs)
         print(f"  {label}: {pair_str}")
+
+    if args.export_lbdb is not None:
+        import wikidata_lbdb
+
+        pid_to_relation = {int(pid[1:]): label for pid, label in TOP_PROPERTIES}
+        if lbdb_conn is None:
+            source = wikidata_lbdb.find_source_db(args.from_lbdb)
+            lbdb_conn = wikidata_lbdb.connect_readonly(source)
+        stats = wikidata_lbdb.export_subset(
+            lbdb_conn, args.export_lbdb, pid_to_relation,
+            max_per_relation=args.limit, overwrite=True,
+        )
+        exported = sum(1 for n in stats.values() if n > 0)
+        print(f"\nExported {exported}/{len(stats)} relations to {args.export_lbdb}")
 
 
 if __name__ == "__main__":
