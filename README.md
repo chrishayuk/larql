@@ -34,6 +34,8 @@ sudo mv larql-x86_64-unknown-linux-gnu/larql* /usr/local/bin/
 Windows: download `larql-x86_64-pc-windows-msvc.zip` from the
 [latest release](https://github.com/chrishayuk/larql/releases/latest).
 Each archive contains `larql` and `larql-server` (used by `larql serve`).
+GPU execution uses Metal on Apple Silicon. Linux and Windows builds run on the
+CPU, and there is no CUDA backend.
 Then run `larql doctor` to check the install, hardware, backends, caches and
 Hugging Face access before the quick start.
 
@@ -95,16 +97,34 @@ take the same model name:
 
 ```console
 $ larql lql 'USE "Qwen3-0.6B"; INFER "The capital of France is" TOP 3;'
-   1.  Paris               (74.36%)  [id 12095]
-   2.  the                 (2.18%)  [id 279]
-   3.  in                  (2.07%)  [id 304]
-
-$ larql vindex3 observe Qwen3-0.6B --backend production \
-    --prompt "The capital of France is" --record run.jsonl
+   1.  Paris               (65.71%)  [id 12095]
+   2.  located             (2.78%)  [id 7407]
+   3.  the                 (2.35%)  [id 279]
 ```
 
-`observe` writes a record of every layer's contribution while the model runs;
-`larql repl` opens an interactive LQL shell. `larql lql 'HELP;'` prints every
+**At which layer does the model settle on "Paris"?** `observe` runs the prompt
+and records what every layer writes. `--lens-tokens` adds a logit lens: at each
+layer it reads the state through the model's own final norm and output head, and
+reports where a token ranks among the 151,936 in the vocabulary:
+
+```console
+$ larql vindex3 observe Qwen3-0.6B --prompt "The capital of France is" \
+    --lens-tokens 12095 --record run.jsonl
+  lens: 140 head passes; position 4 by depth (token: logp rank; then top-1):
+    L  0 Ffn  12095 " Paris": -18.081 #11876  top 1172 " only"
+  ...
+    L 19 Ffn  12095 " Paris": -15.878 #1049  top 2130 "____"
+    L 20 Ffn  12095 " Paris": -10.384 #43  top 2130 "____"
+    L 21 Ffn  12095 " Paris": -4.359 #9  top 2130 "____"
+    L 22 Ffn  12095 " Paris": -0.596 #1  top 12095 " Paris"
+  ...
+    L 27 Ffn  12095 " Paris": -0.420 #1  top 12095 " Paris"
+```
+
+Through the first twenty of its 28 layers, "Paris" ranks below 1,000. It reaches
+the top over layers 20 to 22. `run.jsonl` holds every layer's write with its
+provenance and a verified receipt, ready to analyse or to load into the
+[Observatory](observatory/README.md). `larql repl` opens an interactive LQL shell. `larql lql 'HELP;'` prints every
 LQL statement with its syntax, and `larql lql --help` says how several
 statements share one session and what the exit status means.
 
@@ -139,6 +159,23 @@ Removed patch #1
 Removing the patch restores the original predictions exactly. The four-weight edit
 is only an illustration of the mechanism. It isn't meant to improve anything.
 
+**A real edit, with its evidence.** Asked for a raw JSON object with "no code
+fence", Gemma 3 4B IT wraps it in a ```` ```json ```` fence anyway. In
+[examples/gemma-json-neuron](examples/gemma-json-neuron/README.md), an AI agent
+working through LQL repurposed one feed-forward neuron (7,676 stored weights, no
+training) so the model answers with raw JSON when asked to, and still fences it
+when a code block is requested. It was then scored on 48 prompts that were sealed
+before the run:
+
+| Sealed prompts | Unedited | With the patch |
+| --- | --- | --- |
+| Asking for raw JSON (24) | 3 pass | 16 pass |
+| Asking for fenced JSON or a code block (24) | | every reply byte-identical to the unedited model |
+
+Compiled and exported to GGUF, llama.cpp produces the same tokens as LARQL on 53
+of the 54 prompts. The example's README has the patch, the commands to reproduce
+it, and its limits. It doesn't fix every prompt: 8 of the 24 still fail.
+
 Then make it permanent: compile the patch into a new container and export that
 as GGUF for llama.cpp or Ollama.
 
@@ -161,7 +198,7 @@ have the details.
 | Query a model with LQL | [LQL guide](docs/lql-guide.md) |
 | See what happens inside during a run | [Observation and intervention](docs/vindex3/observation-and-intervention.md) |
 | Shrink a model (4-bit etc.) and measure the cost | [Representation](docs/vindex3/representation.md) |
-| Edit a model's weights, live, and export the result to GGUF | [Quick start, step 4](#quick-start) · [LQL guide](docs/lql-guide.md) |
+| Edit a model's weights, live, and export the result to GGUF | [Quick start, step 4](#quick-start) · [worked example](examples/gemma-json-neuron/README.md) · [LQL guide](docs/lql-guide.md) |
 | Edit what a model knows | [LQL guide — knowledge edits](docs/lql-guide.md) (experimental) |
 | Use it from Python | [Python bindings](crates/larql-python/README.md) |
 | Understand the format | [What is VINDEX3?](docs/vindex3/what-is-vindex3.md) · [vindex3.org](https://vindex3.org) |
