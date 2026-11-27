@@ -23,7 +23,9 @@
 //! multi-position prefill the caller loops over positions, passing
 //! `f32_in_off` / `out_off` in bytes.
 
-use larql_models::quant::ggml::K_QUANT_BLOCK_ELEMS;
+use larql_models::quant::ggml::{
+    K_QUANT_BLOCK_ELEMS, LEGACY_BLOCK_ELEMS, Q4_0_BLOCK_BYTES, Q4_0_BLOCK_ELEMS,
+};
 use metal::{Buffer, ComputeCommandEncoderRef, ComputePipelineState, MTLSize};
 use std::ffi::c_void;
 
@@ -216,6 +218,18 @@ pub fn encode(
         larql_compute::QuantFormat::Q4_0 => {
             // Q4_0 matvec expects Q8 input + Q8 scales (per-32 f16-scaled
             // blocks). Geometry travels with the kernel handle.
+            //
+            // The Q8 operand must be the K-wide vector this matvec
+            // multiplies. Binding a narrower one is not caught by Metal:
+            // the kernel reads past the buffer into whatever is allocated
+            // next to it, so the result depends on the allocator's state
+            // and the failure is intermittent. That is how the full
+            // pipeline's down projection came to read the hidden-wide Q8 of
+            // the FFN input instead of the inter-wide activation. Check the
+            // extents here so a wrong operand fails every time.
+            assert_q4_0_operands(
+                w_buf, q8_in, q8_in_off, q8s_in, q8s_in_off, num_rows, hidden,
+            );
             let kernel = pipes.q4_matvec;
             let num_tgs = (num_rows as u64).div_ceil(kernel.rows_per_tg);
             enc.set_compute_pipeline_state(&kernel.state);
@@ -300,6 +314,69 @@ pub fn encode(
             );
         }
     }
+}
+
+/// Panic unless a Q4_0 matvec's buffers cover the `N x K` extent it reads.
+///
+/// The kernel reads `K` int8s and `K / 32` f32 scales from the Q8 operand
+/// and `N * K / 32` 18-byte blocks from the weights. A short buffer is read
+/// past its end silently. Pool buffers are allocated at their exact size,
+/// so `length()` is the extent the caller meant.
+fn assert_q4_0_operands(
+    w_buf: &Buffer,
+    q8_in: &Buffer,
+    q8_in_off: u64,
+    q8s_in: &Buffer,
+    q8s_in_off: u64,
+    num_rows: usize,
+    k: usize,
+) {
+    let blocks = k.div_ceil(LEGACY_BLOCK_ELEMS) as u64;
+    assert!(
+        q8_in.length() >= q8_in_off + k as u64,
+        "Q4_0 matvec: Q8 input holds {} bytes past offset {q8_in_off}, but K={k}. \
+         The operand is not the vector this projection multiplies.",
+        q8_in.length().saturating_sub(q8_in_off)
+    );
+    assert!(
+        q8s_in.length() >= q8s_in_off + blocks * 4,
+        "Q4_0 matvec: Q8 scales hold {} bytes past offset {q8s_in_off}, but K={k} \
+         needs {blocks} scales.",
+        q8s_in.length().saturating_sub(q8s_in_off)
+    );
+    let w_bytes = (num_rows * k.div_ceil(Q4_0_BLOCK_ELEMS) * Q4_0_BLOCK_BYTES) as u64;
+    assert!(
+        w_buf.length() >= w_bytes,
+        "Q4_0 matvec: weights hold {} bytes, but N={num_rows} x K={k} needs {w_bytes}.",
+        w_buf.length()
+    );
+}
+
+/// Quantise `dim` f32s at `input[in_off..]` to Q8 (int8 + one f32 scale
+/// per 32 elements), the operand form the Q4_0 / Q8_0 matvecs take.
+#[allow(clippy::too_many_arguments)]
+pub fn encode_q8_quant(
+    enc: &ComputeCommandEncoderRef,
+    q8_quant_pipeline: &ComputePipelineState,
+    input: &Buffer,
+    in_off: u64,
+    q8_out: &Buffer,
+    q8_off: u64,
+    q8s_out: &Buffer,
+    q8s_off: u64,
+    dim: usize,
+) {
+    let dim_val = dim as u32;
+    let blocks = dim.div_ceil(LEGACY_BLOCK_ELEMS) as u64;
+    enc.set_compute_pipeline_state(q8_quant_pipeline);
+    enc.set_buffer(0, Some(input), in_off);
+    enc.set_buffer(1, Some(q8_out), q8_off);
+    enc.set_buffer(2, Some(q8s_out), q8s_off);
+    enc.set_bytes(3, 4, &dim_val as *const u32 as *const c_void);
+    enc.dispatch_threads(
+        MTLSize::new(blocks, 1, 1),
+        MTLSize::new(crate::kernels::DISPATCH_TG_MAX_THREADS.min(blocks), 1, 1),
+    );
 }
 
 #[cfg(test)]

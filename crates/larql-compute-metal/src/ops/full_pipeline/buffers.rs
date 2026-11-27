@@ -88,6 +88,11 @@ pub(super) struct LayerBuffers {
     pub q8s: Vec<Buffer>,
     pub ffn_q8: Vec<Buffer>,
     pub ffn_q8s: Vec<Buffer>,
+    /// Q8 of the FFN *activation* (`inter` wide), the operand of a Q4_0 /
+    /// Q8_0 down projection. Distinct from `ffn_q8`, which is `hidden`
+    /// wide. A 4-byte stub for layers whose down format takes f32.
+    pub ffn_down_q8: Vec<Buffer>,
+    pub ffn_down_q8s: Vec<Buffer>,
     // ── Geometry constants used to compute byte offsets in the inner loop ──
     pub q8_row_max: usize,
     pub q8s_row_bytes: usize,
@@ -188,6 +193,8 @@ impl LayerBuffers {
         let mut q8s = Vec::with_capacity(num_layers);
         let mut ffn_q8 = Vec::with_capacity(num_layers);
         let mut ffn_q8s = Vec::with_capacity(num_layers);
+        let mut ffn_down_q8 = Vec::with_capacity(num_layers);
+        let mut ffn_down_q8s = Vec::with_capacity(num_layers);
         for layer in layers.iter() {
             let lq = layer.num_q_heads * layer.head_dim;
             let lkv = layer.num_kv_heads * layer.head_dim;
@@ -230,6 +237,14 @@ impl LayerBuffers {
             q8s.push(bufs.output((seq_len * q8s_row_bytes) as u64));
             ffn_q8.push(bufs.output((seq_len * hidden) as u64));
             ffn_q8s.push(bufs.output((seq_len * hidden.div_ceil(LEGACY_BLOCK_ELEMS) * 4) as u64));
+            if crate::stages::ffn::takes_q8_operand(layer.down.format()) {
+                ffn_down_q8.push(bufs.output((seq_len * inter) as u64));
+                ffn_down_q8s
+                    .push(bufs.output((seq_len * inter.div_ceil(LEGACY_BLOCK_ELEMS) * 4) as u64));
+            } else {
+                ffn_down_q8.push(bufs.output(4));
+                ffn_down_q8s.push(bufs.output(4));
+            }
         }
 
         Self {
@@ -268,6 +283,8 @@ impl LayerBuffers {
             q8s,
             ffn_q8,
             ffn_q8s,
+            ffn_down_q8,
+            ffn_down_q8s,
             q8_row_max,
             q8s_row_bytes,
         }
