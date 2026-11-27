@@ -21,6 +21,7 @@ use super::config_io::{
 // fields in `config_io::require_config_fields`.
 use super::registry::{find_architecture, ConfigDefaults, IntermediateSize};
 
+mod attention_layers;
 mod keys;
 mod rope_scaling;
 
@@ -56,7 +57,13 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     // (test ergonomics); the validator catches the zero downstream
     // rather than letting a magic-number default impersonate a real
     // topology and panic deep inside extract.
-    let num_layers = topology_field(config, text_config, CONFIG_KEY_NUM_HIDDEN_LAYERS_ALIASES);
+    let family_field =
+        |key: Option<&str>| key.map_or(0, |k| topology_field(config, text_config, &[k]));
+    let num_layers = match topology_field(config, text_config, CONFIG_KEY_NUM_HIDDEN_LAYERS_ALIASES)
+    {
+        0 => family_field(defaults.layer_count_key),
+        n => n,
+    };
     let hidden_size = topology_field(config, text_config, CONFIG_KEY_HIDDEN_SIZE_ALIASES);
     let mut intermediate_size =
         topology_field(config, text_config, CONFIG_KEY_INTERMEDIATE_SIZE_ALIASES);
@@ -116,6 +123,11 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         text_config,
         CONFIG_KEY_NUM_ATTENTION_HEADS_ALIASES,
     )
+    .or_else(|| {
+        defaults
+            .head_count_key
+            .and_then(|k| super::config_io::read_aliased_u64(config, text_config, &[k]))
+    })
     .map(|v| v as usize)
     .unwrap_or(if attention_free_ssm {
         0
@@ -191,7 +203,11 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         .and_then(|sa| sa["rope_theta"].as_f64())
         .or_else(|| text_config["rope_local_base_freq"].as_f64());
     let vocab_size = text_config["vocab_size"].as_u64().map(|v| v as usize);
-    let sliding_window = text_config["sliding_window"].as_u64().map(|v| v as usize);
+    // GPT-Neo spells the trailing window `window_size`.
+    let sliding_window = text_config["sliding_window"]
+        .as_u64()
+        .or_else(|| text_config["window_size"].as_u64())
+        .map(|v| v as usize);
     // The window's ENABLE flag and its layer bound, read here so the
     // effective policy can be resolved in one place. A checkpoint that
     // declares a window and then disables it means what it says: Qwen2.5
@@ -393,13 +409,21 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         .as_u64()
         .map(|v| v as usize);
     // Explicit per-layer type array (Gemma 4: ["sliding_attention", "full_attention", ...])
-    let layer_types = text_config.get("layer_types").and_then(|lt| {
-        lt.as_array().map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
+    let layer_types = text_config
+        .get("layer_types")
+        .and_then(|lt| {
+            lt.as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
         })
-    });
+        // GPT-Neo's spelling of the same per-layer fact, in its own
+        // vocabulary (`global` / `local`). `attention_types` is the
+        // authority — `GPTNeoConfig` derives `attention_layers` from it —
+        // so it is read first and `attention_layers` only when it is
+        // absent; the planner holds the two to each other.
+        .or_else(|| attention_layers::gpt_neo_layer_types(text_config));
     // K=V sharing flag
     let attention_k_eq_v = text_config["attention_k_eq_v"].as_bool().unwrap_or(false);
     // KV sharing across layers

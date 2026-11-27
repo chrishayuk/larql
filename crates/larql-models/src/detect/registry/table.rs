@@ -13,6 +13,7 @@ use crate::architectures::gemma_gguf::{gemma4_gguf_config, GEMMA_GGUF_KEY_REPLAC
 use crate::architectures::glm5::GlmMoeDsaArch;
 use crate::architectures::glm5_next::Glm5NextArch;
 use crate::architectures::gpt2::{Gpt2Arch, GPT2_LAYER_BANDS};
+use crate::architectures::gpt_neo::GptNeoArch;
 use crate::architectures::gpt_oss::GptOssArch;
 use crate::architectures::granite::GraniteArch;
 use crate::architectures::kimi::KimiLinearArch;
@@ -58,6 +59,8 @@ const GEMMA1_CONFIG_DEFAULTS: ConfigDefaults = ConfigDefaults {
     num_attention_heads: Some(16),
     num_key_value_heads: Some(16),
     intermediate_size: IntermediateSize::Required,
+    layer_count_key: None,
+    head_count_key: None,
 };
 
 /// `transformers` `Gemma2Config` class defaults.
@@ -67,6 +70,8 @@ const GEMMA2_CONFIG_DEFAULTS: ConfigDefaults = ConfigDefaults {
     num_attention_heads: Some(8),
     num_key_value_heads: Some(4),
     intermediate_size: IntermediateSize::Required,
+    layer_count_key: None,
+    head_count_key: None,
 };
 
 /// `transformers` `Gemma3TextConfig` class defaults; Gemma 4 inherits them.
@@ -274,6 +279,26 @@ pub static ARCHITECTURE_REGISTRY: &[ArchitectureEntry] = &[
         },
         gguf: GgufTranslation::NONE,
         layer_bands: GPT2_LAYER_BANDS,
+        chat_format: None,
+    },
+    ArchitectureEntry {
+        model_type: "gpt_neo",
+        patterns: &[ModelTypeMatch::Exact("gpt_neo")],
+        attention_kind: AttentionKind::Standard,
+        quant_formats: STANDARD_QUANT_FORMATS,
+        components: &[],
+        construct: |c, _| Box::new(GptNeoArch::from_config(c)),
+        // `GPTNeoConfig`: `intermediate_size: None` means `4 * hidden_size`
+        // (`GPTNeoMLP` is built at that width), and the topology is spelled
+        // `num_layers` / `num_heads`.
+        config_defaults: ConfigDefaults {
+            intermediate_size: IntermediateSize::HiddenMultiple(GPT2_FFN_HIDDEN_MULTIPLE),
+            layer_count_key: Some("num_layers"),
+            head_count_key: Some("num_heads"),
+            ..ConfigDefaults::STANDARD
+        },
+        gguf: GgufTranslation::NONE,
+        layer_bands: &[],
         chat_format: None,
     },
     ArchitectureEntry {

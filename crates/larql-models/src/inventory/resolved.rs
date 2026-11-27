@@ -247,6 +247,7 @@ pub fn resolve_with_tensor_evidence(
         attention_sinks: arch.attention_sinks(),
         attention_bias: arch.attention_bias(),
         qkv_bias: arch.qkv_bias(),
+        attention_output_bias: arch.attention_output_bias(),
         norm_bias: arch.norm_bias(),
         ffn_bias: arch.ffn_bias(),
         input_position: arch.input_position_encoding(),

@@ -62,6 +62,8 @@ mod gated_delta_parity;
 mod gated_delta_tiny;
 mod gpt2;
 mod gpt2_real;
+mod gpt_neo;
+mod gpt_neo_real;
 mod head_replay;
 mod history_range;
 mod hybrid_traversal;

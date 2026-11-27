@@ -196,7 +196,7 @@ pub(super) fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
             OperandRole::AttnVBias,
         ]);
     }
-    if ops.attention_bias {
+    if ops.attention_bias || ops.output_bias {
         roles.push(OperandRole::AttnOBias);
     }
     if ops.sinks {

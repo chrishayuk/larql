@@ -341,9 +341,9 @@ pub struct SinkCall<'a> {
 /// `qkv_bias` — closure guarantees each pairing with its declaration.
 /// Each is one value per output row of its projection.
 pub struct BiasCall<'a> {
-    pub q: &'a [f32],
-    pub k: &'a [f32],
-    pub v: &'a [f32],
+    pub q: Option<&'a [f32]>,
+    pub k: Option<&'a [f32]>,
+    pub v: Option<&'a [f32]>,
     pub o: Option<&'a [f32]>,
 }
 

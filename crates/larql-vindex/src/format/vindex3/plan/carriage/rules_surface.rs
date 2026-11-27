@@ -468,13 +468,43 @@ pub(super) const SURFACE_RULES: &[CarriageRule] = &[
         probe: Some(probe_false),
     },
     CarriageRule {
+        leaf: "attention_types",
+        reaches: Carriage::Lowered,
+        // GPT-Neo's run-length interleave, expanded exactly as the config
+        // class expands it and held to the built per-layer spans.
+        site: "Component.attention[].span → AttentionOp.span (global = full, local = sliding)",
+        probe: Some(probe_gpt_neo_attention_types),
+    },
+    CarriageRule {
+        leaf: "attention_layers",
+        reaches: Carriage::Lowered,
+        // The expansion `GPTNeoConfig` serialises beside the run-length
+        // form; it must agree with the spans `attention_types` built.
+        site: "Component.attention[].span → AttentionOp.span (global = full, local = sliding)",
+        probe: Some(probe_gpt_neo_attention_layers),
+    },
+    CarriageRule {
+        leaf: "window_size",
+        reaches: Carriage::Lowered,
+        // GPT-Neo's spelling of `sliding_window`, read into the same field.
+        site: "Component.attention[].window → AttentionOp.window",
+        probe: Some(probe_sliding_window),
+    },
+    CarriageRule {
         leaf: "max_position_embeddings",
         reaches: Carriage::Parsed,
         // A serving/KV-allocation bound, not a forward-pass semantic: no
         // op reads it, and two checkpoints differing only here compute
         // identical logits for any prompt both can hold. Recorded so the
         // absence is a judgement on the report rather than a silence.
-        site: "no schema field — a KV-allocation bound, read by no generic op",
+        //
+        // One exception, carried through a different fact rather than
+        // this rule: a family with a learned absolute position table
+        // (GPT-Neo) sizes `head.input_position` from it, and closure holds
+        // the stored table to that row count — so the bound is checked
+        // where it changes the forward, and a position past it refuses.
+        site: "no schema field — a KV-allocation bound, read by no generic op (a learned position \
+               table's rows are held to it by closure via head.input_position)",
         probe: None,
     },
 ];

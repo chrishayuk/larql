@@ -137,6 +137,7 @@ pub fn surface_from_nested(
             attention_bias: nested.tower.attention_bias,
             // Vision towers declare only the all-four form.
             qkv_bias: None,
+            output_bias: None,
         }),
         ffn: Some(FfnSurface {
             // A perception tower's width is required above (its absence

@@ -102,6 +102,7 @@ pub(super) fn check_layer_closure(c: LayerClosureInputs<'_>, defects: &mut Vec<C
                 ),
                 attention_bias: attn.and_then(|a| a.attention_bias) == Some(true),
                 qkv_bias: attn.and_then(|a| a.qkv_bias) == Some(true),
+                output_bias: attn.and_then(|a| a.output_bias) == Some(true),
                 norm_bias: surface.norm.bias == Some(true),
                 ffn_bias: surface.ffn.as_ref().and_then(|f| f.bias) == Some(true),
                 sinks: attn.is_some_and(|a| a.sinks.is_some()),

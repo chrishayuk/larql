@@ -202,6 +202,14 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     "scale_attn_by_inverse_layer_idx",
     "reorder_and_upcast_attn",
     "add_cross_attention",
+    // GPT-Neo's per-layer interleave in both of its spellings — the
+    // run-length `attention_types` the config class reads and the
+    // `attention_layers` it derives and serialises — and its trailing
+    // window. They decide which layers are local and how far back a
+    // local layer sees.
+    "attention_types",
+    "attention_layers",
+    "window_size",
     // Per-layer attention geometry and behaviour (A-9/A-11 census,
     // 2026-08-18: these were `consumed` but absent from every registry
     // here, so they silently graded `representable` instead of blocking —
@@ -385,6 +393,9 @@ pub const TENSOR_SEMANTIC_KEYS: &[&str] = &[
     "n_layer",
     "n_inner",
     "n_head",
+    // GPT-Neo's spelling of `num_hidden_layers` (`num_heads` is already
+    // classified below).
+    "num_layers",
     // Channel count of the patch embedder's input. Classified here beside
     // the other patch geometry, with its Qwen3-VL spelling.
     "num_channels",

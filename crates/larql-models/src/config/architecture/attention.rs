@@ -213,6 +213,15 @@ pub trait Attention: Position {
         self.config().attention_bias
     }
 
+    /// Whether the output projection — and only it — carries a bias
+    /// (GPT-Neo: `q/k/v_proj` are `bias=False`, `out_proj` is biased). No
+    /// config key states it; `None` = unjudged, and an output-bias
+    /// operand shipped under it fails VINDEX3 operand closure unless
+    /// `attention_bias` covers it.
+    fn attention_output_bias(&self) -> Option<bool> {
+        None
+    }
+
     /// Whether the Q/K/V projections — not the output projection — carry
     /// biases. `None` = neither the checkpoint nor the family says; bias
     /// operands shipped under `None` fail operand closure.

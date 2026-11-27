@@ -49,6 +49,7 @@ pub mod encode;
 /// the frozen fixture geometry the executor's parity gates certify.
 pub mod fixtures;
 pub mod fixtures_gpt2;
+pub mod fixtures_gpt_neo;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod fixtures_hyper_connection;
 pub mod fixtures_kimi;

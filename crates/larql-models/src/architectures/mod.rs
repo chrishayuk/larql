@@ -16,6 +16,7 @@ pub mod generic;
 pub mod glm5;
 pub mod glm5_next;
 pub mod gpt2;
+pub mod gpt_neo;
 pub mod gpt_oss;
 pub mod granite;
 pub mod kimi;

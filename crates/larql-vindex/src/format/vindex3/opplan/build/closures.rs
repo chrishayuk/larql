@@ -227,6 +227,8 @@ pub(super) struct LayerOps {
     pub(super) attention_bias: bool,
     /// Q/K/V biased, output not (`qkv_bias`).
     pub(super) qkv_bias: bool,
+    /// The output projection biased, Q/K/V not (`output_bias`).
+    pub(super) output_bias: bool,
     /// Every trunk norm weight carries a bias (`norm.bias`).
     pub(super) norm_bias: bool,
     /// The dense FFN's up/down projections carry biases (`ffn.bias`).

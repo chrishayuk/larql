@@ -409,6 +409,10 @@ pub struct ResolvedExecution {
     /// Whether every weighted norm site carries an additive bias
     /// (`ModelArchitecture::norm_bias`). `None` = unjudged. Defaults for
     /// inventories written before it was recorded.
+    /// Whether the output projection alone carries a bias
+    /// (`ModelArchitecture::attention_output_bias`, GPT-Neo's form).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_output_bias: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub norm_bias: Option<bool>,
     /// Whether the dense FFN's up/down projections carry biases

@@ -143,7 +143,13 @@ pub(super) const ROLE_TABLE: &[(&str, OperandRole)] = &[
     ("attn.c_proj.weight", OperandRole::AttnO),
     ("attn.c_proj.bias", OperandRole::AttnOBias),
     // GPT-Neo's attention (`GPTNeoSelfAttention`, under `attn.attention`):
-    // separate unbiased Q/K/V and a biased output projection.
+    // separate unbiased Q/K/V and a biased output projection. The Q/K/V
+    // bias spellings are classified so a checkpoint shipping one is
+    // refused for the op it implies (GPT-Neo declares `output_bias`),
+    // not as an unknown tensor.
+    ("attn.attention.q_proj.bias", OperandRole::AttnQBias),
+    ("attn.attention.k_proj.bias", OperandRole::AttnKBias),
+    ("attn.attention.v_proj.bias", OperandRole::AttnVBias),
     ("attn.attention.q_proj.weight", OperandRole::AttnQ),
     ("attn.attention.k_proj.weight", OperandRole::AttnK),
     ("attn.attention.v_proj.weight", OperandRole::AttnV),

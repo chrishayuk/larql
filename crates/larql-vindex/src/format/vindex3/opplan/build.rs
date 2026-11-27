@@ -387,6 +387,16 @@ pub fn plan_component_ops(
             f.moe
                 .is_none_or(|m| m.hybrid || m.dense_prefix_layers.unwrap_or(0) > 0)
         });
+    if attn.is_some_and(|a| {
+        a.output_bias == Some(true) && (a.attention_bias == Some(true) || a.qkv_bias == Some(true))
+    }) {
+        defects.push(ClosureDefect::ContradictoryDeclaration {
+            component: component.id.clone(),
+            detail: "`output_bias` (output projection alone biased) is declared beside \
+                     `attention_bias` or `qkv_bias`, which bias Q/K/V"
+                .to_string(),
+        });
+    }
     if attn.is_some_and(|a| a.attention_bias == Some(true) && a.qkv_bias == Some(true)) {
         defects.push(ClosureDefect::ContradictoryDeclaration {
             component: component.id.clone(),

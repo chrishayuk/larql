@@ -174,6 +174,13 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "scale_attn_by_inverse_layer_idx",
     "reorder_and_upcast_attn",
     "add_cross_attention",
+    // GPT-Neo's lineage: its layer count and head count (family-scoped
+    // spellings, `ConfigDefaults::{layer,head}_count_key`), its per-layer
+    // interleave in both spellings, and its trailing window.
+    "num_layers",
+    "attention_types",
+    "attention_layers",
+    "window_size",
     // `rope_scaling` itself, distinct from the leaves inside it: the parser
     // calls `text_config.get("rope_scaling")` unconditionally (below,
     // `rope_type` etc.), so a checkpoint that declares the key `null` — no

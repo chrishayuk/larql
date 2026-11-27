@@ -532,6 +532,11 @@ while shipping four norms per layer):
   `NormOp.bias`, `FfnOp.{up,down}_bias`; the reference and production
   backends add them (the up bias before the activation), the device and
   Metal-lowered backends refuse them by name.
+- **Attention biases come in three declared forms**: all four
+  projections (`attention_bias`, GPT-OSS and GPT-2), Q/K/V only
+  (`qkv_bias`, Qwen2), and the output projection only (`output_bias`,
+  GPT-Neo). Each is a surface declaration closure holds the shipped
+  operands to; declaring two forms is a contradiction, never a choice.
 - **The learned input position table is its own object**
   (`ObjectKind::PositionEmbedding`, GPT-2's `wpe`), bound as
   `EmbeddingOp.position` and added after the embedding's scale and norm,

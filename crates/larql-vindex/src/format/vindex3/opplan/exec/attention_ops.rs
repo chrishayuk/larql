@@ -58,18 +58,25 @@ impl AttentionOperands {
             biases: match (&op.q_bias, &op.k_bias, &op.v_bias, &op.o_bias) {
                 // All four (`attention_bias`) or Q/K/V alone (`qkv_bias`).
                 (Some(q), Some(k), Some(v), o) => Some(AttentionBiases {
-                    q: store.load(q)?,
-                    k: store.load(k)?,
-                    v: store.load(v)?,
+                    q: Some(store.load(q)?),
+                    k: Some(store.load(k)?),
+                    v: Some(store.load(v)?),
                     o: o.as_ref().map(|o| store.load(o)).transpose()?,
                 }),
+                // The output projection alone (`output_bias`, GPT-Neo).
+                (None, None, None, Some(o)) => Some(AttentionBiases {
+                    q: None,
+                    k: None,
+                    v: None,
+                    o: Some(store.load(o)?),
+                }),
                 (None, None, None, None) => None,
-                // Closure emits Q/K/V together, with or without O; any
-                // other set is a plan the closure never produced.
+                // Closure emits Q/K/V together, with or without O, or O
+                // alone; any other set is a plan the closure never produced.
                 _ => {
                     return Err(VindexError::Parse(
                         "attention op carries a partial bias set; operand closure emits Q/K/V \
-                         together, with the output bias or without it"
+                         together (with the output bias or without it) or the output bias alone"
                             .to_string(),
                     ))
                 }
@@ -160,9 +167,9 @@ impl AttentionOperands {
             _ => None,
         };
         let bias = self.biases.as_ref().map(|b| BiasCall {
-            q: b.q.as_slice(),
-            k: b.k.as_slice(),
-            v: b.v.as_slice(),
+            q: b.q.as_deref(),
+            k: b.k.as_deref(),
+            v: b.v.as_deref(),
             o: b.o.as_deref(),
         });
         let sinks = match (&op.sinks, &self.sinks) {

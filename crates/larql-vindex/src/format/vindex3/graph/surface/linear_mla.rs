@@ -267,6 +267,7 @@ pub fn surface_from_resolved(
             sinks: execution.attention_sinks,
             attention_bias: execution.attention_bias,
             qkv_bias: execution.qkv_bias,
+            output_bias: execution.attention_output_bias,
         }),
         ffn: has_ffn.then(|| FfnSurface {
             intermediate_size: dense_ffn_width,

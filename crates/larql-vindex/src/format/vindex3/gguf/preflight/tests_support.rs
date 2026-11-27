@@ -34,6 +34,7 @@ pub fn qwen_shaped_surface() -> ExecutionSurface {
             sinks: None,
             attention_bias: Some(false),
             qkv_bias: None,
+            output_bias: None,
         }),
         ffn: Some(FfnSurface {
             intermediate_size: Some(17408),

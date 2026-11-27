@@ -540,9 +540,9 @@ pub fn set_multi_position_ffn(on: bool) {
 /// the output bias is present under `attention_bias` and absent under
 /// `qkv_bias`, whose output projection is unbiased.
 pub(in super::super) struct AttentionBiases {
-    pub(super) q: Vec<f32>,
-    pub(super) k: Vec<f32>,
-    pub(super) v: Vec<f32>,
+    pub(super) q: Option<Vec<f32>>,
+    pub(super) k: Option<Vec<f32>>,
+    pub(super) v: Option<Vec<f32>>,
     pub(super) o: Option<Vec<f32>>,
 }
 

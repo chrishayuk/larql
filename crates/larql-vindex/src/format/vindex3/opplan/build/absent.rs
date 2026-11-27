@@ -103,8 +103,8 @@ pub(super) fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static st
         {
             Some("attention projection bias (declared `attention_bias` or `qkv_bias`)")
         }
-        OperandRole::AttnOBias if !ops.attention_bias => {
-            Some("attention output-projection bias (declared `attention_bias`; `qkv_bias` biases Q/K/V only)")
+        OperandRole::AttnOBias if !ops.attention_bias && !ops.output_bias => {
+            Some("attention output-projection bias (declared `attention_bias` or `output_bias`; `qkv_bias` biases Q/K/V only)")
         }
         OperandRole::AttnSinks if !ops.sinks => Some("attention sinks (judged semantics)"),
         OperandRole::AttnV if ops.v_from_k => {

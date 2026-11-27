@@ -233,9 +233,10 @@ pub(super) fn construct_plan(c: ClosedComponent<'_>) -> ComponentOpPlan {
         // under `attention_bias` — `qkv_bias` is Qwen2's unbiased `o_proj`.
         let all_four = attn.and_then(|a| a.attention_bias) == Some(true);
         let qkv_only = attn.and_then(|a| a.qkv_bias) == Some(true);
+        let output_only = attn.and_then(|a| a.output_bias) == Some(true);
         let bias = |role: OperandRole| {
             let declared = match role {
-                OperandRole::AttnOBias => all_four,
+                OperandRole::AttnOBias => all_four || output_only,
                 _ => all_four || qkv_only,
             };
             declared.then(|| operand(&stack_id, get(role)))

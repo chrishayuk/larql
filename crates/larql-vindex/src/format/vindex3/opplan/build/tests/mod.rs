@@ -15,6 +15,7 @@ fn base_ops() -> LayerOps {
         mla_q_lora: false,
         attention_bias: false,
         qkv_bias: false,
+        output_bias: false,
         norm_bias: false,
         ffn_bias: false,
         sinks: false,

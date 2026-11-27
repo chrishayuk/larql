@@ -397,6 +397,17 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// value: inert at the uniform all-MoE stack, blocking for any real
 /// per-layer topology.
 ///
+/// **25** — GPT-Neo is represented, on GPT-2's primitives. `gpt_neo`
+/// resolves to its own family (topology spelled `num_layers` /
+/// `num_heads`); `attention_types` (expanded as `GPTNeoConfig` expands
+/// it) and `attention_layers` are its per-layer interleave, held to each
+/// other and to the built spans; `window_size` is the trailing window;
+/// `output_bias` is a new attention bias form (the output projection
+/// alone); `embed_dropout` / `resid_dropout` are dropouts and
+/// `gradient_checkpointing` is training-only. GPT-Neo checkpoints move
+/// from inadmissible (unknown family) to admissible; no other family's
+/// verdict moves.
+///
 /// **24** — the GPT-2 lineage is represented. A family with a learned
 /// position table that declares no rotary key resolves every layer to
 /// `PositionPolicy::None` (it was graded `Rope { theta: 10000 }` off the
@@ -449,7 +460,7 @@ pub const PLAN_SCHEMA: u32 = 6;
 /// architectures, now block instead of passing silently into
 /// `GenericArch`'s Llama-shaped defaults. Measured on the conformance
 /// corpus: 15 of 42 declared `model_type` strings, across 30 checkpoints.
-pub const PLANNER_SEMANTICS_VERSION: u32 = 24;
+pub const PLANNER_SEMANTICS_VERSION: u32 = 25;
 
 /// Who judged a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

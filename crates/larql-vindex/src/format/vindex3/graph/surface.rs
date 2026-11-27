@@ -115,6 +115,14 @@ pub struct AttentionSurface {
     /// written before it, none of which could carry a Q/K/V-only bias.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub qkv_bias: Option<bool>,
+    /// Whether the output projection — and not Q/K/V — carries a bias
+    /// (GPT-Neo: unbiased `q/k/v_proj`, biased `out_proj`). `Some(true)`
+    /// requires the output-bias operand and refuses Q/K/V biases; it
+    /// contradicts `attention_bias` and `qkv_bias`, and closure refuses
+    /// either pairing rather than choosing. Additive within GRAPH_SCHEMA
+    /// 6: absent on every container written before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_bias: Option<bool>,
 }
 
 /// What the FFN op reads.
