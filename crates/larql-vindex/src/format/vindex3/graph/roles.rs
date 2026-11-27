@@ -231,9 +231,22 @@ pub enum OperandRole {
     PostAttentionNorm,
     PreFfnNorm,
     PostFfnNorm,
+    /// The additive bias beside each norm weight (LayerNorm's affine
+    /// `bias`), one per site. Present iff the surface declares
+    /// `norm.bias`, and then beside EVERY weighted norm site; never
+    /// evidence of placement — only the weights are.
+    PreAttentionNormBias,
+    PostAttentionNormBias,
+    PreFfnNormBias,
+    PostFfnNormBias,
     FfnGate,
     FfnUp,
     FfnDown,
+    /// The dense FFN's additive biases: after the up projection (before
+    /// the activation) and after the down projection. Present iff the
+    /// surface declares `ffn.bias`.
+    FfnUpBias,
+    FfnDownBias,
     /// Router logits `[experts, hidden]` of a routed FFN — lives in the
     /// decoder stack (it is dense).
     MoeRouterWeight,

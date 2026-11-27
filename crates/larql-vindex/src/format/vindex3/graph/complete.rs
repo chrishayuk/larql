@@ -87,7 +87,10 @@ fn implies_stack_ops(kind: ObjectKind) -> bool {
 
 /// Object kinds implying the embedding/head op set.
 fn implies_head_ops(kind: ObjectKind) -> bool {
-    matches!(kind, ObjectKind::Embedding | ObjectKind::OutputHead)
+    matches!(
+        kind,
+        ObjectKind::Embedding | ObjectKind::PositionEmbedding | ObjectKind::OutputHead
+    )
 }
 
 /// Check every component intended for execution against the ops its

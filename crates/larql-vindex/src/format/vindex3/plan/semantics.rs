@@ -190,6 +190,18 @@ pub const EXECUTION_SEMANTIC_KEYS: &[&str] = &[
     // cover — same fact, fourth name; `parser.rs` folds all four into one
     // `norm_eps` read, so this shares `rms_norm_eps`'s carriage rule.
     "layer_norm_epsilon",
+    // GPT-2's spelling of `hidden_act` (`gelu_new`), its spelling of the
+    // serving bound — which on this lineage is ALSO the learned position
+    // table's row count, so it is execution semantics here — and its
+    // attention switches: whether scores are scaled at all, a per-layer
+    // inverse score scaling, a reordered upcast score path, and a
+    // cross-attention block. The last three are represented only as off.
+    "activation_function",
+    "n_positions",
+    "scale_attn_weights",
+    "scale_attn_by_inverse_layer_idx",
+    "reorder_and_upcast_attn",
+    "add_cross_attention",
     // Per-layer attention geometry and behaviour (A-9/A-11 census,
     // 2026-08-18: these were `consumed` but absent from every registry
     // here, so they silently graded `representable` instead of blocking —

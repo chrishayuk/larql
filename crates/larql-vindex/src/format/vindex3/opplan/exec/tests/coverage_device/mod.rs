@@ -269,6 +269,8 @@ fn ffn_call<'a>(
         down,
         activation,
         gate_policy: ExpertGatePolicy::Gated,
+        up_bias: None,
+        down_bias: None,
     }
 }
 

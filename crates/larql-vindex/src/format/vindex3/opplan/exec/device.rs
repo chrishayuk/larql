@@ -708,6 +708,13 @@ impl<M: MatMul + Send> PlanBackend for DevicePlanBackend<M> {
 
     fn ffn(&self, call: FfnCall<'_>) -> Result<Vec<f32>, VindexError> {
         super::production::require_executable_gate("device", call.gate_policy)?;
+        if call.up_bias.is_some() || call.down_bias.is_some() {
+            return Err(VindexError::Parse(
+                "device backend: FFN projection biases are not lowered on this backend; \
+                 run the reference or production backend"
+                    .to_string(),
+            ));
+        }
         let inner = match call.gate {
             Some(gate_weight) => {
                 // Up and gate read the same input: one submission.

@@ -227,6 +227,10 @@ pub(super) struct LayerOps {
     pub(super) attention_bias: bool,
     /// Q/K/V biased, output not (`qkv_bias`).
     pub(super) qkv_bias: bool,
+    /// Every trunk norm weight carries a bias (`norm.bias`).
+    pub(super) norm_bias: bool,
+    /// The dense FFN's up/down projections carry biases (`ffn.bias`).
+    pub(super) ffn_bias: bool,
     pub(super) sinks: bool,
     /// This layer's FFN is routed (bank/router evidence under a MoE
     /// judgment); dense otherwise.

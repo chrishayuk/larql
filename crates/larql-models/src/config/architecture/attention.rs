@@ -3,6 +3,9 @@
 use super::{score_scale_from_query_pre_attn_scalar, Position};
 use crate::config::{layer_types, LayerKind};
 
+/// The score multiplier of an attention that does not scale QK^T.
+pub const UNSCALED_SCORES: f64 = 1.0;
+
 /// Attention geometry and behaviour per layer: heads, windows, scale,
 /// gates, sinks and sharing.
 pub trait Attention: Position {
@@ -126,6 +129,15 @@ pub trait Attention: Position {
         false
     }
 
+    /// Whether QK^T is scaled at all. `scale_attn_weights: false` (GPT-2's
+    /// lineage) says it is not, and the multiplier is then exactly one; a
+    /// silent config scales, which is what every class defining the key
+    /// defaults to. A family whose reference never scales (GPT-Neo)
+    /// overrides this.
+    fn scales_attention_scores(&self) -> bool {
+        self.config().scale_attn_weights != Some(false)
+    }
+
     /// Attention scale: `attention_multiplier` when declared (Granite —
     /// replaces the standard formula outright, confirmed by every
     /// `arch.attention_multiplier()` call site on the legacy path; Granite
@@ -135,6 +147,9 @@ pub trait Attention: Position {
     fn attention_scale(&self) -> f64 {
         if let Some(multiplier) = self.config().attention_multiplier {
             return multiplier;
+        }
+        if !self.scales_attention_scores() {
+            return UNSCALED_SCORES;
         }
         let scalar = self
             .config()
@@ -151,6 +166,9 @@ pub trait Attention: Position {
     fn attention_scale_for_layer(&self, layer: usize) -> f64 {
         if let Some(multiplier) = self.config().attention_multiplier {
             return multiplier;
+        }
+        if !self.scales_attention_scores() {
+            return UNSCALED_SCORES;
         }
         if let Some(scalar) = self.config().query_pre_attn_scalar {
             score_scale_from_query_pre_attn_scalar(scalar)

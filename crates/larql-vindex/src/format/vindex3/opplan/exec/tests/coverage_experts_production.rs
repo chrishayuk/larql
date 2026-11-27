@@ -92,6 +92,8 @@ fn operands_loaded_for_one_ffn_kind_refuse_the_other_at_apply() {
         gate: None,
         up: fx.op.router.clone(),
         down: fx.op.router.clone(),
+        up_bias: None,
+        down_bias: None,
     }));
     let x = norm_values(HIDDEN, INPUT_SEED);
     let err = operands
@@ -364,6 +366,7 @@ fn layer_norm_and_projection_bind_the_production_kernels() {
         kind: NormType::LayerNorm,
         x: &[1.0, 3.0],
         weight: &[1.0, 1.0],
+        bias: &[],
         weight_offset: 0.0,
         eps: 0.0,
     });
@@ -593,6 +596,8 @@ fn tiny_ffn<'a>(gate: bool, activation: Activation, policy: ExpertGatePolicy) ->
         down: WeightSlice::F32(&TINY_WEIGHT),
         activation,
         gate_policy: policy,
+        up_bias: None,
+        down_bias: None,
     }
 }
 

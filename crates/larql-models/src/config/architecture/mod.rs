@@ -37,6 +37,7 @@ mod shared;
 mod tensor_keys;
 
 pub use attention::Attention;
+pub use attention::UNSCALED_SCORES;
 pub use embeddings::Embeddings;
 pub use feed_forward::FeedForward;
 pub use identity::ArchitectureCore;

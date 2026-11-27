@@ -26,7 +26,7 @@ fn external_rows_and_replay_match_tokens_beyond_the_sliding_window() {
     let mut replay = ReplaySession::new(plan, ops, backend, row(plan));
     for (position, id) in G_TOKENS.iter().cycle().take(14).enumerate() {
         let input = if position % 2 == 0 {
-            InputPosition::Embedding(ops.embed_token(plan, backend, *id).unwrap())
+            InputPosition::Embedding(ops.embed_token(plan, backend, *id, position).unwrap())
         } else {
             InputPosition::Token(*id)
         };
@@ -170,7 +170,7 @@ fn distributed_prefix_matches_local_and_refuses_incomplete_or_changed_bindings()
     .unwrap();
     for (position, id) in G_TOKENS.iter().cycle().take(12).enumerate() {
         let input = if position == 2 {
-            InputPosition::Embedding(full.embed_token(plan, backend, *id).unwrap())
+            InputPosition::Embedding(full.embed_token(plan, backend, *id, position).unwrap())
         } else {
             InputPosition::Token(*id)
         };

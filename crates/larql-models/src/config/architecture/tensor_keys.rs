@@ -1,6 +1,7 @@
 //! The [`TensorKeys`] slice of [`super::ModelArchitecture`].
 
 use super::ArchitectureCore;
+use crate::config::SourceLayout;
 
 /// Checkpoint tensor names: where each weight of a layer lives.
 pub trait TensorKeys: ArchitectureCore {
@@ -61,6 +62,15 @@ pub trait TensorKeys: ArchitectureCore {
     /// `ModelWeights::position_embed`.
     fn position_embed_key(&self) -> Option<&str> {
         None
+    }
+
+    /// How this family STORES its projections, when that is not the
+    /// canonical `[out, in]` layout: input-major (`Conv1D`) modules, fused
+    /// projections to split, and registered buffers that are not operands.
+    /// Normalised once at the inventory boundary (see
+    /// [`SourceLayout`]); the default derives nothing.
+    fn source_layout(&self) -> SourceLayout {
+        SourceLayout::default()
     }
 
     /// Final norm weight key.

@@ -31,7 +31,7 @@ use crate::error::VindexError;
 use crate::format::vindex3::encode::segment::{
     read_segment_header, sort_into_payload_order, PlannedTensor, SegmentTensor,
 };
-use crate::format::vindex3::encode::source::{ArtifactSource, TensorSource};
+use crate::format::vindex3::encode::source::ArtifactSource;
 use crate::format::vindex3::encode::{binding_owner, plan_object_tensors, REPRESENTATION_ID_SEP};
 use crate::format::vindex3::graph::SystemGraph;
 use crate::format::vindex3::index::Vindex3Index;
@@ -102,7 +102,7 @@ pub fn verify_payloads(
         };
         tables.push(table_check(&id, &planned, &header.tensors));
 
-        let source_sha256 = match source_hash(object, &planned, &sources) {
+        let source_sha256 = match source_hash(object, &planned, &sources, &inventories) {
             Ok(hash) => hash,
             Err(e) => {
                 payloads.push(failed_check(id, format!("source unreadable: {e}")));
@@ -155,6 +155,7 @@ fn source_hash(
     object: &crate::format::vindex3::graph::LogicalObject,
     planned: &[PlannedTensor],
     sources: &BTreeMap<&str, ArtifactSource>,
+    inventories: &BTreeMap<&str, &ArchitectureInventory>,
 ) -> Result<String, VindexError> {
     let mut hasher = Sha256::new();
     let mut sink = std::io::sink();
@@ -168,9 +169,16 @@ fn source_hash(
         let source = sources.get(owner).ok_or_else(|| {
             VindexError::Parse(format!("binding owner `{owner}` is not in the verify set"))
         })?;
-        source.stream_payload(&tensor.source_name, &mut sink, &mut |chunk| {
-            hasher.update(chunk);
+        let inventory = inventories.get(owner).ok_or_else(|| {
+            VindexError::Parse(format!("binding owner `{owner}` has no inventory"))
         })?;
+        crate::format::vindex3::encode::source::stream_inventory_tensor(
+            source,
+            inventory,
+            &tensor.source_name,
+            &mut sink,
+            &mut |chunk| hasher.update(chunk),
+        )?;
     }
     Ok(format!("{:x}", hasher.finalize()))
 }

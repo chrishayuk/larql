@@ -19,6 +19,7 @@
 
 pub mod components;
 pub mod config_keys;
+pub mod derive;
 pub mod interfaces;
 pub mod report;
 pub mod representation;
@@ -65,7 +66,13 @@ pub fn build_inventory(model_dir: &Path) -> Result<ArchitectureInventory, ModelE
     let identity = resolved::read_identity(&config);
     // Tensors first: the resolution may need the estate as evidence for a
     // declared ambiguity (`resolve_with_tensor_evidence`, J5).
-    let tensor_inventory = tensors::scan_tensors(model_dir)?;
+    let mut tensor_inventory = tensors::scan_tensors(model_dir)?;
+    // Storage layout first: every reader below — the resolution's tensor
+    // evidence included — sees canonical operands.
+    derive::apply_source_layout(
+        &crate::detect::detect_from_json(&config).source_layout(),
+        &mut tensor_inventory,
+    );
     let (detection, topology) =
         resolved::resolve_with_tensor_evidence(&config, &identity, &tensor_inventory.tensors);
     // Nested components first: their recorded reads feed classification.

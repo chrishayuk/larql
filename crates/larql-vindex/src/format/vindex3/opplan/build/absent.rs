@@ -124,6 +124,20 @@ pub(super) fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static st
             Some("MLA (Multi-Latent Attention) — no plain query/key/value/output projection")
         }
         OperandRole::FfnGate if !ops.routed && !ops.gated_ffn => Some("gated FFN"),
+        OperandRole::PreAttentionNormBias
+        | OperandRole::PostAttentionNormBias
+        | OperandRole::PreFfnNormBias
+        | OperandRole::PostFfnNormBias
+            if !ops.norm_bias =>
+        {
+            Some("a norm bias (declared `norm.bias`)")
+        }
+        OperandRole::FfnUpBias | OperandRole::FfnDownBias if !ops.ffn_bias => {
+            Some("an FFN projection bias (declared `ffn.bias`)")
+        }
+        OperandRole::FfnUpBias | OperandRole::FfnDownBias if ops.routed && !ops.hybrid => {
+            Some("dense FFN (this layer is routed)")
+        }
         OperandRole::FfnGate | OperandRole::FfnUp | OperandRole::FfnDown
             if ops.routed && !ops.hybrid =>
         {
@@ -223,7 +237,10 @@ pub(super) fn absent_op(role: OperandRole, ops: &LayerOps) -> Option<&'static st
         {
             Some("a scaled expert format (this format carries no separate scales)")
         }
-        OperandRole::PreFfnNorm | OperandRole::PostFfnNorm
+        OperandRole::PreFfnNorm
+        | OperandRole::PostFfnNorm
+        | OperandRole::PreFfnNormBias
+        | OperandRole::PostFfnNormBias
             if ops.placement == NormPlacement::PreOnly =>
         {
             Some("four-norm placement")

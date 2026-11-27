@@ -266,7 +266,13 @@ pub fn encode_graph_with_sources(
                         object.id
                     ))
                 })?;
-                sources[owner].stream_payload(source_name, write, observe)
+                source::stream_inventory_tensor(
+                    sources[owner],
+                    inventories[owner],
+                    source_name,
+                    write,
+                    observe,
+                )
             },
         )?;
 

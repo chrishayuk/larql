@@ -42,6 +42,7 @@ pub fn qwen_shaped_surface() -> ExecutionSurface {
             ffn_type: FfnType::Gated,
             gate_policy: larql_models::ExpertGatePolicy::default(),
             moe: None,
+            bias: None,
         }),
         norm: NormSurface {
             pre: NormSpec {
@@ -56,6 +57,7 @@ pub fn qwen_shaped_surface() -> ExecutionSurface {
                 weight_offset: 1.0,
             },
             placement: None,
+            bias: None,
         },
         head: None,
         residual_scale: None,

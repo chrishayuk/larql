@@ -11,6 +11,7 @@ mod families_moe;
 mod family_config_defaults;
 mod gemma4;
 mod gpt2_aliases;
+mod gpt2_semantics;
 mod kv_recompute;
 mod norm_eps;
 mod olmo2_identity;

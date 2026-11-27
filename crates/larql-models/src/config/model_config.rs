@@ -284,6 +284,27 @@ pub struct ModelConfig {
     /// [`attention_bias`](Self::attention_bias), which covers all four.
     /// `None` = the config is silent and the family default answers.
     pub qkv_bias: Option<bool>,
+    /// Whether the checkpoint declares ANY rotary configuration — a
+    /// `rope_theta` (flat, per-layer or under `rope_parameters`), a
+    /// `rope_scaling` block or a `partial_rotary_factor`. `false` means
+    /// [`rope_base`](Self::rope_base) is the parser's family default, not
+    /// a declaration: a family that adds learned absolute positions at
+    /// the input must never be graded rotary off that default.
+    pub declares_rotary: bool,
+    /// Whether attention scores are scaled by `1/sqrt(head_dim)`
+    /// (`scale_attn_weights`, GPT-2's lineage). `None` = silent, which in
+    /// every config class that defines the key means `true`; `Some(false)`
+    /// is an executable declaration — the score multiplier is one.
+    pub scale_attn_weights: Option<bool>,
+    /// GPT-2's three further attention switches, verbatim. Each changes
+    /// the forward pass when `true` — a per-layer `1/(layer+1)` score
+    /// multiplier, a reordered upcast score computation, and a
+    /// cross-attention block over encoder states — and VINDEX3 represents
+    /// each only as off, so a declared `true` is refused at plan time
+    /// (carriage: only `false` is representable).
+    pub scale_attn_by_inverse_layer_idx: Option<bool>,
+    pub reorder_and_upcast_attn: Option<bool>,
+    pub add_cross_attention: Option<bool>,
     /// Whether FFN/MLP projections carry bias terms (`mlp_bias`). Same
     /// contract as [`attention_bias`](Self::attention_bias): the boolean
     /// itself has no schema field downstream — operand closure over the

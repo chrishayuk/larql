@@ -299,6 +299,7 @@ pub fn surface_from_resolved(
                     }
                 },
             }),
+            bias: execution.ffn_bias,
         }),
         norm: NormSurface {
             pre: execution.norm_pre,
@@ -307,6 +308,7 @@ pub fn surface_from_resolved(
             // From operand evidence via `attach_stack_evidence`, once the
             // builder knows the component's stack object.
             placement: None,
+            bias: execution.norm_bias,
         },
         // Attached by the builder once it knows the component's objects.
         head: None,
@@ -422,5 +424,6 @@ pub fn head_from_resolved(inventory: &ArchitectureInventory) -> Result<HeadSurfa
         output_multiplier: execution.output_multiplier,
         final_logit_softcapping: execution.final_logit_softcapping,
         head_reuses_embedding: execution.head_reuses_embedding,
+        input_position: execution.input_position,
     })
 }

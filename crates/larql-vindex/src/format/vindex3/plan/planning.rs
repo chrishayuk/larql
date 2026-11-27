@@ -125,6 +125,7 @@ pub(super) fn plan_artifact(
     findings.extend(undeclared_family_findings(inventory));
     findings.extend(config_key_findings(inventory, built));
     findings.extend(placed_object_findings(name, built));
+    findings.extend(excluded_tensor_findings(inventory));
     findings.extend(unplaced_group_findings(name, built));
     findings.extend(attention_policy_findings(name, built));
     findings.extend(execution_surface_findings(name, built));

@@ -10,8 +10,8 @@ use super::super::{
     EmbeddingOp, ExpertBank, FfnOp, GateOp, GatedDeltaOp, HcSiteOp, HybridFfnOp,
     HyperConnectionHeadOp, HyperConnectionLayerOp, KdaOp, KdaOutputGate, LatentBranchOp,
     LatentNormOp, LayerAttention, LayerFfn, LayerPlan, Mamba2Op, MlaOp, MlaQueryProjection, NormOp,
-    OperandRef, OutputOp, PackedProjection, QkNormOp, RoutedFfnOp, SharedExpertBranchGateOp,
-    SharedExpertOp, SinkOp,
+    OperandRef, OutputOp, PackedProjection, PositionTableOp, QkNormOp, RoutedFfnOp,
+    SharedExpertBranchGateOp, SharedExpertOp, SinkOp,
 };
 use larql_models::config::ExpertFormat;
 use larql_models::config::MoeRouterKind;
@@ -46,7 +46,12 @@ pub(super) struct ClosedComponent<'a> {
     pub(super) inter_for: &'a dyn Fn(usize) -> Option<usize>,
     pub(super) vocab: Option<usize>,
     pub(super) embedding_tensor: Option<(String, SegmentTensor)>,
-    pub(super) final_norm_tensor: Option<(String, SegmentTensor)>,
+    pub(super) final_norm_tensor: Option<(String, SegmentTensor, Option<SegmentTensor>)>,
+    pub(super) position_tensor: Option<(
+        larql_models::config::InputPositionEncoding,
+        String,
+        SegmentTensor,
+    )>,
     pub(super) head_tensor: Option<(String, SegmentTensor)>,
     pub(super) hc_head_tensors: Option<(String, SegmentTensor, SegmentTensor, SegmentTensor)>,
     pub(super) attn_res_exit_tensors: Option<(String, SegmentTensor, SegmentTensor)>,
@@ -73,6 +78,7 @@ pub(super) fn construct_plan(c: ClosedComponent<'_>) -> ComponentOpPlan {
         vocab,
         embedding_tensor,
         final_norm_tensor,
+        position_tensor,
         head_tensor,
         hc_head_tensors,
         attn_res_exit_tensors,
@@ -92,6 +98,7 @@ pub(super) fn construct_plan(c: ClosedComponent<'_>) -> ComponentOpPlan {
             eps: spec.eps,
             weight_offset: spec.weight_offset,
             weight: operand(object, tensor),
+            bias: None,
         };
 
     let stack_id = tables
@@ -102,6 +109,14 @@ pub(super) fn construct_plan(c: ClosedComponent<'_>) -> ComponentOpPlan {
     for layer in 0..component.num_layers {
         let slot = &by_layer[&layer];
         let get = |role: OperandRole| &slot[&role];
+        // A trunk norm site: its weight, and the bias beside it when the
+        // surface declares one (closure required it then).
+        let trunk_norm = |spec: larql_models::config::NormSpec, role: OperandRole| NormOp {
+            bias: super::roles::norm_bias_role(role)
+                .and_then(|b| slot.get(&b))
+                .map(|t| operand(&stack_id, t)),
+            ..norm_op(spec, &stack_id, get(role))
+        };
         let policy = &attention_table[layer];
         let geometry = layer_geometry(layer);
         // A mixer-only layer, on operand evidence: the fused five-way
@@ -251,13 +266,9 @@ pub(super) fn construct_plan(c: ClosedComponent<'_>) -> ComponentOpPlan {
             NormPlacement::PrePost => {
                 let spec = post_norm.expect("PrePost resolves or returns above");
                 (
-                    Some(norm_op(
-                        spec,
-                        &stack_id,
-                        get(OperandRole::PostAttentionNorm),
-                    )),
+                    Some(trunk_norm(spec, OperandRole::PostAttentionNorm)),
                     Some(OperandRole::PreFfnNorm),
-                    Some(norm_op(spec, &stack_id, get(OperandRole::PostFfnNorm))),
+                    Some(trunk_norm(spec, OperandRole::PostFfnNorm)),
                 )
             }
             // Both wrap norms, no pre-FFN norm: each sublayer reads the
@@ -265,13 +276,9 @@ pub(super) fn construct_plan(c: ClosedComponent<'_>) -> ComponentOpPlan {
             NormPlacement::PostOnly => {
                 let spec = post_norm.expect("PostOnly resolves or returns above");
                 (
-                    Some(norm_op(
-                        spec,
-                        &stack_id,
-                        get(OperandRole::PostAttentionNorm),
-                    )),
+                    Some(trunk_norm(spec, OperandRole::PostAttentionNorm)),
                     None,
-                    Some(norm_op(spec, &stack_id, get(OperandRole::PostFfnNorm))),
+                    Some(trunk_norm(spec, OperandRole::PostFfnNorm)),
                 )
             }
             NormPlacement::PreOnly => (None, Some(OperandRole::PostAttentionNorm), None),
@@ -298,6 +305,12 @@ pub(super) fn construct_plan(c: ClosedComponent<'_>) -> ComponentOpPlan {
             gate: gated_ffn.then(|| operand(&stack_id, get(OperandRole::FfnGate))),
             up: operand(&stack_id, get(OperandRole::FfnUp)),
             down: operand(&stack_id, get(OperandRole::FfnDown)),
+            up_bias: slot
+                .get(&OperandRole::FfnUpBias)
+                .map(|t| operand(&stack_id, t)),
+            down_bias: slot
+                .get(&OperandRole::FfnDownBias)
+                .map(|t| operand(&stack_id, t)),
         };
         let ffn = match (ffn_moe, bank_slot) {
             // A declared-dense prefix layer plans dense even if stray bank
@@ -472,8 +485,7 @@ pub(super) fn construct_plan(c: ClosedComponent<'_>) -> ComponentOpPlan {
         layers.push(LayerPlan {
             declared_norm_eps: surface.norm.pre.eps,
             layer,
-            pre_attention_norm: pre_attn_role
-                .map(|role| norm_op(surface.norm.pre, &stack_id, get(role))),
+            pre_attention_norm: pre_attn_role.map(|role| trunk_norm(surface.norm.pre, role)),
             // Which attention-class operator this layer runs, decided on
             // OPERAND EVIDENCE: a layer holding the fused q|k|v projection
             // of a recurrence is a DeltaNet layer, whatever else is
@@ -690,7 +702,7 @@ pub(super) fn construct_plan(c: ClosedComponent<'_>) -> ComponentOpPlan {
             // Absent under post-norm placement: the FFN reads the raw
             // residual there, and `post_ffn_norm` carries the site that
             // does exist.
-            pre_ffn_norm: pre_ffn_role.map(|role| norm_op(surface.norm.pre, &stack_id, get(role))),
+            pre_ffn_norm: pre_ffn_role.map(|role| trunk_norm(surface.norm.pre, role)),
             ffn: Some(ffn),
             post_ffn_norm,
             layer_scale,
@@ -723,10 +735,16 @@ pub(super) fn construct_plan(c: ClosedComponent<'_>) -> ComponentOpPlan {
             norm: surface.head.as_ref().and_then(|h| h.embedding_norm),
             scale: surface.head.as_ref().and_then(|h| h.embed_scale),
             vocab_size: vocab.unwrap_or(0),
+            position: position_tensor.map(|(encoding, object, tensor)| PositionTableOp {
+                encoding,
+                table: operand(&object, &tensor),
+            }),
         }),
         layers,
-        final_norm: final_norm_tensor
-            .map(|(object, tensor)| norm_op(surface.norm.final_norm, &object, &tensor)),
+        final_norm: final_norm_tensor.map(|(object, weight, bias)| NormOp {
+            bias: bias.map(|b| operand(&object, &b)),
+            ..norm_op(surface.norm.final_norm, &object, &weight)
+        }),
         output: head_tensor.map(|(object, tensor)| OutputOp {
             projection: operand(&object, &tensor),
             multiplier: surface.head.as_ref().and_then(|h| h.output_multiplier),

@@ -262,6 +262,7 @@ fn model_geometry_comes_from_the_surface_and_names_what_it_lacks() {
         output_multiplier: None,
         final_logit_softcapping: None,
         head_reuses_embedding: false,
+        input_position: None,
     });
     surface.attention.as_mut().unwrap().output_gate = Some(AttentionGateSpec {
         source: GateSource::FusedQueryProjection,

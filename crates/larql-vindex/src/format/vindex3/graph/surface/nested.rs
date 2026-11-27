@@ -154,6 +154,9 @@ pub fn surface_from_nested(
             // fact, not a fallback.
             gate_policy: larql_models::ExpertGatePolicy::Gated,
             moe: None,
+            // A perception tower's operator set is not executed here;
+            // its biases are unjudged.
+            bias: None,
         }),
         norm: NormSurface {
             pre: NormSpec {
@@ -175,6 +178,7 @@ pub fn surface_from_nested(
             // is a decoder-stack concept until the perception op set (5d)
             // defines its own.
             placement: None,
+            bias: None,
         },
         head: None,
         // No perception tower has declared a residual-scale operation.

@@ -11,7 +11,7 @@ These describe the source checkout, not the latest published binary. [Documentat
 | V3_CURRENT_SCHEMA | `4` |
 | GRAPH_SCHEMA | `6` |
 | PLAN_SCHEMA | `6` |
-| PLANNER_SEMANTICS_VERSION | `23` |
+| PLANNER_SEMANTICS_VERSION | `24` |
 | DEFAULT_EXTRACTION_GENERATION | `V3` |
 
 ## vindex commands

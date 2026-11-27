@@ -250,6 +250,8 @@ impl ExecutionSlice {
 pub(super) struct PreparedNorm {
     op: NormOp,
     weight: Vec<f32>,
+    /// The declared bias; empty when the op carries none.
+    bias: Vec<f32>,
 }
 
 impl PreparedNorm {
@@ -257,6 +259,10 @@ impl PreparedNorm {
         Ok(Self {
             op: op.clone(),
             weight: store.load(&op.weight)?,
+            bias: match &op.bias {
+                Some(bias) => store.load(bias)?,
+                None => Vec::new(),
+            },
         })
     }
 
@@ -265,6 +271,7 @@ impl PreparedNorm {
             kind: self.op.kind,
             x,
             weight: &self.weight,
+            bias: &self.bias,
             weight_offset: self.op.weight_offset,
             eps: self.op.eps,
         })

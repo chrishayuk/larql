@@ -28,6 +28,11 @@ pub struct NormOp {
     pub eps: f64,
     pub weight_offset: f32,
     pub weight: OperandRef,
+    /// The additive bias after the gain (LayerNorm's affine `bias`),
+    /// present iff the surface declares `norm.bias`. Absent from the
+    /// serialised op otherwise, so a bias-free plan serialises unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bias: Option<OperandRef>,
 }
 
 /// QK normalisation inside attention.
@@ -125,6 +130,13 @@ pub struct FfnOp {
     pub gate: Option<OperandRef>,
     pub up: OperandRef,
     pub down: OperandRef,
+    /// Additive biases after the up projection (before the activation) and
+    /// after the down projection, present iff the surface declares
+    /// `ffn.bias`. Absent from the serialised op otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub up_bias: Option<OperandRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub down_bias: Option<OperandRef>,
 }
 
 /// One packed expert projection: the bytes for every expert in one

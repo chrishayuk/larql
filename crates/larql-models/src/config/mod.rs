@@ -40,6 +40,7 @@ pub mod residual_topology;
 pub mod rope;
 pub mod rope_types;
 pub mod shared_expert_gate;
+pub mod source_layout;
 
 pub use activation::{
     ffn_shape_from_hf_name, ffn_shape_hf_name, hf_combine_name, Activation, ActivationDeclaration,
@@ -49,6 +50,7 @@ pub use architecture::{
     default_position_policy_for_layer, prelude as architecture_prelude,
     score_scale_from_query_pre_attn_scalar, ArchitectureCore, Attention, Embeddings, FeedForward,
     LatentAttention, ModelArchitecture, Norms, Position, TensorKeys, UNSCALED_POSITION_DIVISOR,
+    UNSCALED_SCORES,
 };
 pub use attention_gate::{
     AttentionGateSpec, GateActivation, GateCombine, GatePlacement, GateSource,
@@ -77,8 +79,8 @@ pub use model_config::ModelConfig;
 pub use moe_router::MoeRouterKind;
 pub use norm::{EmbeddingNorm, NormSpec, NormType, ParameterFreeQkNorm, PostNormEps, QkNormScope};
 pub use position::{
-    mrope_axis_table, DeclaredRopeScaling, PositionPolicy, RotaryFrequencyBasis,
-    ROPE_PAIRING_INTERLEAVED,
+    mrope_axis_table, DeclaredRopeScaling, InputPositionEncoding, PositionPolicy,
+    RotaryFrequencyBasis, ROPE_PAIRING_INTERLEAVED,
 };
 pub use residual_topology::{HyperConnection, HyperConnectionWeights, ResidualTopology};
 pub use rope::{Llama3RopeScaling, RopeScaling, YarnRopeScaling};
@@ -87,6 +89,7 @@ pub use rope_types::{
     ROPE_TYPE_PROPORTIONAL, ROPE_TYPE_YARN,
 };
 pub use shared_expert_gate::{SharedExpertGateSource, SharedExpertGateSpec};
+pub use source_layout::{FusedProjection, NonParameterBuffer, SourceLayout};
 
 #[cfg(test)]
 mod kda_geometry_tests;

@@ -162,6 +162,15 @@ pub struct FfnSurface {
     /// the two may interleave.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moe: Option<MoeSurface>,
+    /// Whether the dense FFN's up and down projections carry additive
+    /// biases (`nn.Linear`/`Conv1D` bias). `Some(true)` requires the up
+    /// and down bias operands; under `None` or `Some(false)` any FFN bias
+    /// operand fails closure by name. The executor adds the up bias before
+    /// the activation and the down bias after the down projection.
+    /// Additive within GRAPH_SCHEMA 6: absent on every container written
+    /// before it, none of which could carry an FFN bias.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bias: Option<bool>,
 }
 
 /// The routed-FFN (mixture-of-experts) semantics of a component, lifted
@@ -315,6 +324,13 @@ pub struct NormSurface {
     /// placement is. `None` only for components with no decoder stack.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placement: Option<super::roles::NormPlacement>,
+    /// Whether every weighted norm site — every layer site and the final
+    /// norm — carries an additive bias (LayerNorm's affine `bias`).
+    /// `Some(true)` requires a bias operand beside every norm weight;
+    /// under `None` or `Some(false)` any norm bias operand fails closure
+    /// by name. Additive within GRAPH_SCHEMA 6.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bias: Option<bool>,
 }
 
 /// What embedding lookup and the output head read. Present iff the
@@ -345,6 +361,16 @@ pub struct HeadSurface {
     /// surface alone, with no re-interpretation of the source checkpoint.
     #[serde(default)]
     pub head_reuses_embedding: bool,
+    /// How position enters at the input: a learned absolute table whose
+    /// row `p` is added to the token embedding at position `p` (GPT-2's
+    /// `wpe`). `None` = nothing is added at the input — which is a claim,
+    /// checked by closure: a component owning a position-embedding object
+    /// with no declaration here is refused, and a declaration with no
+    /// object is refused. Never folded into the per-layer position
+    /// policy, which states what each layer's attention rotates (nothing,
+    /// on this lineage). Additive within GRAPH_SCHEMA 6.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_position: Option<larql_models::config::InputPositionEncoding>,
 }
 
 /// The complete per-component execution surface.

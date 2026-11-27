@@ -165,6 +165,15 @@ pub const CONSUMED_LEAF_KEYS: &[&str] = &[
     "attention_bias",
     "qkv_bias",
     "mlp_bias",
+    // GPT-2's lineage: its activation and serving-bound spellings (read as
+    // `hidden_act` / `max_position_embeddings`), the score-scaling switch,
+    // and three switches VINDEX3 represents only as off.
+    "activation_function",
+    "n_positions",
+    "scale_attn_weights",
+    "scale_attn_by_inverse_layer_idx",
+    "reorder_and_upcast_attn",
+    "add_cross_attention",
     // `rope_scaling` itself, distinct from the leaves inside it: the parser
     // calls `text_config.get("rope_scaling")` unconditionally (below,
     // `rope_type` etc.), so a checkpoint that declares the key `null` — no

@@ -28,6 +28,16 @@ pub trait Norms: TensorKeys {
     /// Uses `strip_suffix` rather than a `replace(".weight", ".bias")`:
     /// `replace` rewrites *every* occurrence, so a key that contained the
     /// substring earlier in its path would be silently mangled.
+    /// Whether every weighted norm site carries an additive bias
+    /// (`nn.LayerNorm`'s affine bias). `None` = unjudged, which is not "no
+    /// bias": a bias operand shipped under `None` or `Some(false)` fails
+    /// VINDEX3 operand closure, and `Some(true)` requires one beside every
+    /// norm weight. No config key states it, so a family that has one
+    /// says so.
+    fn norm_bias(&self) -> Option<bool> {
+        None
+    }
+
     fn norm_bias_of(&self, weight_key: &str) -> Option<String> {
         if self.norm_type() != NormType::LayerNorm {
             return None;

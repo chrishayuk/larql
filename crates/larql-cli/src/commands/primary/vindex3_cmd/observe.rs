@@ -169,6 +169,13 @@ pub struct ObserveArgs {
     /// vector and its hash.
     #[arg(long, requires = "capture_heads")]
     pub capture_heads_out: Option<PathBuf>,
+
+    /// Write the final position's full log-probability vector (every
+    /// vocabulary id, f64 log-softmax over the f32 logits — the numbers
+    /// the summary's top-k prints) as JSON, for a parity comparison
+    /// against a reference implementation at full precision.
+    #[arg(long)]
+    pub logprobs_out: Option<PathBuf>,
 }
 
 pub fn run(args: ObserveArgs) -> Result<(), BoxErr> {
@@ -196,6 +203,16 @@ pub fn run(args: ObserveArgs) -> Result<(), BoxErr> {
         },
     )?;
     print_summary(&args, &opened, &tokens, &outcome, tokenizer.as_ref());
+    if let Some(path) = &args.logprobs_out {
+        let logprobs: Vec<f64> = log_softmax(&outcome.final_logits);
+        let json = serde_json::json!({
+            "backend": format!("{:?}", args.backend),
+            "tokens": tokens,
+            "generated": outcome.generated,
+            "logprobs": logprobs,
+        });
+        std::fs::write(path, serde_json::to_string(&json)?)?;
+    }
     Ok(())
 }
 
@@ -462,10 +479,8 @@ fn argmax(logits: &[f32]) -> u32 {
     u32::try_from(best).expect("a vocabulary index fits")
 }
 
-/// The top `k` ids by logit with their log-probabilities under a full
-/// log-softmax, computed in f64 over every logit — the final position's
-/// actual distribution, not a probe.
-fn top_k(logits: &[f32], k: usize) -> Vec<(u32, f64)> {
+/// Every id's log-probability under a full log-softmax in f64.
+fn log_softmax(logits: &[f32]) -> Vec<f64> {
     let max = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
     let log_sum: f64 = logits
         .iter()
@@ -473,10 +488,17 @@ fn top_k(logits: &[f32], k: usize) -> Vec<(u32, f64)> {
         .sum::<f64>()
         .ln()
         + f64::from(max);
-    let mut indexed: Vec<(u32, f64)> = logits
-        .iter()
+    logits.iter().map(|&v| f64::from(v) - log_sum).collect()
+}
+
+/// The top `k` ids by logit with their log-probabilities under a full
+/// log-softmax, computed in f64 over every logit — the final position's
+/// actual distribution, not a probe.
+fn top_k(logits: &[f32], k: usize) -> Vec<(u32, f64)> {
+    let mut indexed: Vec<(u32, f64)> = log_softmax(logits)
+        .into_iter()
         .enumerate()
-        .map(|(i, &v)| (u32::try_from(i).expect("fits"), f64::from(v) - log_sum))
+        .map(|(i, v)| (u32::try_from(i).expect("fits"), v))
         .collect();
     indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     indexed.truncate(k);

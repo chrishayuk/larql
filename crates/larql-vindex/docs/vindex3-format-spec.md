@@ -1209,6 +1209,31 @@ witness for the ContinuationState half.
 
 ---
 
+### 17.5 Additive within schema 6 — the GPT-2 lineage (2026-11)
+
+`GPT2LMHeadModel`'s semantics land as
+**additive fields within the v6 span**, under §12's numbering rule — new
+information, no existing byte or field reinterpreted, so `GRAPH_SCHEMA`
+stays 6 and every container written before reads back unchanged:
+
+```text
+ExecutionSurface.head.input_position   learned absolute table, per position
+ExecutionSurface.norm.bias             LayerNorm bias at every norm site
+ExecutionSurface.ffn.bias              dense-FFN up/down biases
+ObjectKind::PositionEmbedding          the table's own object (`wpe`)
+OperandRole::{Pre,Post}{Attention,Ffn}NormBias, FfnUpBias, FfnDownBias
+op plan: EmbeddingOp.position, NormOp.bias, FfnOp.{up,down}_bias
+```
+
+Each optional field is absent from the serialised form when it is not
+declared. Two facts move outside the graph: the inventory schema goes to
+6 (storage-layout derivations — a transposed tensor keeps its stored
+name at a new shape, so a reader ignoring the derivation would misread
+bytes), and the planner semantics version goes to 24 (GPT-2 verdicts
+flip). The per-layer position policy gains no variant: a learned
+absolute table is an input fact, and GPT-2's layers are
+`PositionPolicy::None`.
+
 ## 18. Operations, observation, and the independent reader
 
 ### 18.1 The operations surface

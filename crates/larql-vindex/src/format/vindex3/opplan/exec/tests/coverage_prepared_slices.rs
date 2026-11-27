@@ -208,7 +208,7 @@ fn a_layer_range_shard_consumes_hidden_states_and_produces_no_logits() {
         .unwrap();
     let backend = ReferenceBackend::new();
 
-    let err = message(ops.embed_token(&dense.plan, &backend, TOKENS[0]));
+    let err = message(ops.embed_token(&dense.plan, &backend, TOKENS[0], 0));
     assert!(err.contains("no embedding table"), "{err}");
     let err = message(dense.run(&ops, None));
     assert!(err.contains("carries no embedding table"), "{err}");
@@ -271,6 +271,6 @@ fn a_plan_without_an_embedding_op_refuses_token_ids() {
         &mut |_| Ok(()),
     ));
     assert!(err.contains("has no embedding op"), "{err}");
-    let err = message(ops.embed_token(&plan, &ReferenceBackend::new(), TOKENS[0]));
+    let err = message(ops.embed_token(&plan, &ReferenceBackend::new(), TOKENS[0], 0));
     assert!(err.contains("no embedding op"), "{err}");
 }

@@ -364,6 +364,10 @@ pub struct PreparedOperands {
     pub(super) hidden: usize,
     /// Present only for a slice that carries the stack's input end.
     pub(super) embed_table: Option<Vec<f32>>,
+    /// The learned input position table (`[max_positions, hidden]`), when
+    /// the plan's embedding declares one; present exactly when
+    /// `embed_table` is.
+    pub(super) position_table: Option<Vec<f32>>,
     /// Plan index of `layers[0]`, so a sliced image can still address
     /// the plan's per-layer ops and the KV state's layer rows.
     pub(super) first_layer: usize,

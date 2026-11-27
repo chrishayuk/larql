@@ -176,6 +176,7 @@ fn norm(tensor: &str) -> NormOp {
         eps: 1e-6,
         weight_offset: 0.0,
         weight: operand(STACK_OBJECT, tensor, vec![ROUTED_HIDDEN]),
+        bias: None,
     }
 }
 
@@ -188,6 +189,8 @@ fn hybrid_layer() -> LayerFfn {
             gate: Some(operand(STACK_OBJECT, "0.mlp.dense.gate_proj", vec![])),
             up: operand(STACK_OBJECT, "0.mlp.dense.up_proj", vec![]),
             down: operand(STACK_OBJECT, "0.mlp.dense.down_proj", vec![]),
+            up_bias: None,
+            down_bias: None,
         },
         routed: match routed_layer() {
             LayerFfn::Routed(op) => *op,

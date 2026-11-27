@@ -275,6 +275,10 @@ pub(super) fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
         if ops.gated_ffn {
             roles.push(OperandRole::FfnGate);
         }
+        if ops.ffn_bias {
+            roles.push(OperandRole::FfnUpBias);
+            roles.push(OperandRole::FfnDownBias);
+        }
     }
     if ops.hybrid {
         roles.extend([
@@ -283,5 +287,23 @@ pub(super) fn required_roles(ops: &LayerOps) -> Vec<OperandRole> {
             OperandRole::PostExpertsNorm,
         ]);
     }
+    // A declared norm bias sits beside EVERY trunk norm weight the layer
+    // requires — derived from the weights required above, so the two
+    // sets cannot disagree about which sites exist.
+    if ops.norm_bias {
+        let biases: Vec<OperandRole> = roles.iter().filter_map(|r| norm_bias_role(*r)).collect();
+        roles.extend(biases);
+    }
     roles
+}
+
+/// The bias role paired with a trunk norm weight role, if it has one.
+pub(super) fn norm_bias_role(weight: OperandRole) -> Option<OperandRole> {
+    match weight {
+        OperandRole::PreAttentionNorm => Some(OperandRole::PreAttentionNormBias),
+        OperandRole::PostAttentionNorm => Some(OperandRole::PostAttentionNormBias),
+        OperandRole::PreFfnNorm => Some(OperandRole::PreFfnNormBias),
+        OperandRole::PostFfnNorm => Some(OperandRole::PostFfnNormBias),
+        _ => None,
+    }
 }

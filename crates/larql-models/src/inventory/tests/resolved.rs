@@ -369,6 +369,7 @@ fn tensor(name: &str) -> crate::inventory::TensorFact {
         shape: vec![32, 5760, 90, 16],
         bytes: 0,
         file: "model.safetensors".to_string(),
+        derivation: None,
     }
 }
 
@@ -545,6 +546,7 @@ fn hybrid_in_proj_facts(layers: usize, attention: &[usize]) -> Vec<crate::invent
                 shape: vec![rows, 1024],
                 bytes: (rows * 1024 * 2) as u64,
                 file: "model.safetensors".to_string(),
+                derivation: None,
             }
         })
         .collect()
@@ -700,6 +702,7 @@ fn embedding(name: &str, rows: usize) -> crate::inventory::TensorFact {
         shape: vec![rows, 2560],
         bytes: (rows * 2560 * 2) as u64,
         file: "model.safetensors".to_string(),
+        derivation: None,
     }
 }
 

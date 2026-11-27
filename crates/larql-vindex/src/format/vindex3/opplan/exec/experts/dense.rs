@@ -328,6 +328,8 @@ impl DenseOperands {
             },
             up: load_weight(store, &op.up, format(&op.up)?)?,
             down: load_weight(store, &op.down, format(&op.down)?)?,
+            up_bias: op.up_bias.as_ref().map(|b| store.load(b)).transpose()?,
+            down_bias: op.down_bias.as_ref().map(|b| store.load(b)).transpose()?,
         })
     }
 
@@ -378,6 +380,8 @@ impl DenseOperands {
             down: self.down.slice(),
             activation: op.activation,
             gate_policy: op.gate_policy,
+            up_bias: self.up_bias.as_deref(),
+            down_bias: self.down_bias.as_deref(),
         }
     }
 
@@ -397,6 +401,8 @@ impl DenseOperands {
             down: self.down.slice(),
             activation: op.activation,
             gate_policy: op.gate_policy,
+            up_bias: self.up_bias.as_deref(),
+            down_bias: self.down_bias.as_deref(),
         })
     }
 }

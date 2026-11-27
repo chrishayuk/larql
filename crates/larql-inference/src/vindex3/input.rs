@@ -31,8 +31,10 @@ pub fn validate_inputs<B: PlanBackend>(
     }
     for input in inputs {
         match input {
+            // Validates the token id only: the absolute position is the
+            // stepping session's, and is checked when the row is built.
             InputPosition::Token(id) => {
-                ops.embed_token(plan, backend, *id)?;
+                ops.embed_token(plan, backend, *id, 0)?;
             }
             InputPosition::Embedding(row) => {
                 if row.len() != ops.hidden() || row.iter().any(|x| !x.is_finite()) {

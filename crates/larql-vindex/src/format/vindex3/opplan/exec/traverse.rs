@@ -243,10 +243,17 @@ pub(super) fn traverse<B: PlanBackend + ?Sized, K: KvState + ?Sized>(
                         kind: norm.kind,
                         x: row,
                         weight: &[],
+                        bias: &[],
                         weight_offset: 0.0,
                         eps: norm.eps,
                     });
                 }
+            }
+            // The learned input position row, after the scale and norm —
+            // at each row's ABSOLUTE position, so a batch continuing a
+            // provider's sequence reads the rows it actually occupies.
+            for (offset, row) in h.iter_mut().enumerate() {
+                ops.add_input_position(backend, row, base + offset)?;
             }
             // The embedding enters a hyper-connected stack replicated
             // into every stream, per position — after its scale and

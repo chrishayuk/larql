@@ -343,6 +343,7 @@ pub fn plan_component_ops(
             ObjectKind::DecoderStack
                 | ObjectKind::ExpertBank
                 | ObjectKind::Embedding
+                | ObjectKind::PositionEmbedding
                 | ObjectKind::FinalNorm
                 | ObjectKind::OutputHead
                 | ObjectKind::HyperConnectionHead
@@ -685,7 +686,46 @@ pub fn plan_component_ops(
         vocab.map(|v| vec![v, hidden]),
         &mut defects,
     );
-    let final_norm_tensor = single(ObjectKind::FinalNorm, Some(vec![hidden]), &mut defects);
+    // The final norm: one weight, plus its bias when the surface declares
+    // norm biases — told apart by leaf name, since the object binds both.
+    let final_norm_tensor = match surface.norm.bias {
+        Some(true) => final_norm_with_bias(&tables, hidden, &mut defects),
+        _ => single(ObjectKind::FinalNorm, Some(vec![hidden]), &mut defects)
+            .map(|(object, weight)| (object, weight, None)),
+    };
+    // The learned input position table: present iff the head surface
+    // declares one, with exactly the declared row count.
+    let input_position = surface.head.as_ref().and_then(|h| h.input_position);
+    let position_tensor = match (
+        input_position,
+        tables.contains_key(&ObjectKind::PositionEmbedding),
+    ) {
+        (Some(encoding), true) => single(
+            ObjectKind::PositionEmbedding,
+            Some(vec![encoding.max_positions(), hidden]),
+            &mut defects,
+        )
+        .map(|(object, tensor)| (encoding, object, tensor)),
+        (Some(_), false) => {
+            defects.push(ClosureDefect::ObjectShape {
+                object: format!("{}.{}", component.id, ObjectKind::PositionEmbedding.name()),
+                detail: "the head surface declares a learned input position table, and the \
+                         component owns no position-embedding object"
+                    .to_string(),
+            });
+            None
+        }
+        (None, true) => {
+            defects.push(ClosureDefect::ObjectShape {
+                object: format!("{}.{}", component.id, ObjectKind::PositionEmbedding.name()),
+                detail: "a position-embedding object is present and the head surface declares \
+                         no input position encoding — the table would be read by nothing"
+                    .to_string(),
+            });
+            None
+        }
+        (None, false) => None,
+    };
     // No standalone `OutputHead` object is placed for a checkpoint that
     // ships no separate `lm_head`-named tensor group at all — the near-
     // universal tied-embeddings convention, not a missing object. Reusing
@@ -782,6 +822,7 @@ pub fn plan_component_ops(
         vocab,
         embedding_tensor,
         final_norm_tensor,
+        position_tensor,
         head_tensor,
         hc_head_tensors,
         attn_res_exit_tensors,
@@ -790,6 +831,39 @@ pub fn plan_component_ops(
         plan: Some(plan),
         defects,
     })
+}
+
+/// The final norm's weight and bias, under a surface that declares norm
+/// biases: exactly two `[hidden]` tensors, one per leaf.
+fn final_norm_with_bias(
+    tables: &BTreeMap<ObjectKind, (&LogicalObject, Vec<SegmentTensor>)>,
+    hidden: usize,
+    defects: &mut Vec<ClosureDefect>,
+) -> Option<(String, SegmentTensor, Option<SegmentTensor>)> {
+    let (object, tensors) = tables.get(&ObjectKind::FinalNorm)?;
+    let leaf = |t: &&SegmentTensor, name: &str| t.name.rsplit('.').next() == Some(name);
+    let weight = tensors.iter().find(|t| leaf(t, "weight"));
+    let bias = tensors.iter().find(|t| leaf(t, "bias"));
+    let (Some(weight), Some(bias), 2) = (weight, bias, tensors.len()) else {
+        defects.push(ClosureDefect::ObjectShape {
+            object: object.id.clone(),
+            detail: format!(
+                "norm biases are declared: expected one `weight` and one `bias` tensor, found {:?}",
+                tensors.iter().map(|t| t.name.as_str()).collect::<Vec<_>>()
+            ),
+        });
+        return None;
+    };
+    for tensor in [weight, bias] {
+        if tensor.shape != [hidden] {
+            defects.push(ClosureDefect::GeometryMismatch {
+                tensor: format!("{}/{}", object.id, tensor.name),
+                expected: vec![hidden],
+                actual: tensor.shape.clone(),
+            });
+        }
+    }
+    Some((object.id.clone(), weight.clone(), Some(bias.clone())))
 }
 
 /// `absent_op`/`expected_shape`/`required_roles` are private pure

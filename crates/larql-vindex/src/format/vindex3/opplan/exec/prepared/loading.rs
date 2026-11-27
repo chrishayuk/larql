@@ -96,6 +96,7 @@ impl PreparedOperands {
                 slice,
                 hidden,
                 embed_table: None,
+                position_table: None,
                 layers: Vec::new(),
                 final_norm: None,
                 output: None,
@@ -126,6 +127,7 @@ impl PreparedOperands {
                 slice,
                 hidden,
                 embed_table: None,
+                position_table: None,
                 layers: Vec::new(),
                 final_norm: None,
                 output: None,
@@ -145,6 +147,10 @@ impl PreparedOperands {
             Some(store.load(&embedding.table)?)
         } else {
             None
+        };
+        let position_table = match (&embedding.position, whole) {
+            (Some(position), true) => Some(store.load(&position.table)?),
+            _ => None,
         };
         let topology = plan.residual_topology;
         let hyper_connection = match topology {
@@ -348,6 +354,7 @@ impl PreparedOperands {
             slice,
             hidden,
             embed_table,
+            position_table,
             first_layer,
             layers,
             final_norm,

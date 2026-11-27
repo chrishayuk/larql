@@ -139,6 +139,8 @@ fn calibration_unsupported_backend_refuses_down_capture() {
                 down: WeightSlice::F32(&[1.]),
                 activation: larql_models::config::Activation::Silu,
                 gate_policy: larql_models::ExpertGatePolicy::default(),
+                up_bias: None,
+                down_bias: None,
             },
             &mut |_| called = true,
         )

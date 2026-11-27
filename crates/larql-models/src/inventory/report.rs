@@ -48,7 +48,19 @@ use serde::{Deserialize, Serialize};
 /// literally `"sliding_attention"` resolved to `"full"` with nothing
 /// downstream able to tell a genuine full-attention layer from a
 /// defaulted one. A v4 inventory deserialises with `declared_span: None`.
-pub const INVENTORY_SCHEMA: u32 = 5;
+///
+/// v6: the tensor list is the family's storage layout NORMALISED
+/// (`inventory::derive`): a [`TensorFact`] may carry a `derivation` — an
+/// input-major (`Conv1D`) weight transposed, or one part of a fused
+/// projection — whose bytes the encoder produces from the stored tensor,
+/// and [`TensorInventory::excluded`] records the registered buffers that
+/// are not operands. Bumped although both fields are additive, because a
+/// transposed tensor keeps its stored NAME at a different shape: a reader
+/// that ignored `derivation` would stream the stored bytes under the
+/// derived shape, which is a reinterpretation of existing bytes. A v5
+/// inventory deserialises with no derivations and no exclusions, which is
+/// exactly what it meant.
+pub const INVENTORY_SCHEMA: u32 = 6;
 
 /// Machine-readable architecture inventory of one HF checkpoint directory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -394,6 +406,19 @@ pub struct ResolvedExecution {
     /// four. Defaults for inventories written before it was recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub qkv_bias: Option<bool>,
+    /// Whether every weighted norm site carries an additive bias
+    /// (`ModelArchitecture::norm_bias`). `None` = unjudged. Defaults for
+    /// inventories written before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub norm_bias: Option<bool>,
+    /// Whether the dense FFN's up/down projections carry biases
+    /// (`ModelArchitecture::ffn_bias`). `None` = unjudged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ffn_bias: Option<bool>,
+    /// How position enters at the input (a learned absolute table), when
+    /// the family has one. `None` = nothing is added at the input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_position: Option<crate::config::InputPositionEncoding>,
     /// The routed-FFN facts when the family declares experts; `None` = a
     /// dense-FFN model. Defaults for inventories written before it was
     /// recorded.
@@ -749,8 +774,14 @@ pub struct TensorInventory {
     /// Totals grouped by name prefix (path up to the first numeric
     /// segment), sorted by prefix.
     pub groups: Vec<TensorGroup>,
-    /// Every tensor, sorted by name.
+    /// Every tensor, sorted by name — after the family's storage-layout
+    /// normalisation (`super::derive`): a derived tensor records how its
+    /// bytes come from the stored one.
     pub tensors: Vec<TensorFact>,
+    /// Stored tensors that are not operands (registered buffers the
+    /// family names), each with its reason. Recorded, never dropped.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluded: Vec<super::derive::ExcludedTensor>,
 }
 
 /// Aggregate over one name prefix, e.g. `model.language_model.layers`.
@@ -770,6 +801,11 @@ pub struct TensorFact {
     pub bytes: u64,
     /// Shard filename holding the bytes, relative to the model dir.
     pub file: String,
+    /// How this tensor's bytes are produced from a stored tensor, when it
+    /// is a storage-layout normalisation (input-major transposed, a fused
+    /// projection split) rather than a tensor the checkpoint stores as-is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub derivation: Option<super::derive::TensorDerivation>,
 }
 
 /// Containers written before residual topology was a field carried one

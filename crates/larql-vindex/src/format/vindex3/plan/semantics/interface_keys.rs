@@ -149,6 +149,10 @@ pub const ALIAS_KEYS: &[(&str, &str)] = &[
     // corroborate it — `alias_contradicts_canonical` checks it the same
     // way it checks `full_attention_interval`.
     ("_sliding_window_pattern", "layer_types"),
+    // GPT-2's legacy context spelling (OpenAI's original `n_ctx`), which
+    // `GPT2Config` no longer reads; `n_positions` is the read spelling and
+    // the two must agree.
+    ("n_ctx", "n_positions"),
 ];
 
 /// Reviewed-and-safe-to-drop keys. Empty by design until a key has actually

@@ -87,6 +87,48 @@ pub trait TensorSource {
     ) -> Result<u64, VindexError>;
 }
 
+/// Stream one INVENTORY tensor: the stored payload itself, or — when the
+/// inventory records a storage-layout derivation (an input-major weight
+/// transposed, a fused projection split; see
+/// `larql_models::inventory::derive`) — the derived bytes, produced from
+/// the stored tensor by the recorded transform.
+///
+/// The one place a derivation is executed, shared by the encoder and the
+/// source-side re-hash, so the two cannot disagree about what a derived
+/// tensor's bytes are. A derived tensor is materialised whole (it is one
+/// projection); a stored one streams through the fixed buffer as before.
+pub fn stream_inventory_tensor(
+    source: &dyn TensorSource,
+    inventory: &larql_models::inventory::ArchitectureInventory,
+    name: &str,
+    write: &mut dyn std::io::Write,
+    observe: &mut dyn FnMut(&[u8]),
+) -> Result<u64, VindexError> {
+    let fact = inventory
+        .tensors
+        .tensors
+        .binary_search_by(|t| t.name.as_str().cmp(name))
+        .ok()
+        .map(|i| &inventory.tensors.tensors[i]);
+    let Some((fact, derivation)) = fact.and_then(|f| f.derivation.as_ref().map(|d| (f, d))) else {
+        return source.stream_payload(name, write, observe);
+    };
+    let mut stored = Vec::new();
+    source.stream_payload(&derivation.source, &mut stored, &mut |_| {})?;
+    let derived = larql_models::inventory::derive::derive_bytes(derivation, &fact.dtype, &stored)
+        .map_err(|e| VindexError::Parse(format!("deriving `{name}`: {e}")))?;
+    if derived.len() as u64 != fact.bytes {
+        return Err(VindexError::Parse(format!(
+            "derived `{name}` is {} bytes; the inventory records {}",
+            derived.len(),
+            fact.bytes
+        )));
+    }
+    observe(&derived);
+    write.write_all(&derived)?;
+    Ok(derived.len() as u64)
+}
+
 /// Payload locations for every tensor of one artifact directory.
 pub struct ArtifactSource {
     locations: BTreeMap<String, PayloadLocation>,

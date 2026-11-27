@@ -73,7 +73,7 @@ impl<'a, B: PlanBackend> DecodeSession<'a, B> {
                 Carrier::Single(values)
             }
             Entry::Token(token) => {
-                let h = ops.embed_token(self.plan, self.backend, token)?;
+                let h = ops.embed_token(self.plan, self.backend, token, position)?;
                 observer.event(StepEvent::Embedded { position });
                 // The first link of the carrier chain (V3-OBS-1, C6):
                 // what enters layer 0, before any topology wraps it.

@@ -42,6 +42,14 @@ pub trait FeedForward: Attention {
     /// one `unwrap_or(Silu)`, so a checkpoint declaring `situ` or `relu2`
     /// was silently executed as SwiGLU. Two rows in the conformance
     /// estate were in exactly that state.
+    /// Whether the dense FFN's up and down projections carry additive
+    /// biases. Reads `mlp_bias` when the checkpoint declares it; `None` =
+    /// unjudged, and a bias operand shipped under `None` or `Some(false)`
+    /// fails VINDEX3 operand closure.
+    fn ffn_bias(&self) -> Option<bool> {
+        self.config().mlp_bias
+    }
+
     fn activation(&self) -> Activation {
         match self.activation_declaration() {
             ActivationDeclaration::Nonlinearity(activation) => activation,

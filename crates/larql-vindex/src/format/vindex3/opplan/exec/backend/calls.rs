@@ -299,6 +299,9 @@ pub struct NormCall<'a> {
     pub kind: NormType,
     pub x: &'a [f32],
     pub weight: &'a [f32],
+    /// Additive bias after the gain; empty = none (LayerNorm's affine
+    /// `bias` when the plan declares one).
+    pub bias: &'a [f32],
     pub weight_offset: f32,
     pub eps: f64,
 }
@@ -429,6 +432,11 @@ pub struct FfnCall<'a> {
     /// refuse: computing `activation(gate) * up` for a `ClampedGlu` plan
     /// runs a different model.
     pub gate_policy: larql_models::ExpertGatePolicy,
+    /// Additive biases: `up_bias` after the up projection (before the
+    /// activation), `down_bias` after the down projection. A backend that
+    /// cannot add them must refuse, never drop them.
+    pub up_bias: Option<&'a [f32]>,
+    pub down_bias: Option<&'a [f32]>,
 }
 
 /// The same dense feed-forward operation over SEVERAL positions.
@@ -449,4 +457,6 @@ pub struct FfnManyCall<'a> {
     pub down: WeightSlice<'a>,
     pub activation: Activation,
     pub gate_policy: larql_models::ExpertGatePolicy,
+    pub up_bias: Option<&'a [f32]>,
+    pub down_bias: Option<&'a [f32]>,
 }

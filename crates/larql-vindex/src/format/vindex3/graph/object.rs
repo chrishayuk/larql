@@ -11,6 +11,14 @@ use serde::{Deserialize, Serialize};
 pub enum ObjectKind {
     /// Token embedding table.
     Embedding,
+    /// A learned absolute position table (`wpe`), whose row `p` is added to
+    /// the token embedding at position `p` — the operand of the head
+    /// surface's `input_position` declaration. Its own object rather than
+    /// a second tensor inside [`Self::Embedding`]: the two tables are
+    /// different operations (a token lookup and a position lookup), and an
+    /// embedding object holding both would leave the op plan to tell them
+    /// apart by name.
+    PositionEmbedding,
     /// The per-layer transformer stack (attention + FFN + norms).
     DecoderStack,
     /// The final norm before the output head.
@@ -71,6 +79,7 @@ impl ObjectKind {
     pub fn name(self) -> &'static str {
         match self {
             Self::Embedding => "embedding",
+            Self::PositionEmbedding => "position_embedding",
             Self::DecoderStack => "decoder_stack",
             Self::FinalNorm => "final_norm",
             Self::OutputHead => "output_head",

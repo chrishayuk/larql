@@ -39,6 +39,12 @@ pub(super) fn run_ops(args: OpsArgs) -> Result<(), Box<dyn std::error::Error>> {
                 embedding.vocab_size,
                 scalar(embedding.scale)
             );
+            if let Some(position) = &embedding.position {
+                println!(
+                    "input position: {:?} from {}",
+                    position.encoding, position.table.object
+                );
+            }
         }
         match args.layer {
             Some(layer) => match plan.layers.iter().find(|l| l.layer == layer) {

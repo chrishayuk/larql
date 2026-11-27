@@ -154,6 +154,13 @@ pub(super) const SURFACE_RULES: &[CarriageRule] = &[
         probe: Some(probe_activation),
     },
     CarriageRule {
+        leaf: "activation_function",
+        reaches: Carriage::Lowered,
+        // GPT-2's spelling of `hidden_act`, read into the same field.
+        site: "ExecutionSurface.ffn.activation → FfnOp.activation",
+        probe: Some(probe_activation),
+    },
+    CarriageRule {
         leaf: "hidden_activation",
         reaches: Carriage::Lowered,
         site: "ExecutionSurface.ffn.activation → FfnOp.activation",
@@ -417,6 +424,48 @@ pub(super) const SURFACE_RULES: &[CarriageRule] = &[
         // don't carry bias operands, not here.
         site: "no schema field — carried instead as operand evidence, gated by G5b closure",
         probe: None,
+    },
+    CarriageRule {
+        leaf: "n_positions",
+        reaches: Carriage::Lowered,
+        // GPT-2's serving bound, and on this lineage the learned position
+        // table's row count: the input position encoding carries it, and
+        // closure holds the stored table to it.
+        site: "ExecutionSurface.head.input_position.max_positions → EmbeddingOp.position.max_positions",
+        probe: Some(probe_input_position_rows),
+    },
+    CarriageRule {
+        leaf: "scale_attn_weights",
+        reaches: Carriage::Lowered,
+        // `false` makes the score multiplier exactly one; `true` (and
+        // silence) is the canonical 1/sqrt(head_dim).
+        site: "ExecutionSurface.attention.score_scale → AttentionOp.score_scale",
+        probe: Some(probe_scales_scores),
+    },
+    CarriageRule {
+        leaf: "scale_attn_by_inverse_layer_idx",
+        reaches: Carriage::Represented,
+        // A per-layer `1/(layer+1)` score multiplier. The score scale is a
+        // component fact here, so only `false` is representable.
+        site: "no schema field — the score scale is uniform across layers; only `false` is representable",
+        probe: Some(probe_false),
+    },
+    CarriageRule {
+        leaf: "reorder_and_upcast_attn",
+        reaches: Carriage::Represented,
+        // GPT-2's mixed-precision score path (scale before the matmul,
+        // upcast to f32). No op carries a reordered score path, so only
+        // `false` is representable.
+        site: "no schema field — only `false` is representable",
+        probe: Some(probe_false),
+    },
+    CarriageRule {
+        leaf: "add_cross_attention",
+        reaches: Carriage::Represented,
+        // A cross-attention block over encoder states. A decoder-only
+        // component has none, so only `false` is representable.
+        site: "no schema field — no cross-attention op exists; only `false` is representable",
+        probe: Some(probe_false),
     },
     CarriageRule {
         leaf: "max_position_embeddings",

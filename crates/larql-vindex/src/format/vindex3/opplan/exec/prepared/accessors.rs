@@ -317,6 +317,7 @@ impl PreparedOperands {
         plan: &ComponentOpPlan,
         backend: &B,
         token: u32,
+        position: usize,
     ) -> Result<Vec<f32>, VindexError> {
         let embedding = plan
             .embedding
@@ -337,11 +338,39 @@ impl PreparedOperands {
                 kind: norm.kind,
                 x: &row,
                 weight: &[],
+                bias: &[],
                 weight_offset: 0.0,
                 eps: norm.eps,
             });
         }
+        self.add_input_position(backend, &mut row, position)?;
         Ok(row)
+    }
+
+    /// Add the learned input position row for `position`, when the plan
+    /// declares a position table — after the embedding's scale and norm,
+    /// as `h0 = embed(token) + table[position]`. A position past the
+    /// table's last row refuses: it has no learned encoding, and wrapping
+    /// or clamping would run a different model.
+    pub(in super::super) fn add_input_position<B: PlanBackend + ?Sized>(
+        &self,
+        backend: &B,
+        row: &mut [f32],
+        position: usize,
+    ) -> Result<(), VindexError> {
+        let Some(table) = &self.position_table else {
+            return Ok(());
+        };
+        let hidden = self.hidden();
+        let rows = table.len().checked_div(hidden).unwrap_or(0);
+        if position >= rows {
+            return Err(VindexError::Parse(format!(
+                "position {position} is past the learned position table's {rows} rows — \
+                 the model has no encoding for it"
+            )));
+        }
+        backend.residual_add(row, &table[position * hidden..(position + 1) * hidden]);
+        Ok(())
     }
 
     /// PREC-DIAG-1 E0b: choose how every softmax layer of this image

@@ -62,6 +62,7 @@ pub fn scan_tensors(model_dir: &Path) -> Result<TensorInventory, ModelError> {
             .collect(),
         tensors,
         files,
+        excluded: Vec::new(),
     })
 }
 
@@ -146,6 +147,7 @@ fn read_shard_header(
             shape,
             bytes,
             file: file.to_string(),
+            derivation: None,
         });
     }
     Ok(())
@@ -155,7 +157,7 @@ fn read_shard_header(
 /// segment (`model.language_model.layers.0.…` → `model.language_model.layers`),
 /// or with the final segment dropped when there is none
 /// (`lm_head.weight` → `lm_head`).
-fn group_prefix(name: &str) -> String {
+pub(super) fn group_prefix(name: &str) -> String {
     let segments: Vec<&str> = name.split('.').collect();
     let cut = segments
         .iter()

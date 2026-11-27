@@ -58,6 +58,7 @@ impl<'a> LoweredSession<'a> {
         // FIRST, because it is the one refusal whose absence would not fail
         // loudly: see `refuse_unlowered_gate_source`.
         refuse_unlowered_gate_source(plan)?;
+        refuse_unlowered_glue(plan)?;
         // No DeltaNet kernel exists on this path. Refuse the whole plan
         // rather than lower the 16 softmax layers of a 64-layer hybrid and
         // silently drop the other 48.
@@ -484,4 +485,54 @@ pub(super) fn refuse_unlowered_gate_source(plan: &ComponentOpPlan) -> Result<(),
         ))),
         None => Ok(()),
     }
+}
+
+/// Three judged operations this lowering has no slot for: a learned input
+/// position table, a norm bias, and dense-FFN projection biases. Each is
+/// refused by name rather than dropped — the reference and production
+/// backends execute all three.
+fn refuse_unlowered_glue(plan: &ComponentOpPlan) -> Result<(), VindexError> {
+    if plan
+        .embedding
+        .as_ref()
+        .is_some_and(|e| e.position.is_some())
+    {
+        return Err(VindexError::Parse(
+            "the plan adds a learned input position table, which this lowering does not \
+             express; refusing"
+                .to_string(),
+        ));
+    }
+    let norm_biased = |n: &Option<crate::format::vindex3::opplan::NormOp>| {
+        n.as_ref().is_some_and(|n| n.bias.is_some())
+    };
+    if norm_biased(&plan.final_norm)
+        || plan.layers.iter().any(|l| {
+            norm_biased(&l.pre_attention_norm)
+                || norm_biased(&l.post_attention_norm)
+                || norm_biased(&l.pre_ffn_norm)
+                || norm_biased(&l.post_ffn_norm)
+        })
+    {
+        return Err(VindexError::Parse(
+            "the plan carries norm biases, which this lowering does not express; refusing"
+                .to_string(),
+        ));
+    }
+    if plan.layers.iter().any(|l| match &l.ffn {
+        Some(crate::format::vindex3::opplan::LayerFfn::Dense(op)) => {
+            op.up_bias.is_some() || op.down_bias.is_some()
+        }
+        Some(crate::format::vindex3::opplan::LayerFfn::Hybrid(op)) => {
+            op.dense.up_bias.is_some() || op.dense.down_bias.is_some()
+        }
+        _ => false,
+    }) {
+        return Err(VindexError::Parse(
+            "the plan carries dense-FFN projection biases, which this lowering does not \
+             express; refusing"
+                .to_string(),
+        ));
+    }
+    Ok(())
 }

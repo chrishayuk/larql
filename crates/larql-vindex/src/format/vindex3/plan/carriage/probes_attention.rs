@@ -548,3 +548,20 @@ pub(super) fn probe_residual_in_fp32(
 ) -> Option<Value> {
     Some(json!(component.execution.as_ref()?.residual_in_fp32?))
 }
+
+/// Whether the attention scales QK^T at all (`scale_attn_weights`).
+pub(super) fn probe_scales_scores(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let attention = component.execution.as_ref()?.attention.as_ref()?;
+    Some(json!(
+        attention.score_scale != larql_models::config::UNSCALED_SCORES
+    ))
+}
+
+/// The learned input position table's declared row count.
+pub(super) fn probe_input_position_rows(
+    component: &Component,
+    _ctx: &ProbeContext<'_>,
+) -> Option<Value> {
+    let head = component.execution.as_ref()?.head.as_ref()?;
+    Some(json!(head.input_position?.max_positions()))
+}

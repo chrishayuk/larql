@@ -202,6 +202,34 @@ pub enum PositionPolicy {
     None,
 }
 
+/// How position enters the residual stream at the INPUT, before any
+/// layer runs — a component fact, beside (never instead of) the per-layer
+/// [`PositionPolicy`].
+///
+/// GPT-2's lineage adds a learned table row `wpe[position]` to every
+/// token embedding and rotates nothing; its layers' policy is
+/// [`PositionPolicy::None`]. The two are separate facts because they
+/// happen at different sites: a reader that folded this into the
+/// per-layer policy would have to invent a "rotation" for a layer that
+/// performs none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InputPositionEncoding {
+    /// `h0[p] = embed(token[p]) + table[p]` for a learned `[max_positions,
+    /// hidden]` table. A position at or beyond `max_positions` has no row
+    /// and must refuse, never wrap.
+    LearnedAbsolute { max_positions: usize },
+}
+
+impl InputPositionEncoding {
+    /// Rows the table must carry.
+    pub fn max_positions(self) -> usize {
+        match self {
+            Self::LearnedAbsolute { max_positions } => max_positions,
+        }
+    }
+}
+
 /// Axis index (0 = t, 1 = h, 2 = w) each frequency slot draws its
 /// position from, under an M-RoPE `section`/`interleaved` policy.
 ///
