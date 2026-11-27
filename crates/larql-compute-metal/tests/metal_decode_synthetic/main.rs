@@ -22,7 +22,11 @@
 //!
 //! Numerical-correctness against a CPU reference happens in
 //! `larql-inference/tests/test_cpu_metal_parity.rs` against real
-//! vindexes; it's at the wrong scope to live here.
+//! vindexes; it's at the wrong scope to live here. That gate only loads
+//! Q4_K vindexes, though, so it never reaches the Q4_0 FFN these layers
+//! use. `prefill_decode_ffn_parity` is the one numerical check here: it
+//! holds prefill to decode on that FFN, because a prefill that ran the
+//! down projection on the wrong vector passed every smoke test above.
 
 #![cfg(target_os = "macos")]
 
@@ -39,6 +43,7 @@ mod ffn_std_profile;
 mod moe;
 mod o_proj_and_seqpar;
 mod padded_attn;
+mod prefill_decode_ffn_parity;
 mod qkv_routes;
 mod state_dump;
 mod trait_decode;
