@@ -24,7 +24,7 @@
 
 use std::path::Path;
 
-use larql_vindex::format::filenames::{GENERATION_CONFIG_JSON, TOKENIZER_CONFIG_JSON};
+use larql_vindex::format::filenames::{GENERATION_CONFIG_JSON, INDEX_JSON, TOKENIZER_CONFIG_JSON};
 
 use crate::tokenizer::maybe_prepend_bos;
 
@@ -69,7 +69,7 @@ impl std::error::Error for PromptEncodeError {}
 /// that declares nothing (one predating the capability snapshot) gets
 /// none. Unreadable or malformed config is no declaration.
 pub fn declared_prompt_bos(container: &Path) -> Option<u32> {
-    if declares_no_bos(container) {
+    if declares_no_bos(container) || family_tokenizer_adds_no_bos(container) {
         return None;
     }
     BOS_DECLARING_FILES.iter().find_map(|name| {
@@ -106,6 +106,27 @@ fn declares_no_bos(container: &Path) -> bool {
         .and_then(|json| json.get(ADD_BOS_TOKEN_KEY)?.as_bool())
         == Some(false)
 }
+
+/// Whether the container's family judges that its tokenizer class adds
+/// no BOS when `add_bos_token` is undeclared (`GPT2Tokenizer`, whose
+/// class default is `False` — GPT-2 and GPT-Neo). An explicit
+/// `add_bos_token` always wins, so this answers only for the silent case;
+/// a family with no judgment (every other one) answers `false` and keeps
+/// the declared-BOS rule unchanged.
+fn family_tokenizer_adds_no_bos(container: &Path) -> bool {
+    let declares = read_json(container, TOKENIZER_CONFIG_JSON)
+        .is_some_and(|json| json.get(ADD_BOS_TOKEN_KEY).is_some_and(|v| v.is_boolean()));
+    if declares {
+        return false;
+    }
+    read_json(container, INDEX_JSON)
+        .and_then(|index| index.get(INDEX_FAMILY_KEY)?.as_str().map(str::to_string))
+        .and_then(|family| larql_models::detect::find_architecture(&family))
+        .is_some_and(|entry| entry.config_defaults.tokenizer_adds_bos == Some(false))
+}
+
+/// The `index.json` key naming the container's family.
+const INDEX_FAMILY_KEY: &str = "family";
 
 fn read_json(container: &Path, name: &str) -> Option<serde_json::Value> {
     let text = std::fs::read_to_string(container.join(name)).ok()?;

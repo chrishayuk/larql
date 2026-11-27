@@ -34,12 +34,29 @@ pub struct FusedProjection {
     pub parts: &'static [&'static str],
 }
 
+/// What a registered attention-mask buffer holds, so its stored contents
+/// can be CHECKED against the layer's declared span before it is
+/// excluded — an excluded buffer is a claim that the declaration
+/// reproduces it, and the claim is verified, never assumed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BufferKind {
+    /// `[1, 1, n, n]`, nonzero exactly where query `i` may see key `j`:
+    /// `j <= i` on a full layer, `i - window < j <= i` on a sliding one.
+    CausalMask,
+    /// The scalar a masked score is filled with. Inert only if it is so
+    /// negative that its softmax weight is exactly zero in f32.
+    MaskFill,
+}
+
 /// Tensors that ship in the checkpoint but are not parameters of the
 /// forward pass: registered buffers the reference recomputes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NonParameterBuffer {
     /// Layer-relative tensor name (`attn.bias`).
     pub suffix: &'static str,
+    /// What it holds — the contract its stored contents are checked to.
+    pub kind: BufferKind,
     /// Why no operation reads it — printed in the inventory and the plan.
     pub reason: &'static str,
 }

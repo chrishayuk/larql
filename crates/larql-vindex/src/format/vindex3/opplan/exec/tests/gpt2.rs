@@ -350,3 +350,124 @@ fn a_declared_rope_base_is_still_read_as_rotary() {
     let table = plan.graph.components[0].attention.clone().unwrap();
     assert!(table.iter().all(|l| l.position.is_rotary()), "{table:?}");
 }
+
+/// G4 on a container whose decoder stack is DERIVED (split + transposed):
+/// both hash ends agree, and each derived tensor is additionally held,
+/// element by element and from the container side, to the stored tensor.
+#[test]
+fn g4_holds_derived_tensors_to_their_stored_source_element_by_element() {
+    use crate::format::vindex3::verify_system::verify_system;
+    let checkpoint = tempfile::tempdir().unwrap();
+    miniature_gpt2_with(checkpoint.path(), Gpt2Form::default());
+    let honest = inventory(checkpoint.path());
+    let named = [(COMPONENT.to_string(), honest.clone())];
+    let container = tempfile::tempdir().unwrap();
+    encode_system(&named, container.path()).unwrap();
+    let verification = verify_system(&named, container.path()).unwrap();
+    assert!(verification.verified, "{:?}", verification.payloads);
+    let stack = verification
+        .payloads
+        .iter()
+        .find(|p| p.representation.starts_with("target.decoder_stack"))
+        .unwrap();
+    assert!(
+        stack.detail.contains("derived tensor(s) match"),
+        "{}",
+        stack.detail
+    );
+
+    // A container written with Q and K's slices exchanged — the shapes
+    // close, the plan runs — is refused against the honest source, and the
+    // audit names the element it caught.
+    let mut doctored = honest;
+    let slice_of = |inv: &larql_models::inventory::ArchitectureInventory, leaf: &str| {
+        inv.tensors
+            .tensors
+            .iter()
+            .position(|t| t.name.ends_with(leaf))
+            .unwrap()
+    };
+    let (q, k) = (
+        slice_of(&doctored, "h.0.self_attn.q_proj.weight"),
+        slice_of(&doctored, "h.0.self_attn.k_proj.weight"),
+    );
+    let q_slice = doctored.tensors.tensors[q]
+        .derivation
+        .as_ref()
+        .unwrap()
+        .slice;
+    let k_slice = doctored.tensors.tensors[k]
+        .derivation
+        .as_ref()
+        .unwrap()
+        .slice;
+    doctored.tensors.tensors[q]
+        .derivation
+        .as_mut()
+        .unwrap()
+        .slice = k_slice;
+    doctored.tensors.tensors[k]
+        .derivation
+        .as_mut()
+        .unwrap()
+        .slice = q_slice;
+    let swapped = tempfile::tempdir().unwrap();
+    encode_system(&[(COMPONENT.to_string(), doctored)], swapped.path()).unwrap();
+    let verification = verify_system(&named, swapped.path()).unwrap();
+    assert!(!verification.verified);
+    let stack = verification
+        .payloads
+        .iter()
+        .find(|p| p.representation.starts_with("target.decoder_stack"))
+        .unwrap();
+    assert!(
+        stack.detail.contains("derived tensor audit failed"),
+        "{}",
+        stack.detail
+    );
+}
+
+/// An excluded mask buffer is a claim that the declared span reproduces
+/// it. The claim is checked from the stored bytes: a non-causal mask, or a
+/// fill that would leave a masked score weight, refuses the encode.
+#[test]
+fn a_stored_mask_the_declared_span_does_not_reproduce_refuses_the_encode() {
+    for (what, form) in [
+        (
+            "a non-causal mask",
+            Gpt2Form {
+                corrupt_mask: true,
+                ..Default::default()
+            },
+        ),
+        (
+            "a weak fill",
+            Gpt2Form {
+                mask_fill: -1.0,
+                ..Default::default()
+            },
+        ),
+    ] {
+        let checkpoint = tempfile::tempdir().unwrap();
+        miniature_gpt2_with(checkpoint.path(), form);
+        let container = tempfile::tempdir().unwrap();
+        let err = encode_system(
+            &[(COMPONENT.to_string(), inventory(checkpoint.path()))],
+            container.path(),
+        )
+        .expect_err(what)
+        .to_string();
+        assert!(err.contains("refusing to exclude"), "{what}: {err}");
+    }
+    // And G4 re-checks the honest one.
+    let (_m, checkpoint, container) = encoded(Gpt2Form::default());
+    let named = [(COMPONENT.to_string(), inventory(checkpoint.path()))];
+    let verification =
+        crate::format::vindex3::verify_system::verify_system(&named, container.path()).unwrap();
+    let check = verification
+        .semantic
+        .iter()
+        .find(|c| c.subject == "excluded registered buffers")
+        .expect("the buffer check runs at G4");
+    assert!(check.pass, "{}", check.detail);
+}

@@ -125,6 +125,14 @@ at bind. The rule:
 1. the tokenizer's own encoding, post-processor included;
 2. `tokenizer_config.json` declaring `add_bos_token: false` → nothing more
    (Granite, Qwen3: both declare a `bos_token_id` they never add);
+   - when `add_bos_token` is not declared at all, a family whose tokenizer
+     CLASS defaults it to false says so on its registry row
+     (`ConfigDefaults::tokenizer_adds_bos: Some(false)`), read through the
+     container's `index.json` family: GPT-2 and GPT-Neo (`GPT2Tokenizer`)
+     get no BOS although their configs declare 50256, matching Hugging
+     Face. Only those two rows carry the judgment
+     (`no_other_familys_prompt_bos_changes`), so every other family
+     encodes exactly as before;
 3. otherwise a declared BOS id (`generation_config.json`, then
    `tokenizer_config.json`) is prepended unless the encoding already starts
    with it (`maybe_prepend_bos`) — Gemma 4, whose tokenizer omits it.

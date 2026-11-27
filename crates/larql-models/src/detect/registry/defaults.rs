@@ -43,6 +43,13 @@ pub struct ConfigDefaults {
     /// `num_heads`, which on a Mamba2 config is the MIXER's head count and
     /// must never be read as attention heads there.
     pub head_count_key: Option<&'static str>,
+    /// What the family's TOKENIZER class does about a BOS when
+    /// `tokenizer_config.json` does not declare `add_bos_token`:
+    /// `Some(false)` = it adds none (`GPT2Tokenizer`'s class default, so
+    /// GPT-2 and GPT-Neo prompts start with the first text token). `None`
+    /// = no family judgment, and a declared BOS id is prepended — the rule
+    /// every other family is served by.
+    pub tokenizer_adds_bos: Option<bool>,
 }
 
 impl ConfigDefaults {
@@ -56,5 +63,6 @@ impl ConfigDefaults {
         intermediate_size: IntermediateSize::Required,
         layer_count_key: None,
         head_count_key: None,
+        tokenizer_adds_bos: None,
     };
 }

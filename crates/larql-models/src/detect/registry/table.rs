@@ -61,6 +61,7 @@ const GEMMA1_CONFIG_DEFAULTS: ConfigDefaults = ConfigDefaults {
     intermediate_size: IntermediateSize::Required,
     layer_count_key: None,
     head_count_key: None,
+    tokenizer_adds_bos: None,
 };
 
 /// `transformers` `Gemma2Config` class defaults.
@@ -72,6 +73,7 @@ const GEMMA2_CONFIG_DEFAULTS: ConfigDefaults = ConfigDefaults {
     intermediate_size: IntermediateSize::Required,
     layer_count_key: None,
     head_count_key: None,
+    tokenizer_adds_bos: None,
 };
 
 /// `transformers` `Gemma3TextConfig` class defaults; Gemma 4 inherits them.
@@ -275,6 +277,8 @@ pub static ARCHITECTURE_REGISTRY: &[ArchitectureEntry] = &[
         construct: |c, _| Box::new(Gpt2Arch::from_config(c)),
         config_defaults: ConfigDefaults {
             intermediate_size: IntermediateSize::HiddenMultiple(GPT2_FFN_HIDDEN_MULTIPLE),
+            // `GPT2Tokenizer`: `add_bos_token` defaults to `False`.
+            tokenizer_adds_bos: Some(false),
             ..ConfigDefaults::STANDARD
         },
         gguf: GgufTranslation::NONE,
@@ -295,6 +299,8 @@ pub static ARCHITECTURE_REGISTRY: &[ArchitectureEntry] = &[
             intermediate_size: IntermediateSize::HiddenMultiple(GPT2_FFN_HIDDEN_MULTIPLE),
             layer_count_key: Some("num_layers"),
             head_count_key: Some("num_heads"),
+            // GPT-Neo ships GPT-2's tokenizer class.
+            tokenizer_adds_bos: Some(false),
             ..ConfigDefaults::STANDARD
         },
         gguf: GgufTranslation::NONE,

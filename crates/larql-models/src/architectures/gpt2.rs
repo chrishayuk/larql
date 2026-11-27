@@ -12,8 +12,8 @@
 //! `mlp.down_proj.weight`, …), so this arch only overrides behavior flags.
 
 use crate::config::{
-    Activation, ActivationDeclaration, FfnType, FusedProjection, ModelArchitecture, ModelConfig,
-    NonParameterBuffer, NormType, SourceLayout,
+    Activation, ActivationDeclaration, BufferKind, FfnType, FusedProjection, ModelArchitecture,
+    ModelConfig, NonParameterBuffer, NormType, SourceLayout,
 };
 use crate::detect::LayerBandSplit;
 use crate::tensor_keys::attn_bias;
@@ -119,10 +119,12 @@ const GPT2_SOURCE_LAYOUT: SourceLayout = SourceLayout {
     buffers: &[
         NonParameterBuffer {
             suffix: "attn.bias",
+            kind: BufferKind::CausalMask,
             reason: GPT2_MASK_BUFFER_REASON,
         },
         NonParameterBuffer {
             suffix: "attn.masked_bias",
+            kind: BufferKind::MaskFill,
             reason: GPT2_MASK_BUFFER_REASON,
         },
     ],

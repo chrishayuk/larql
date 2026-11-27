@@ -24,8 +24,8 @@
 //! token embedding, and a head tied to `wte`.
 
 use crate::config::{
-    Activation, ActivationDeclaration, FfnType, ModelArchitecture, ModelConfig, NonParameterBuffer,
-    NormType, SourceLayout,
+    Activation, ActivationDeclaration, BufferKind, FfnType, ModelArchitecture, ModelConfig,
+    NonParameterBuffer, NormType, SourceLayout,
 };
 
 pub struct GptNeoArch {
@@ -65,10 +65,12 @@ const GPT_NEO_SOURCE_LAYOUT: SourceLayout = SourceLayout {
     buffers: &[
         NonParameterBuffer {
             suffix: "attn.attention.bias",
+            kind: BufferKind::CausalMask,
             reason: GPT_NEO_MASK_BUFFER_REASON,
         },
         NonParameterBuffer {
             suffix: "attn.attention.masked_bias",
+            kind: BufferKind::MaskFill,
             reason: GPT_NEO_MASK_BUFFER_REASON,
         },
     ],

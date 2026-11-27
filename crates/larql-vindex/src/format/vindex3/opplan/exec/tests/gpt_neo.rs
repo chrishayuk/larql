@@ -296,3 +296,44 @@ fn attention_layers_that_contradict_attention_types_block_the_plan() {
         .flat_map(|a| &a.findings)
         .any(|f| f.blocks() && f.subject == "attention_layers"));
 }
+
+/// GPT-Neo's local-layer buffer encodes the window. Stored correctly it is
+/// excluded after checking; stored as the global mask it contradicts the
+/// declared window and refuses.
+#[test]
+fn a_local_layers_stored_mask_is_checked_against_its_window() {
+    use crate::format::vindex3::fixtures_gpt_neo::miniature_gpt_neo_with;
+    let checkpoint = tempfile::tempdir().unwrap();
+    miniature_gpt_neo_with(
+        checkpoint.path(),
+        GptNeoForm {
+            buffers: true,
+            ..Default::default()
+        },
+    );
+    let inv = inventory(checkpoint.path());
+    assert_eq!(inv.tensors.excluded.len(), 2 * NEO_LAYERS);
+    let container = tempfile::tempdir().unwrap();
+    encode_system(&[(COMPONENT.to_string(), inv)], container.path()).unwrap();
+
+    let checkpoint = tempfile::tempdir().unwrap();
+    miniature_gpt_neo_with(
+        checkpoint.path(),
+        GptNeoForm {
+            buffers: true,
+            global_mask_on_local_layer: true,
+            ..Default::default()
+        },
+    );
+    let container = tempfile::tempdir().unwrap();
+    let err = encode_system(
+        &[(COMPONENT.to_string(), inventory(checkpoint.path()))],
+        container.path(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("refusing to exclude") && err.contains("layer 1"),
+        "{err}"
+    );
+}

@@ -373,7 +373,11 @@ pub(super) fn excluded_tensor_findings(inventory: &ArchitectureInventory) -> Vec
             declared: None,
             resolved: None,
             carriage: None,
-            detail: format!("excluded from the operand estate: {}", t.reason),
+            detail: format!(
+                "excluded from the operand estate: {} (its stored contents are checked against \
+                 the declared span at encode and at G4, and any disagreement refuses)",
+                t.reason
+            ),
         })
         .collect()
 }

@@ -118,3 +118,56 @@ fn every_bos_shape_encodes_to_its_expected_ids() {
         assert_eq!(ids, shape.expected_ids(), "{shape:?}");
     }
 }
+
+/// GPT-2's lineage: `GPT2Tokenizer` adds no BOS unless `add_bos_token`
+/// says so, and GPT-2 Small's `tokenizer_config.json` says nothing — so a
+/// raw prompt is the text's own ids, as Hugging Face encodes it, although
+/// the config declares a BOS id (50256).
+#[test]
+fn a_gpt2_lineage_family_adds_no_bos_unless_its_tokenizer_config_says_so() {
+    for family in ["gpt2", "gpt_neo"] {
+        let dir = container_with(&[
+            ("index.json", json!({"family": family})),
+            ("generation_config.json", json!({"bos_token_id": BOS})),
+            ("tokenizer_config.json", json!({"model_max_length": 1024})),
+        ]);
+        assert_eq!(declared_prompt_bos(dir.path()), None, "{family}");
+        let ids = encode_raw_prompt(&tokenizer(), "[3] [4]", declared_prompt_bos(dir.path()));
+        assert_eq!(ids.unwrap(), vec![3, 4], "{family}");
+        // An explicit declaration still wins.
+        let dir = container_with(&[
+            ("index.json", json!({"family": family})),
+            ("generation_config.json", json!({"bos_token_id": BOS})),
+            ("tokenizer_config.json", json!({"add_bos_token": true})),
+        ]);
+        assert_eq!(declared_prompt_bos(dir.path()), Some(BOS), "{family}");
+    }
+}
+
+/// The family rule changes nothing for any other family: the same silent
+/// container under every other registered family keeps the declared BOS,
+/// and only the two GPT-2-lineage rows carry the judgment at all.
+#[test]
+fn no_other_familys_prompt_bos_changes() {
+    let judged: Vec<&str> = larql_models::detect::ARCHITECTURE_REGISTRY
+        .iter()
+        .filter(|e| e.config_defaults.tokenizer_adds_bos.is_some())
+        .map(|e| e.model_type)
+        .collect();
+    assert_eq!(judged, ["gpt2", "gpt_neo"]);
+    for entry in larql_models::detect::ARCHITECTURE_REGISTRY {
+        if judged.contains(&entry.model_type) {
+            continue;
+        }
+        let dir = container_with(&[
+            ("index.json", json!({"family": entry.model_type})),
+            ("generation_config.json", json!({"bos_token_id": BOS})),
+        ]);
+        assert_eq!(
+            declared_prompt_bos(dir.path()),
+            Some(BOS),
+            "{}",
+            entry.model_type
+        );
+    }
+}

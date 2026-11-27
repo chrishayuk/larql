@@ -68,6 +68,11 @@ pub struct GptNeoForm {
     pub contradictory_layers: bool,
     /// Ship a `q_proj.bias`, which GPT-Neo does not have.
     pub q_bias: bool,
+    /// Ship the registered mask buffers older `.bin` conversions carry.
+    pub buffers: bool,
+    /// Store the LOCAL layer's mask as the global (causal-only) one — the
+    /// buffer then contradicts the declared window.
+    pub global_mask_on_local_layer: bool,
 }
 
 impl Default for GptNeoForm {
@@ -76,6 +81,8 @@ impl Default for GptNeoForm {
             attention_layers: true,
             contradictory_layers: false,
             q_bias: false,
+            buffers: false,
+            global_mask_on_local_layer: false,
         }
     }
 }
@@ -193,6 +200,25 @@ pub fn miniature_gpt_neo_with(dir: &Path, form: GptNeoForm) -> GptNeoMiniature {
             &l.c_proj_w,
         );
         shard.push(&format!("{b}.mlp.c_proj.bias"), &[h], &l.c_proj_b);
+        if form.buffers {
+            // `GPTNeoSelfAttention`: tril, minus everything older than the
+            // window on a local layer (`bias ^ tril(bias, -window_size)`).
+            let n = NEO_POSITIONS;
+            let local = NEO_LAYER_KINDS[i] == "local" && !form.global_mask_on_local_layer;
+            let mask: Vec<f32> = (0..n * n)
+                .map(|e| {
+                    let (q, k) = (e / n, e % n);
+                    let visible = k <= q && (!local || k + NEO_WINDOW > q);
+                    if visible {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                })
+                .collect();
+            shard.push(&format!("{a}.bias"), &[1, 1, n, n], &mask);
+            shard.push(&format!("{a}.masked_bias"), &[], &[-1e9]);
+        }
     }
     shard.write(dir);
     model

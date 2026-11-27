@@ -89,7 +89,7 @@ pub use rope_types::{
     ROPE_TYPE_PROPORTIONAL, ROPE_TYPE_YARN,
 };
 pub use shared_expert_gate::{SharedExpertGateSource, SharedExpertGateSpec};
-pub use source_layout::{FusedProjection, NonParameterBuffer, SourceLayout};
+pub use source_layout::{BufferKind, FusedProjection, NonParameterBuffer, SourceLayout};
 
 #[cfg(test)]
 mod kda_geometry_tests;

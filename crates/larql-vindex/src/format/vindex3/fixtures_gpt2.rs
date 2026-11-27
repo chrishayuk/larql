@@ -25,6 +25,8 @@ pub const GPT2_TOKENS: [u32; 8] = [3, 17, 28, 0, 11, 5, 9, 2];
 /// The seeded values sit in ±0.05; the position table is scaled up so a
 /// dropped or mis-indexed position row cannot hide under rounding.
 const POSITION_SCALE: f32 = 10.0;
+/// What `GPT2Attention` registers as `masked_bias`.
+pub const GPT2_MASK_FILL: f32 = -1e4;
 
 /// One layer's stored tensors, in the checkpoint's own layout.
 pub struct Gpt2Layer {
@@ -58,7 +60,7 @@ pub struct Gpt2Miniature {
 }
 
 /// One miniature's deliberate variations from the plain model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Gpt2Form {
     /// Tensor-name prefix: `"transformer."` (what `save_pretrained`
     /// writes) or `""` (the original OpenAI conversion, `h.0.…`).
@@ -70,6 +72,11 @@ pub struct Gpt2Form {
     pub inverse_layer_idx: bool,
     /// Ship the registered mask buffers beside the parameters.
     pub buffers: bool,
+    /// Store a mask that is NOT the causal one (key `i + 1` visible to
+    /// query `i` on layer 0) — a buffer the declaration does not reproduce.
+    pub corrupt_mask: bool,
+    /// The stored `masked_bias` fill.
+    pub mask_fill: f32,
     /// Declare a `rope_theta` the family never reads — a checkpoint that
     /// then claims rotation.
     pub declares_rope: bool,
@@ -82,6 +89,8 @@ impl Default for Gpt2Form {
             scale_attn_weights: Some(true),
             inverse_layer_idx: false,
             buffers: true,
+            corrupt_mask: false,
+            mask_fill: GPT2_MASK_FILL,
             declares_rope: false,
         }
     }
@@ -195,11 +204,14 @@ pub fn miniature_gpt2_with(dir: &Path, form: Gpt2Form) -> Gpt2Miniature {
         shard.push(&format!("{b}.mlp.c_proj.bias"), &[h], &l.mlp_c_proj_b);
         if form.buffers {
             let n = GPT2_POSITIONS;
-            let mask: Vec<f32> = (0..n * n)
+            let mut mask: Vec<f32> = (0..n * n)
                 .map(|i| if i % n <= i / n { 1.0 } else { 0.0 })
                 .collect();
+            if form.corrupt_mask && i == 0 {
+                mask[1] = 1.0;
+            }
             shard.push(&format!("{b}.attn.bias"), &[1, 1, n, n], &mask);
-            shard.push(&format!("{b}.attn.masked_bias"), &[], &[-1e4]);
+            shard.push(&format!("{b}.attn.masked_bias"), &[], &[form.mask_fill]);
         }
     }
     shard.write(dir);

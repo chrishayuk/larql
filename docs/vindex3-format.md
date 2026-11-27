@@ -174,7 +174,12 @@ records a `TensorDerivation` (source tensor, optional axis slice,
 optional transpose). Registered buffers the family names (GPT-2's
 `attn.bias` causal mask, `attn.masked_bias`) are moved to
 `TensorInventory.excluded` with their reason and reported by the plan —
-never dropped silently. Everything downstream — roles, closure, encode,
+never dropped silently, and never unchecked: each declares what it holds
+(`BufferKind::CausalMask` / `MaskFill`), and its stored contents are held
+to the layer's declared span (`j <= i` full, `i - window < j <= i`
+sliding; a fill at or below `-1e4`) before any container is written and
+again at G4 (`encode::masks`). A mask the declaration does not reproduce
+refuses the encode. Everything downstream — roles, closure, encode,
 every backend — sees canonical operands; no executor carries a
 transposed or fused path. Inventory schema 6.
 
@@ -375,7 +380,12 @@ them would be a regression.
   exact for every dtype — through one function
   (`encode::source::stream_inventory_tensor`) shared by the encoder and
   the source-side re-hash, so its source payload hash is the hash of the
-  derived bytes and the two sides cannot disagree about them.
+  derived bytes and the two sides cannot disagree about them. Because that
+  agreement only proves both ends ran one transform, G4 also audits every
+  derived tensor from the CONTAINER side (`verify_system::derived`): each
+  encoded element is the stored element the declared slice/transpose maps
+  it to, by the index arithmetic alone, and the parts derived from one
+  stored tensor tile its output axis exactly once.
 - `Vindex3Index.system_graph` is optional in the schema: absence means
   "no graph recorded", never "single-component assumed". A container with
   no graph but a `moe_manifest` is the other physical shape — the

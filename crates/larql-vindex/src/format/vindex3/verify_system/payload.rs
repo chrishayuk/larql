@@ -113,7 +113,19 @@ pub fn verify_payloads(
 
         let source_ok = source_sha256 == entry.payload_sha256;
         let encoded_ok = encoded_sha256 == entry.payload_sha256;
-        let detail = match (source_ok, encoded_ok) {
+        // Derived tensors (storage-layout normalisation) are additionally
+        // held element by element to the STORED tensor, from the container
+        // side — the hashes above only prove both ends ran one transform.
+        let derived = super::derived::audit_derived_tensors(
+            object,
+            &planned,
+            &header.tensors,
+            &segment_path,
+            payload_start,
+            &sources,
+            &inventories,
+        );
+        let mut detail = match (source_ok, encoded_ok) {
             (true, true) => "source, container and directory agree byte-for-byte".to_string(),
             (false, true) => {
                 "source ≠ recorded — the checkpoint changed since encoding".to_string()
@@ -123,13 +135,27 @@ pub fn verify_payloads(
             }
             (false, false) => "source and container both disagree with the directory".to_string(),
         };
+        let derived_ok = match &derived {
+            Ok(0) => true,
+            Ok(n) => {
+                detail.push_str(&format!(
+                    "; {n} derived tensor(s) match their stored source element by element, \
+                     parts tiling it exactly"
+                ));
+                true
+            }
+            Err(e) => {
+                detail.push_str(&format!("; derived tensor audit failed: {e}"));
+                false
+            }
+        };
         payloads.push(PayloadCheck {
             representation: id,
             payload_bytes: entry.payload_bytes,
             source_sha256,
             encoded_sha256,
             recorded_sha256: entry.payload_sha256.clone(),
-            pass: source_ok && encoded_ok,
+            pass: source_ok && encoded_ok && derived_ok,
             detail,
         });
     }

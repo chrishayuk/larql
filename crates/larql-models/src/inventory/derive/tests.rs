@@ -2,7 +2,7 @@
 //! buffer exclusion, and the byte transform the encoder runs.
 
 use super::*;
-use crate::config::{FusedProjection, NonParameterBuffer};
+use crate::config::{BufferKind, FusedProjection, NonParameterBuffer};
 
 const FUSED: &[FusedProjection] = &[FusedProjection {
     module: "attn.c_attn",
@@ -13,6 +13,7 @@ const LAYOUT: SourceLayout = SourceLayout {
     fused: FUSED,
     buffers: &[NonParameterBuffer {
         suffix: "attn.bias",
+        kind: BufferKind::CausalMask,
         reason: "causal mask",
     }],
 };

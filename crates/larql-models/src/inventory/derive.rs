@@ -55,6 +55,9 @@ pub struct ExcludedTensor {
     pub dtype: String,
     pub shape: Vec<usize>,
     pub reason: String,
+    /// The contract its stored contents must meet; the encoder checks it
+    /// against the declared span and refuses on any disagreement.
+    pub kind: crate::config::BufferKind,
 }
 
 /// Bytes per element of a safetensors dtype this module can permute.
@@ -102,12 +105,13 @@ pub fn apply_source_layout(layout: &SourceLayout, inventory: &mut TensorInventor
             continue;
         };
         if let Some(buffer) = layout.buffers.iter().find(|b| b.suffix == relative) {
-            if is_mask_shape(&tensor.shape) {
+            if buffer_shape_fits(buffer.kind, &tensor.shape) {
                 inventory.excluded.push(ExcludedTensor {
                     name: tensor.name.clone(),
                     dtype: tensor.dtype.clone(),
                     shape: tensor.shape.clone(),
                     reason: buffer.reason.to_string(),
+                    kind: buffer.kind,
                 });
                 continue;
             }
@@ -139,10 +143,14 @@ pub fn apply_source_layout(layout: &SourceLayout, inventory: &mut TensorInventor
     inventory.groups = regroup(&inventory.tensors);
 }
 
-/// A registered causal-mask buffer is `[1, 1, n, n]`; anything else under
-/// the same name is not the buffer the family declared.
-fn is_mask_shape(shape: &[usize]) -> bool {
-    matches!(shape, [1, 1, a, b] if a == b) || shape.is_empty()
+/// A causal mask is `[1, 1, n, n]` and a fill a scalar; anything else
+/// under the same name is not the buffer the family declared, and stays
+/// an operand so closure refuses it by name.
+fn buffer_shape_fits(kind: crate::config::BufferKind, shape: &[usize]) -> bool {
+    match kind {
+        crate::config::BufferKind::CausalMask => matches!(shape, [1, 1, a, b] if a == b),
+        crate::config::BufferKind::MaskFill => shape.is_empty() || shape == [1],
+    }
 }
 
 fn derived_bytes(shape: &[usize], dtype: &str) -> Option<u64> {
