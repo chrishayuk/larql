@@ -30,6 +30,7 @@
 //! entry by entry instead, because a relabelled dtype or shape over
 //! identical bytes is invisible to every hash in the container.
 
+mod derived;
 pub mod payload;
 pub mod semantic;
 
@@ -125,6 +126,44 @@ impl SystemVerification {
     }
 }
 
+/// The registered buffers the inventory excluded, re-checked against the
+/// declared spans from today's source — the claim that let them leave
+/// the operand estate. `None` when no artifact excludes anything.
+fn excluded_buffer_check(
+    named: &[(String, ArchitectureInventory)],
+    graph: &crate::format::vindex3::graph::SystemGraph,
+) -> Result<Option<EquivalenceCheck>, VindexError> {
+    use crate::format::vindex3::encode::source::{ArtifactSource, TensorSource};
+    let excluded: usize = named.iter().map(|(_, i)| i.tensors.excluded.len()).sum();
+    if excluded == 0 {
+        return Ok(None);
+    }
+    let opened: Vec<(&str, ArtifactSource)> = named
+        .iter()
+        .map(|(n, i)| ArtifactSource::open(Path::new(&i.path)).map(|s| (n.as_str(), s)))
+        .collect::<Result<_, _>>()?;
+    let sources: std::collections::BTreeMap<&str, &dyn TensorSource> = opened
+        .iter()
+        .map(|(n, s)| (*n, s as &dyn TensorSource))
+        .collect();
+    let outcome =
+        crate::format::vindex3::encode::masks::check_excluded_buffers(graph, named, &sources);
+    Ok(Some(EquivalenceCheck {
+        left: Authority::Declared,
+        right: Authority::Graph,
+        subject: "excluded registered buffers".to_string(),
+        left_value: serde_json::json!(excluded),
+        right_value: serde_json::json!(outcome.as_ref().ok()),
+        pass: outcome.is_ok(),
+        detail: match outcome {
+            Ok(n) => {
+                format!("{n} stored mask buffer(s) equal the declared spans they are excluded for")
+            }
+            Err(e) => e.to_string(),
+        },
+    }))
+}
+
 /// Verify a container against its source artifacts: the G4 gate.
 ///
 /// `named` must be the same artifact set the container was encoded from
@@ -146,6 +185,9 @@ pub fn verify_system(
     let (payloads, table_checks) =
         payload::verify_payloads(named, &plan.graph, &inspection.index, container)?;
     checks.extend(table_checks);
+    if let Some(check) = excluded_buffer_check(named, &plan.graph)? {
+        checks.push(check);
+    }
 
     let container_defects: Vec<String> = inspection
         .defects

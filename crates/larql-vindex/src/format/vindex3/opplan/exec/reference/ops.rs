@@ -135,9 +135,11 @@ impl ReferenceBackend {
         // Biases belong to the projections: added before anything reads
         // the projected values (QK-norm, rope, the cache).
         if let Some(bias) = &call.bias {
-            add_in_place(&mut q, bias.q);
-            add_in_place(&mut k, bias.k);
-            add_in_place(&mut v, bias.v);
+            for (x, b) in [(&mut q, bias.q), (&mut k, bias.k), (&mut v, bias.v)] {
+                if let Some(b) = b {
+                    add_in_place(x, b);
+                }
+            }
         }
 
         Self::apply_qk_norm(call, &mut q, &mut k)?;

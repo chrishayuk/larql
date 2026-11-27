@@ -19,6 +19,7 @@ pub(crate) const SCALAR_BYTES: u64 = 4;
 pub mod attention;
 pub mod bias_add;
 pub mod ffn;
+mod ffn_down;
 pub mod input_norm;
 pub mod layer_scalar;
 pub mod o_proj;

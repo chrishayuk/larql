@@ -548,3 +548,62 @@ pub(super) fn probe_residual_in_fp32(
 ) -> Option<Value> {
     Some(json!(component.execution.as_ref()?.residual_in_fp32?))
 }
+
+/// Whether the attention scales QK^T at all (`scale_attn_weights`).
+pub(super) fn probe_scales_scores(component: &Component, _ctx: &ProbeContext<'_>) -> Option<Value> {
+    let attention = component.execution.as_ref()?.attention.as_ref()?;
+    Some(json!(
+        attention.score_scale != larql_models::config::UNSCALED_SCORES
+    ))
+}
+
+/// The learned input position table's declared row count.
+pub(super) fn probe_input_position_rows(
+    component: &Component,
+    _ctx: &ProbeContext<'_>,
+) -> Option<Value> {
+    let head = component.execution.as_ref()?.head.as_ref()?;
+    Some(json!(head.input_position?.max_positions()))
+}
+
+/// The built per-layer spans in GPT-Neo's vocabulary (`global` / `local`);
+/// `None` when a layer is neither, which then cannot agree with a GPT-Neo
+/// declaration.
+fn gpt_neo_words(component: &Component) -> Option<Vec<&'static str>> {
+    use super::super::super::graph::policy::AttentionSpan;
+    use larql_models::config::layer_types::{GPT_NEO_GLOBAL, GPT_NEO_LOCAL};
+    component
+        .attention
+        .as_ref()?
+        .iter()
+        .map(|l| match l.span {
+            Some(AttentionSpan::Full) => Some(GPT_NEO_GLOBAL),
+            Some(AttentionSpan::Sliding) => Some(GPT_NEO_LOCAL),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `attention_layers`, read back off the built spans.
+pub(super) fn probe_gpt_neo_attention_layers(
+    component: &Component,
+    _ctx: &ProbeContext<'_>,
+) -> Option<Value> {
+    Some(json!(gpt_neo_words(component)?))
+}
+
+/// `attention_types`: its expansion against the built spans. Agreement
+/// answers in the declaration's own run-length spelling; disagreement
+/// answers with the expansion the graph DID build, so the finding shows
+/// both sides.
+pub(super) fn probe_gpt_neo_attention_types(
+    component: &Component,
+    ctx: &ProbeContext<'_>,
+) -> Option<Value> {
+    let built = gpt_neo_words(component)?;
+    let declared = larql_models::config::layer_types::expand_attention_types(ctx.declared);
+    match declared {
+        Some(words) if words == built => Some(ctx.declared.clone()),
+        _ => Some(json!(built)),
+    }
+}

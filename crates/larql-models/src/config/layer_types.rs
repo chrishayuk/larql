@@ -78,6 +78,36 @@ pub fn is_full_at_period(layer: usize, period: usize) -> bool {
     period > 0 && (layer + 1).is_multiple_of(period)
 }
 
+/// GPT-Neo's word for a full-prefix layer (`attention_types` /
+/// `attention_layers`).
+pub const GPT_NEO_GLOBAL: &str = "global";
+/// GPT-Neo's word for a trailing-window layer.
+pub const GPT_NEO_LOCAL: &str = "local";
+
+/// Expand GPT-Neo's run-length `attention_types` as
+/// `GPTNeoConfig.expand_attention_types_params` does: every `[pattern,
+/// repeat]` pair contributes `pattern` `repeat` times
+/// (`[[["global", "local"], 4]]` → eight alternating layers). `None` when
+/// the value is not that shape — a malformed declaration is not an empty
+/// one.
+pub fn expand_attention_types(value: &serde_json::Value) -> Option<Vec<String>> {
+    let mut words = Vec::new();
+    for pair in value.as_array()? {
+        let [pattern, repeat] = pair.as_array()?.as_slice() else {
+            return None;
+        };
+        let pattern: Vec<&str> = pattern
+            .as_array()?
+            .iter()
+            .map(serde_json::Value::as_str)
+            .collect::<Option<_>>()?;
+        for _ in 0..repeat.as_u64()? {
+            words.extend(pattern.iter().map(|w| w.to_string()));
+        }
+    }
+    Some(words)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

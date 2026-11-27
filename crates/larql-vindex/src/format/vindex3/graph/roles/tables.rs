@@ -106,6 +106,55 @@ pub(super) const ROLE_TABLE: &[(&str, OperandRole)] = &[
     ("mlp.gate_proj.weight", OperandRole::FfnGate),
     ("mlp.up_proj.weight", OperandRole::FfnUp),
     ("mlp.down_proj.weight", OperandRole::FfnDown),
+    // Norm and FFN biases in the canonical spellings. Classifying them is
+    // not admitting them: closure requires the surface's declaration.
+    ("input_layernorm.bias", OperandRole::PreAttentionNormBias),
+    (
+        "post_attention_layernorm.bias",
+        OperandRole::PostAttentionNormBias,
+    ),
+    (
+        "pre_feedforward_layernorm.bias",
+        OperandRole::PreFfnNormBias,
+    ),
+    (
+        "post_feedforward_layernorm.bias",
+        OperandRole::PostFfnNormBias,
+    ),
+    ("mlp.up_proj.bias", OperandRole::FfnUpBias),
+    ("mlp.down_proj.bias", OperandRole::FfnDownBias),
+    // GPT-2's lineage (`GPT2Block`, and GPT-Neo's `GPTNeoBlock`, which
+    // spells its norms and MLP identically): `ln_1` normalises before
+    // attention, `ln_2` before the MLP — the two-norm pre-only estate, so
+    // `ln_2` binds the historical `PostAttentionNorm` role exactly as
+    // LFM2's `ffn_norm` does. The MLP is non-gated: `c_fc` is the up
+    // projection, `c_proj` the down. GPT-2's fused `c_attn` never reaches
+    // this table — the inventory splits it into `self_attn.{q,k,v}_proj`
+    // (see `larql_models::inventory::derive`) — while its output
+    // projection keeps its own name.
+    ("ln_1.weight", OperandRole::PreAttentionNorm),
+    ("ln_1.bias", OperandRole::PreAttentionNormBias),
+    ("ln_2.weight", OperandRole::PostAttentionNorm),
+    ("ln_2.bias", OperandRole::PostAttentionNormBias),
+    ("mlp.c_fc.weight", OperandRole::FfnUp),
+    ("mlp.c_fc.bias", OperandRole::FfnUpBias),
+    ("mlp.c_proj.weight", OperandRole::FfnDown),
+    ("mlp.c_proj.bias", OperandRole::FfnDownBias),
+    ("attn.c_proj.weight", OperandRole::AttnO),
+    ("attn.c_proj.bias", OperandRole::AttnOBias),
+    // GPT-Neo's attention (`GPTNeoSelfAttention`, under `attn.attention`):
+    // separate unbiased Q/K/V and a biased output projection. The Q/K/V
+    // bias spellings are classified so a checkpoint shipping one is
+    // refused for the op it implies (GPT-Neo declares `output_bias`),
+    // not as an unknown tensor.
+    ("attn.attention.q_proj.bias", OperandRole::AttnQBias),
+    ("attn.attention.k_proj.bias", OperandRole::AttnKBias),
+    ("attn.attention.v_proj.bias", OperandRole::AttnVBias),
+    ("attn.attention.q_proj.weight", OperandRole::AttnQ),
+    ("attn.attention.k_proj.weight", OperandRole::AttnK),
+    ("attn.attention.v_proj.weight", OperandRole::AttnV),
+    ("attn.attention.out_proj.weight", OperandRole::AttnO),
+    ("attn.attention.out_proj.bias", OperandRole::AttnOBias),
     ("mlp.router.weight", OperandRole::MoeRouterWeight),
     // The Qwen MoE lineage's router (`Qwen2MoeSparseMoeBlock.gate`,
     // `[num_experts, hidden]`). Distinct from the dense `mlp.gate_proj`.

@@ -114,12 +114,14 @@ const GROUP_PATTERNS: &[(GroupClass, &[&str])] = &[
             "audio_embedder",
         ],
     ),
+    // A learned absolute position table — before the token-embedding
+    // fragments, so GPT-2's `wpe` is never merged into `wte`'s object.
+    (GroupClass::PositionEmbedding, &["wpe"]),
     (
         GroupClass::Embedding,
         &[
             "embed_tokens",
             "wte",
-            "wpe",
             "token_embd",
             "embedding",
             // Inkling-Small: `model.llm.embed` / `model.llm.unembed`.
@@ -154,6 +156,9 @@ const GROUP_PATTERNS: &[(GroupClass, &[&str])] = &[
     (GroupClass::Norm, &["norm", "ln_", "layernorm"]),
     (GroupClass::Stack, &["layers", "blocks"]),
 ];
+
+/// The GPT-2 lineage's decoder block list, matched as a whole segment.
+const GPT2_BLOCK_LIST: &str = "h";
 
 /// Top-level path segments that name a tensor namespace declared *outside*
 /// any component this builder places — evidence the checkpoint carries a
@@ -192,6 +197,7 @@ enum GroupClass {
     PerceptionTower,
     PerceptionAdapter,
     Embedding,
+    PositionEmbedding,
     Head,
     Norm,
     Stack,
@@ -331,6 +337,12 @@ fn classify_group(prefix: &str) -> GroupClass {
     // because its group is the external `mtp` namespace above.
     if is_hyper_connection_head_group(prefix) {
         return GroupClass::HyperConnectionHead;
+    }
+    // GPT-2's lineage names its block list `h` (`transformer.h.{L}`, or a
+    // bare `h.{L}` in the original OpenAI conversion). An exact LAST
+    // segment, never a substring: every prefix contains an `h`.
+    if prefix.rsplit('.').next() == Some(GPT2_BLOCK_LIST) {
+        return GroupClass::Stack;
     }
     for (class, patterns) in GROUP_PATTERNS {
         if patterns.iter().any(|p| prefix.contains(p)) {

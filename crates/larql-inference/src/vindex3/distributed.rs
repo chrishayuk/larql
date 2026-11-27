@@ -263,10 +263,11 @@ impl<'a, B: PlanBackend, T: ShardTransport> DistributedSession<'a, B, T> {
             .inputs
             .iter()
             .chain(inputs)
-            .map(|i| match i {
+            .enumerate()
+            .map(|(position, i)| match i {
                 InputPosition::Token(id) => self
                     .ops
-                    .embed_token(self.plan, self.backend, *id)
+                    .embed_token(self.plan, self.backend, *id, position)
                     .map_err(InferenceError::from),
                 InputPosition::Embedding(row) => Ok(row.clone()),
             })

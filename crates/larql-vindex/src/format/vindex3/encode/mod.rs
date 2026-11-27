@@ -23,6 +23,7 @@
 //! ```
 
 pub mod checkpoint;
+pub mod masks;
 pub mod segment;
 pub mod source;
 
@@ -222,6 +223,9 @@ pub fn encode_graph_with_sources(
     }
     let inventories: BTreeMap<&str, &ArchitectureInventory> =
         named.iter().map(|(n, i)| (n.as_str(), i)).collect();
+    // A registered buffer the inventory excluded is checked against the
+    // declared span it claims to equal before anything is written.
+    masks::check_excluded_buffers(graph, named, sources)?;
 
     std::fs::create_dir_all(out)?;
     let mut directory: BTreeMap<String, RepresentationEntry> = BTreeMap::new();
@@ -266,7 +270,13 @@ pub fn encode_graph_with_sources(
                         object.id
                     ))
                 })?;
-                sources[owner].stream_payload(source_name, write, observe)
+                source::stream_inventory_tensor(
+                    sources[owner],
+                    inventories[owner],
+                    source_name,
+                    write,
+                    observe,
+                )
             },
         )?;
 

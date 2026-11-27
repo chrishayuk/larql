@@ -2,8 +2,8 @@
 
 use super::{Norms, UNSCALED_POSITION_DIVISOR};
 use crate::config::{
-    rope_types, DeclaredRopeScaling, Llama3RopeScaling, ModelConfig, PositionPolicy,
-    RotaryFrequencyBasis, YarnRopeScaling,
+    rope_types, DeclaredRopeScaling, InputPositionEncoding, Llama3RopeScaling, ModelConfig,
+    PositionPolicy, RotaryFrequencyBasis, YarnRopeScaling,
 };
 
 /// Positional encoding: RoPE bases, scaling schemes and per-layer policy.
@@ -38,6 +38,19 @@ pub trait Position: Norms {
     /// is the config read; this is where it becomes per-layer policy).
     fn position_policy_for_layer(&self, layer: usize) -> PositionPolicy {
         default_position_policy_for_layer(self, layer)
+    }
+
+    /// How position enters at the input, before any layer: a learned
+    /// absolute table added to the token embedding, when the family has
+    /// one ([`TensorKeys::position_embed_key`](super::TensorKeys::position_embed_key)).
+    /// Its row count is the declared serving bound
+    /// (`max_position_embeddings`, GPT-2's `n_positions`); a family with a
+    /// table and no declared bound answers `None` here and operand closure
+    /// refuses the unaccounted table by name.
+    fn input_position_encoding(&self) -> Option<InputPositionEncoding> {
+        self.position_embed_key()?;
+        let max_positions = self.config().max_position_embeddings?;
+        Some(InputPositionEncoding::LearnedAbsolute { max_positions })
     }
 
     /// The unscaled rotary policy at `theta`: plain, partial, or
@@ -291,6 +304,13 @@ pub fn default_position_policy_for_layer<A: Position + ?Sized>(
     // reference does not implement — its assert fires — so this build
     // has no ground truth for it and must not answer.
     if arch.config().mla_use_nope == Some(true) {
+        return PositionPolicy::None;
+    }
+    // A family that adds learned absolute positions at the input and
+    // declares no rotary key rotates nothing. Without this, GPT-2 — whose
+    // config states no rope key at all — resolved to `Rope { theta:
+    // 10000 }` off the parser's DEFAULT base on every layer.
+    if arch.position_embed_key().is_some() && !arch.config().declares_rotary {
         return PositionPolicy::None;
     }
     // The per-layer rotary SCHEDULE, asked before the rotary SHAPE.

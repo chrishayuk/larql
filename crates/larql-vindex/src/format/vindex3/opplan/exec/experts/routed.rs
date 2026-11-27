@@ -477,6 +477,8 @@ impl RoutedOperands {
                     gate: Some(shared.gate.clone()),
                     up: shared.up.clone(),
                     down: shared.down.clone(),
+                    up_bias: None,
+                    down_bias: None,
                 };
                 let dense = DenseOperands::load(&ffn, store, shared_format)?;
                 Some((ffn, dense))

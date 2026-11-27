@@ -505,8 +505,10 @@ pub(super) fn add_projection_biases(
     v: &mut [f32],
 ) {
     if let Some(bias) = &call.bias {
-        add_bias_in_place(q, bias.q);
-        add_bias_in_place(k, bias.k);
-        add_bias_in_place(v, bias.v);
+        for (x, b) in [(q, bias.q), (k, bias.k), (v, bias.v)] {
+            if let Some(b) = b {
+                add_bias_in_place(x, b);
+            }
+        }
     }
 }

@@ -15,6 +15,9 @@ fn base_ops() -> LayerOps {
         mla_q_lora: false,
         attention_bias: false,
         qkv_bias: false,
+        output_bias: false,
+        norm_bias: false,
+        ffn_bias: false,
         sinks: false,
         routed: false,
         hybrid: false,
@@ -640,4 +643,5 @@ fn the_exit_pair_on_an_undeclared_component_names_what_it_requires() {
     );
 }
 
+mod biases;
 mod object_closures;

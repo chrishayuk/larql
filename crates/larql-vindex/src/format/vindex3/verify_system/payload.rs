@@ -31,7 +31,7 @@ use crate::error::VindexError;
 use crate::format::vindex3::encode::segment::{
     read_segment_header, sort_into_payload_order, PlannedTensor, SegmentTensor,
 };
-use crate::format::vindex3::encode::source::{ArtifactSource, TensorSource};
+use crate::format::vindex3::encode::source::ArtifactSource;
 use crate::format::vindex3::encode::{binding_owner, plan_object_tensors, REPRESENTATION_ID_SEP};
 use crate::format::vindex3::graph::SystemGraph;
 use crate::format::vindex3::index::Vindex3Index;
@@ -102,7 +102,7 @@ pub fn verify_payloads(
         };
         tables.push(table_check(&id, &planned, &header.tensors));
 
-        let source_sha256 = match source_hash(object, &planned, &sources) {
+        let source_sha256 = match source_hash(object, &planned, &sources, &inventories) {
             Ok(hash) => hash,
             Err(e) => {
                 payloads.push(failed_check(id, format!("source unreadable: {e}")));
@@ -113,7 +113,19 @@ pub fn verify_payloads(
 
         let source_ok = source_sha256 == entry.payload_sha256;
         let encoded_ok = encoded_sha256 == entry.payload_sha256;
-        let detail = match (source_ok, encoded_ok) {
+        // Derived tensors (storage-layout normalisation) are additionally
+        // held element by element to the STORED tensor, from the container
+        // side — the hashes above only prove both ends ran one transform.
+        let derived = super::derived::audit_derived_tensors(
+            object,
+            &planned,
+            &header.tensors,
+            &segment_path,
+            payload_start,
+            &sources,
+            &inventories,
+        );
+        let mut detail = match (source_ok, encoded_ok) {
             (true, true) => "source, container and directory agree byte-for-byte".to_string(),
             (false, true) => {
                 "source ≠ recorded — the checkpoint changed since encoding".to_string()
@@ -123,13 +135,27 @@ pub fn verify_payloads(
             }
             (false, false) => "source and container both disagree with the directory".to_string(),
         };
+        let derived_ok = match &derived {
+            Ok(0) => true,
+            Ok(n) => {
+                detail.push_str(&format!(
+                    "; {n} derived tensor(s) match their stored source element by element, \
+                     parts tiling it exactly"
+                ));
+                true
+            }
+            Err(e) => {
+                detail.push_str(&format!("; derived tensor audit failed: {e}"));
+                false
+            }
+        };
         payloads.push(PayloadCheck {
             representation: id,
             payload_bytes: entry.payload_bytes,
             source_sha256,
             encoded_sha256,
             recorded_sha256: entry.payload_sha256.clone(),
-            pass: source_ok && encoded_ok,
+            pass: source_ok && encoded_ok && derived_ok,
             detail,
         });
     }
@@ -155,6 +181,7 @@ fn source_hash(
     object: &crate::format::vindex3::graph::LogicalObject,
     planned: &[PlannedTensor],
     sources: &BTreeMap<&str, ArtifactSource>,
+    inventories: &BTreeMap<&str, &ArchitectureInventory>,
 ) -> Result<String, VindexError> {
     let mut hasher = Sha256::new();
     let mut sink = std::io::sink();
@@ -165,12 +192,20 @@ fn source_hash(
                 tensor.source_name, object.id
             ))
         })?;
-        let source = sources.get(owner).ok_or_else(|| {
-            VindexError::Parse(format!("binding owner `{owner}` is not in the verify set"))
-        })?;
-        source.stream_payload(&tensor.source_name, &mut sink, &mut |chunk| {
-            hasher.update(chunk);
-        })?;
+        // Both maps are built from the same `named` set, so an owner is in
+        // both or neither.
+        let (Some(source), Some(inventory)) = (sources.get(owner), inventories.get(owner)) else {
+            return Err(VindexError::Parse(format!(
+                "binding owner `{owner}` is not in the verify set"
+            )));
+        };
+        crate::format::vindex3::encode::source::stream_inventory_tensor(
+            source,
+            inventory,
+            &tensor.source_name,
+            &mut sink,
+            &mut |chunk| hasher.update(chunk),
+        )?;
     }
     Ok(format!("{:x}", hasher.finalize()))
 }

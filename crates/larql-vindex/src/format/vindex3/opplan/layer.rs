@@ -277,6 +277,20 @@ pub struct EmbeddingOp {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f32>,
     pub vocab_size: usize,
+    /// The learned input position table added to every looked-up row,
+    /// AFTER its scale and norm: `h0[p] = embed(token[p]) + table[p]`.
+    /// Present iff the head surface declares an input position encoding.
+    /// Absent from the serialised op otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position: Option<PositionTableOp>,
+}
+
+/// A learned absolute position table and the encoding it implements.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PositionTableOp {
+    pub encoding: larql_models::config::InputPositionEncoding,
+    /// `[max_positions, hidden]`.
+    pub table: OperandRef,
 }
 
 /// The output head.

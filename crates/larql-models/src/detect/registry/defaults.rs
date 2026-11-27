@@ -34,6 +34,22 @@ pub struct ConfigDefaults {
     pub num_key_value_heads: Option<usize>,
     /// How `intermediate_size` is found when undeclared.
     pub intermediate_size: IntermediateSize,
+    /// The family's own spelling of the layer count, consulted when no
+    /// generic alias (`num_hidden_layers`, `n_layer`) is declared —
+    /// GPT-Neo's `num_layers`. Family-scoped because the same word means
+    /// something else in other config classes.
+    pub layer_count_key: Option<&'static str>,
+    /// The family's own spelling of the attention-head count — GPT-Neo's
+    /// `num_heads`, which on a Mamba2 config is the MIXER's head count and
+    /// must never be read as attention heads there.
+    pub head_count_key: Option<&'static str>,
+    /// What the family's TOKENIZER class does about a BOS when
+    /// `tokenizer_config.json` does not declare `add_bos_token`:
+    /// `Some(false)` = it adds none (`GPT2Tokenizer`'s class default, so
+    /// GPT-2 and GPT-Neo prompts start with the first text token). `None`
+    /// = no family judgment, and a declared BOS id is prepended — the rule
+    /// every other family is served by.
+    pub tokenizer_adds_bos: Option<bool>,
 }
 
 impl ConfigDefaults {
@@ -45,5 +61,8 @@ impl ConfigDefaults {
         num_attention_heads: None,
         num_key_value_heads: None,
         intermediate_size: IntermediateSize::Required,
+        layer_count_key: None,
+        head_count_key: None,
+        tokenizer_adds_bos: None,
     };
 }

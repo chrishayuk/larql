@@ -21,6 +21,7 @@ use super::config_io::{
 // fields in `config_io::require_config_fields`.
 use super::registry::{find_architecture, ConfigDefaults, IntermediateSize};
 
+mod attention_layers;
 mod keys;
 mod rope_scaling;
 
@@ -56,7 +57,13 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     // (test ergonomics); the validator catches the zero downstream
     // rather than letting a magic-number default impersonate a real
     // topology and panic deep inside extract.
-    let num_layers = topology_field(config, text_config, CONFIG_KEY_NUM_HIDDEN_LAYERS_ALIASES);
+    let family_field =
+        |key: Option<&str>| key.map_or(0, |k| topology_field(config, text_config, &[k]));
+    let num_layers = match topology_field(config, text_config, CONFIG_KEY_NUM_HIDDEN_LAYERS_ALIASES)
+    {
+        0 => family_field(defaults.layer_count_key),
+        n => n,
+    };
     let hidden_size = topology_field(config, text_config, CONFIG_KEY_HIDDEN_SIZE_ALIASES);
     let mut intermediate_size =
         topology_field(config, text_config, CONFIG_KEY_INTERMEDIATE_SIZE_ALIASES);
@@ -116,6 +123,11 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         text_config,
         CONFIG_KEY_NUM_ATTENTION_HEADS_ALIASES,
     )
+    .or_else(|| {
+        defaults
+            .head_count_key
+            .and_then(|k| super::config_io::read_aliased_u64(config, text_config, &[k]))
+    })
     .map(|v| v as usize)
     .unwrap_or(if attention_free_ssm {
         0
@@ -161,6 +173,16 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     // resolved to the 10000 default — the §4.7.8 shape on a brand-new key
     // spelling. Any transformers-5.x checkpoint hits this, not one family.
     let rope_params = text_config.get("rope_parameters");
+    // Whether ANY rotary key is declared, before the family default fills
+    // `rope_base`. A learned-absolute family must not be graded rotary off
+    // a default nobody declared.
+    let declares_rotary = rope_params.is_some_and(|v| !v.is_null())
+        || ["rope_theta", "layer_rope_theta", "partial_rotary_factor"]
+            .iter()
+            .any(|k| text_config.get(*k).is_some_and(|v| !v.is_null()))
+        || text_config
+            .get("rope_scaling")
+            .is_some_and(serde_json::Value::is_object);
     let rope_base = rope_params
         .and_then(|rp| rp.get("full_attention"))
         .and_then(|fa| fa["rope_theta"].as_f64())
@@ -181,7 +203,11 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         .and_then(|sa| sa["rope_theta"].as_f64())
         .or_else(|| text_config["rope_local_base_freq"].as_f64());
     let vocab_size = text_config["vocab_size"].as_u64().map(|v| v as usize);
-    let sliding_window = text_config["sliding_window"].as_u64().map(|v| v as usize);
+    // GPT-Neo spells the trailing window `window_size`.
+    let sliding_window = text_config["sliding_window"]
+        .as_u64()
+        .or_else(|| text_config["window_size"].as_u64())
+        .map(|v| v as usize);
     // The window's ENABLE flag and its layer bound, read here so the
     // effective policy can be resolved in one place. A checkpoint that
     // declares a window and then disables it means what it says: Qwen2.5
@@ -383,13 +409,21 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         .as_u64()
         .map(|v| v as usize);
     // Explicit per-layer type array (Gemma 4: ["sliding_attention", "full_attention", ...])
-    let layer_types = text_config.get("layer_types").and_then(|lt| {
-        lt.as_array().map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
+    let layer_types = text_config
+        .get("layer_types")
+        .and_then(|lt| {
+            lt.as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
         })
-    });
+        // GPT-Neo's spelling of the same per-layer fact, in its own
+        // vocabulary (`global` / `local`). `attention_types` is the
+        // authority — `GPTNeoConfig` derives `attention_layers` from it —
+        // so it is read first and `attention_layers` only when it is
+        // absent; the planner holds the two to each other.
+        .or_else(|| attention_layers::gpt_neo_layer_types(text_config));
     // K=V sharing flag
     let attention_k_eq_v = text_config["attention_k_eq_v"].as_bool().unwrap_or(false);
     // KV sharing across layers
@@ -417,20 +451,29 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
     let post_norm_eps = text_config["post_norm_eps"].as_f64();
     let attention_bias = text_config["attention_bias"].as_bool();
     let qkv_bias = text_config["qkv_bias"].as_bool();
+    let scale_attn_weights = text_config["scale_attn_weights"].as_bool();
+    let scale_attn_by_inverse_layer_idx = text_config["scale_attn_by_inverse_layer_idx"].as_bool();
+    let reorder_and_upcast_attn = text_config["reorder_and_upcast_attn"].as_bool();
+    let add_cross_attention = text_config["add_cross_attention"].as_bool();
     let mlp_bias = text_config["mlp_bias"].as_bool();
     // Both HF spellings; verbatim — the Activation mapping (and its failure
     // on unrecognised names) lives on the architecture trait.
+    // GPT-2's lineage spells it `activation_function` (`gelu_new`).
     let hidden_act = text_config["hidden_act"]
         .as_str()
         .or_else(|| text_config["hidden_activation"].as_str())
+        .or_else(|| text_config["activation_function"].as_str())
         .map(str::to_string);
     // SiTU-GLU's two softcaps. Read verbatim beside the name that selects
     // them; whether they are the parameters of an activation this
     // checkpoint actually uses is judged on the architecture, not here.
     let activation_situ_beta = text_config["activation_situ_beta"].as_f64();
     let activation_situ_linear_beta = text_config["activation_situ_linear_beta"].as_f64();
+    // GPT-2's lineage spells the serving bound `n_positions` (the `wpe`
+    // table's row count).
     let max_position_embeddings = text_config["max_position_embeddings"]
         .as_u64()
+        .or_else(|| text_config["n_positions"].as_u64())
         .map(|v| v as usize);
 
     // Multimodal protocol + adapter geometry — root-level HF fields.
@@ -649,6 +692,11 @@ pub(super) fn parse_model_config(config: &serde_json::Value) -> ModelConfig {
         post_norm_eps,
         attention_bias,
         qkv_bias,
+        declares_rotary,
+        scale_attn_weights,
+        scale_attn_by_inverse_layer_idx,
+        reorder_and_upcast_attn,
+        add_cross_attention,
         mlp_bias,
         hidden_act,
         activation_situ_beta,

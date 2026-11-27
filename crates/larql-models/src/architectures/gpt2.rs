@@ -11,7 +11,10 @@
 //! matches the trait defaults (`embed_tokens.weight`, `mlp.up_proj.weight`,
 //! `mlp.down_proj.weight`, …), so this arch only overrides behavior flags.
 
-use crate::config::{Activation, FfnType, ModelArchitecture, ModelConfig, NormType};
+use crate::config::{
+    Activation, ActivationDeclaration, BufferKind, FfnType, FusedProjection, ModelArchitecture,
+    ModelConfig, NonParameterBuffer, NormType, SourceLayout,
+};
 use crate::detect::LayerBandSplit;
 use crate::tensor_keys::attn_bias;
 
@@ -87,26 +90,85 @@ impl TensorKeys for Gpt2Arch {
     fn position_embed_key(&self) -> Option<&str> {
         Some("wpe.weight")
     }
+
+    /// HF GPT-2 stores every projection as `transformers.Conv1D` — weight
+    /// `[in, out]`, the transpose of `nn.Linear` — and fuses Q, K, V into
+    /// one `c_attn` (`q | k | v` along the output axis, bias likewise).
+    /// The checkpoint also serialises the causal-mask buffer `attn.bias`
+    /// (older conversions add the scalar `attn.masked_bias`); neither is a
+    /// parameter.
+    fn source_layout(&self) -> SourceLayout {
+        GPT2_SOURCE_LAYOUT
+    }
 }
+
+/// `GPT2Attention`'s registered buffers. Neither is read as a weight:
+/// `bias` is `tril(ones(n_positions, n_positions))`, reproduced exactly by
+/// a causal full-span attention, and `masked_bias` is the fill value of a
+/// masked score, which a softmax over the causal span never reads.
+pub(crate) const GPT2_MASK_BUFFER_REASON: &str =
+    "registered causal-mask buffer, not a parameter: the attention's declared causal span \
+     reproduces it";
+
+const GPT2_SOURCE_LAYOUT: SourceLayout = SourceLayout {
+    input_major: &["attn.c_attn", "attn.c_proj", "mlp.c_fc", "mlp.c_proj"],
+    fused: &[FusedProjection {
+        module: "attn.c_attn",
+        parts: &["self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj"],
+    }],
+    buffers: &[
+        NonParameterBuffer {
+            suffix: "attn.bias",
+            kind: BufferKind::CausalMask,
+            reason: GPT2_MASK_BUFFER_REASON,
+        },
+        NonParameterBuffer {
+            suffix: "attn.masked_bias",
+            kind: BufferKind::MaskFill,
+            reason: GPT2_MASK_BUFFER_REASON,
+        },
+    ],
+};
 
 impl Norms for Gpt2Arch {
     fn norm_type(&self) -> NormType {
         NormType::LayerNorm
     }
+
+    /// `nn.LayerNorm` with its default affine bias, at every site.
+    fn norm_bias(&self) -> Option<bool> {
+        Some(true)
+    }
 }
 
 impl FeedForward for Gpt2Arch {
-    fn activation(&self) -> Activation {
-        Activation::GeluTanh
+    /// The checkpoint's `activation_function` when it states one; a silent
+    /// config runs `GPT2Config`'s default, `gelu_new`.
+    fn activation_declaration(&self) -> ActivationDeclaration {
+        match self.config().hidden_act.as_deref() {
+            None => ActivationDeclaration::Nonlinearity(Activation::GeluTanh),
+            declared => ActivationDeclaration::judge(declared),
+        }
     }
 
     fn ffn_type(&self) -> FfnType {
         FfnType::Standard
     }
+
+    /// `Conv1D` always carries a bias.
+    fn ffn_bias(&self) -> Option<bool> {
+        Some(true)
+    }
 }
 
 impl Position for Gpt2Arch {}
-impl Attention for Gpt2Arch {}
+impl Attention for Gpt2Arch {
+    /// `Conv1D` always carries a bias: Q, K, V (fused in `c_attn`) and the
+    /// output projection `c_proj`.
+    fn attention_bias(&self) -> Option<bool> {
+        Some(true)
+    }
+}
 impl LatentAttention for Gpt2Arch {}
 impl Embeddings for Gpt2Arch {}
 impl ModelArchitecture for Gpt2Arch {}

@@ -356,6 +356,32 @@ pub(super) fn placed_object_findings(artifact: &str, built: &BuiltGraph) -> Vec<
         .collect()
 }
 
+/// One representable finding per stored tensor the family's storage
+/// layout excludes from the operand estate (a registered mask buffer),
+/// carrying its reason — so an excluded tensor is a stated judgment on
+/// the report, never a silent drop.
+pub(super) fn excluded_tensor_findings(inventory: &ArchitectureInventory) -> Vec<Finding> {
+    inventory
+        .tensors
+        .excluded
+        .iter()
+        .map(|t| Finding {
+            category: FindingCategory::Representable,
+            class: SemanticClass::TensorSemantic,
+            component: String::new(),
+            subject: t.name.clone(),
+            declared: None,
+            resolved: None,
+            carriage: None,
+            detail: format!(
+                "excluded from the operand estate: {} (its stored contents are checked against \
+                 the declared span at encode and at G4, and any disagreement refuses)",
+                t.reason
+            ),
+        })
+        .collect()
+}
+
 /// Blocking finding per tensor group the builder could not place.
 pub(super) fn unplaced_group_findings(artifact: &str, built: &BuiltGraph) -> Vec<Finding> {
     built

@@ -52,6 +52,7 @@ fn args(container: &std::path::Path, record: &std::path::Path) -> ObserveArgs {
         capture_out: None,
         capture_heads: None,
         capture_heads_out: None,
+        logprobs_out: None,
     }
 }
 

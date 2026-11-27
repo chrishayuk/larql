@@ -84,11 +84,21 @@ impl PlanBackend for ProductionBackend {
                 call.weight_offset,
                 call.eps,
             ),
-            // The production layer-norm kernel takes a bias; the plan
-            // carries none, so it is absent rather than zeroed.
-            NormType::LayerNorm => layer_norm_eps(&as_row(call.x), weight.as_ref(), None, call.eps),
+            // The production layer-norm kernel takes the bias itself.
+            NormType::LayerNorm => layer_norm_eps(
+                &as_row(call.x),
+                weight.as_ref(),
+                (!call.bias.is_empty()).then(|| call.bias.to_vec()).as_ref(),
+                call.eps,
+            ),
         };
-        from_row(normed)
+        let mut out = from_row(normed);
+        // RMSNorm has no bias in its kernel; a declared one is added after
+        // the gain, as the reference does.
+        if call.kind == NormType::RmsNorm && !call.bias.is_empty() {
+            add_bias_in_place(&mut out, call.bias);
+        }
+        out
     }
 
     fn project(&self, call: ProjectCall<'_>) -> Result<Vec<f32>, VindexError> {
@@ -190,14 +200,22 @@ impl PlanBackend for ProductionBackend {
         tap: &mut dyn FnMut(&[f32]),
     ) -> Result<Vec<f32>, VindexError> {
         require_executable_gate("production", call.gate_policy)?;
-        let up = project_matrix(&call.up, call.x, call.intermediate, call.hidden)?;
+        refuse_gated_up_bias(call.gate.is_some(), call.up_bias)?;
+        let mut up = project_matrix(&call.up, call.x, call.intermediate, call.hidden)?;
+        if let Some(bias) = call.up_bias {
+            add_bias_in_place(&mut up, bias);
+        }
         let gate = match call.gate {
             Some(w) => Some(project_matrix(&w, call.x, call.intermediate, call.hidden)?),
             None => None,
         };
         let inner = ffn_activation(gate.as_deref(), &up, call.activation, call.gate_policy)?;
         tap(&inner);
-        project_matrix(&call.down, &inner, call.hidden, call.intermediate)
+        let mut out = project_matrix(&call.down, &inner, call.hidden, call.intermediate)?;
+        if let Some(bias) = call.down_bias {
+            add_bias_in_place(&mut out, bias);
+        }
+        Ok(out)
     }
 
     /// **CPU-7C2.** The dense FFN over several positions, with each
@@ -215,7 +233,13 @@ impl PlanBackend for ProductionBackend {
     /// `slabs/call` 5.03 -> 2.81 and a 42% loss against serial decode.
     fn ffn_many(&self, call: FfnManyCall<'_>) -> Result<Vec<Vec<f32>>, VindexError> {
         require_executable_gate("production", call.gate_policy)?;
-        let ups = project_matrix_many(&call.up, call.xs, call.intermediate, call.hidden)?;
+        refuse_gated_up_bias(call.gate.is_some(), call.up_bias)?;
+        let mut ups = project_matrix_many(&call.up, call.xs, call.intermediate, call.hidden)?;
+        if let Some(bias) = call.up_bias {
+            for up in ups.iter_mut() {
+                add_bias_in_place(up, bias);
+            }
+        }
         let gates = match &call.gate {
             Some(w) => Some(project_matrix_many(
                 w,
@@ -236,7 +260,13 @@ impl PlanBackend for ProductionBackend {
             })
             .collect::<Result<_, _>>()?;
         let refs: Vec<&[f32]> = inners.iter().map(Vec::as_slice).collect();
-        project_matrix_many(&call.down, &refs, call.hidden, call.intermediate)
+        let mut outs = project_matrix_many(&call.down, &refs, call.hidden, call.intermediate)?;
+        if let Some(bias) = call.down_bias {
+            for out in outs.iter_mut() {
+                add_bias_in_place(out, bias);
+            }
+        }
+        Ok(outs)
     }
 
     fn routed_ffn(&self, call: RoutedFfnCall<'_>) -> Result<Vec<f32>, VindexError> {
@@ -489,4 +519,15 @@ impl ProductionBackend {
         }
         result
     }
+}
+
+/// An up-projection bias beside a GATED FFN has no judged form here — no
+/// family declares one, and which branch it biases would be a guess.
+fn refuse_gated_up_bias(gated: bool, up_bias: Option<&[f32]>) -> Result<(), VindexError> {
+    if gated && up_bias.is_some() {
+        return Err(VindexError::Parse(
+            "production: an up-projection bias on a GATED FFN has no judged form".to_string(),
+        ));
+    }
+    Ok(())
 }

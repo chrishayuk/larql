@@ -137,7 +137,9 @@ from safetensors *headers only* (no payload I/O).
 
 ### 3.1 Position policy
 
-`PositionPolicy = Rope { theta } | None`. Absence of positional rotation
+`PositionPolicy` is the per-layer rotary policy (`Rope`, `Linear`,
+`Llama3`, `Yarn`, `PartialRope`, `MRope`, `Relative`, `None` — see
+`larql_models::config::position`). Absence of positional rotation
 is an intentional per-layer execution property, not a parameter value.
 The HF `layer_rope_theta` spelling uses `0.0` as a NoPE sentinel; that
 sentinel is interpreted at **exactly one boundary**
@@ -145,6 +147,41 @@ sentinel is interpreted at **exactly one boundary**
 may circulate internally — `1/0^(i/d)` is degenerate, and a resolver
 storing `0.0` where it means "none" has re-invented the magic value the
 type exists to remove.
+
+**Input position encoding is a separate, component-level fact**
+(`InputPositionEncoding`, carried as `ExecutionSurface.head.input_position`).
+GPT-2's lineage adds a learned absolute table row `table[p]` to the token
+embedding at position `p` (`LearnedAbsolute { max_positions }`, the
+`wpe` table, `n_positions` rows) and rotates nothing: its layers resolve
+to `PositionPolicy::None`. The two are never folded together — they
+happen at different sites. A family that has a learned table
+(`TensorKeys::position_embed_key`) and declares **no** rotary key
+(`ModelConfig::declares_rotary`) is graded `None` on every layer; before
+this rule GPT-2 resolved to `Rope { theta: 10000 }` off the parser's
+default base. A declared rotary base is still read as rotary.
+
+### 3.2 Storage-layout normalisation
+
+Some checkpoints store projections in a layout the generic operations do
+not read: `transformers.Conv1D` (GPT-2) stores weights `[in, out]`, and
+fused projections (GPT-2's `c_attn` = `q | k | v`) hold several logical
+operands in one tensor. A family declares this as a
+`SourceLayout` (`TensorKeys::source_layout`), and the inventory applies
+it once (`inventory::derive`): every input-major weight is listed at its
+canonical `[out, in]` shape, every fused projection is listed as its
+parts (`self_attn.{q,k,v}_proj.{weight,bias}`), and each such tensor
+records a `TensorDerivation` (source tensor, optional axis slice,
+optional transpose). Registered buffers the family names (GPT-2's
+`attn.bias` causal mask, `attn.masked_bias`) are moved to
+`TensorInventory.excluded` with their reason and reported by the plan —
+never dropped silently, and never unchecked: each declares what it holds
+(`BufferKind::CausalMask` / `MaskFill`), and its stored contents are held
+to the layer's declared span (`j <= i` full, `i - window < j <= i`
+sliding; a fill at or below `-1e3`) before any container is written and
+again at G4 (`encode::masks`). A mask the declaration does not reproduce
+refuses the encode. Everything downstream — roles, closure, encode,
+every backend — sees canonical operands; no executor carries a
+transposed or fused path. Inventory schema 6.
 
 ---
 
@@ -338,6 +375,17 @@ them would be a regression.
 - Every canonical representation records a **source payload hash**
   (SHA-256, computed while copying) and the encoded segment records its
   own hash. These are G4's byte-equivalence inputs.
+- A tensor the inventory records as **derived** (§3.2) is materialised by
+  its recorded transform — slice, then transpose, a byte permutation
+  exact for every dtype — through one function
+  (`encode::source::stream_inventory_tensor`) shared by the encoder and
+  the source-side re-hash, so its source payload hash is the hash of the
+  derived bytes and the two sides cannot disagree about them. Because that
+  agreement only proves both ends ran one transform, G4 also audits every
+  derived tensor from the CONTAINER side (`verify_system::derived`): each
+  encoded element is the stored element the declared slice/transpose maps
+  it to, by the index arithmetic alone, and the parts derived from one
+  stored tensor tile its output axis exactly once.
 - `Vindex3Index.system_graph` is optional in the schema: absence means
   "no graph recorded", never "single-component assumed". A container with
   no graph but a `moe_manifest` is the other physical shape — the
@@ -485,6 +533,26 @@ while shipping four norms per layer):
   outranks a family/default assumption. Count is not semantics —
   placement is: under two norms, `post_attention_layernorm` *is* the
   pre-FFN norm; under four it normalises the attention output.
+- **Norm and FFN biases are declarations, held by closure.**
+  `NormSurface.bias` (LayerNorm's affine bias at every weighted norm
+  site, the final norm included) and `FfnSurface.bias` (the dense FFN's
+  up and down biases) are judged per family — no config key states
+  either — and closure requires the bias operands when they are `true`
+  and refuses any it finds otherwise. The op plan carries them as
+  `NormOp.bias`, `FfnOp.{up,down}_bias`; the reference and production
+  backends add them (the up bias before the activation), the device and
+  Metal-lowered backends refuse them by name.
+- **Attention biases come in three declared forms**: all four
+  projections (`attention_bias`, GPT-OSS and GPT-2), Q/K/V only
+  (`qkv_bias`, Qwen2), and the output projection only (`output_bias`,
+  GPT-Neo). Each is a surface declaration closure holds the shipped
+  operands to; declaring two forms is a contradiction, never a choice.
+- **The learned input position table is its own object**
+  (`ObjectKind::PositionEmbedding`, GPT-2's `wpe`), bound as
+  `EmbeddingOp.position` and added after the embedding's scale and norm,
+  at each row's absolute position; a position past the table's rows
+  refuses. A table with no declaration, or a declaration with no table,
+  fails closure.
 - **Attention output gating is a generic primitive**
   (`AttentionSurface.output_gate` + `OperandRole::AttnOutputGate`), not
   a family feature. Its judged semantics stay `None` until a model's

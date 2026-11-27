@@ -118,6 +118,10 @@ pub const TRAINING_ONLY_KEYS: &[&str] = &[
     // Dropout on a classification head this causal-LM config does not
     // have — and dropout is identity at inference regardless.
     "classifier_dropout",
+    // Activation recomputation during backprop (`GPTNeoConfig`'s legacy
+    // flag): a memory/compute trade of the training loop, never read by
+    // a forward pass.
+    "gradient_checkpointing",
 ];
 
 /// Redundant spellings: `alias → canonical`. An entry claims the same
@@ -149,6 +153,10 @@ pub const ALIAS_KEYS: &[(&str, &str)] = &[
     // corroborate it — `alias_contradicts_canonical` checks it the same
     // way it checks `full_attention_interval`.
     ("_sliding_window_pattern", "layer_types"),
+    // GPT-2's legacy context spelling (OpenAI's original `n_ctx`), which
+    // `GPT2Config` no longer reads; `n_positions` is the read spelling and
+    // the two must agree.
+    ("n_ctx", "n_positions"),
 ];
 
 /// Reviewed-and-safe-to-drop keys. Empty by design until a key has actually
@@ -353,6 +361,9 @@ pub const DROPOUT_KEYS: &[&str] = &[
     "attn_pdrop",
     "embd_pdrop",
     "resid_pdrop",
+    // GPT-Neo's spellings of the embedding and residual dropouts.
+    "embed_dropout",
+    "resid_dropout",
     "summary_pdrop",
     "attention_dropout",
     "hidden_dropout",

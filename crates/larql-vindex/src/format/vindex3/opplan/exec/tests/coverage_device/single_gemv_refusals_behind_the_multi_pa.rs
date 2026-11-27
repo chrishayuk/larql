@@ -216,3 +216,27 @@ fn an_ffn_with_an_unsupported_activation_refuses_gated_and_ungated() {
         );
     }
 }
+
+/// The device backend does not lower FFN projection biases; a plan that
+/// carries them is refused by name, never run unbiased.
+#[test]
+fn ffn_projection_biases_are_refused_by_name() {
+    let backend = DevicePlanBackend::new(LoopDevice, "loop-device-biased", WeightFormat::F32);
+    let up = lcg_values(FFN_INTERMEDIATE * FFN_HIDDEN, 21);
+    let down = lcg_values(FFN_HIDDEN * FFN_INTERMEDIATE, 22);
+    let x = lcg_values(FFN_HIDDEN, 23);
+    let bias = vec![0.5; FFN_INTERMEDIATE];
+    let mut call = ffn_call(
+        &x,
+        None,
+        WeightSlice::F32(&up),
+        WeightSlice::F32(&down),
+        Activation::GeluTanh,
+    );
+    call.up_bias = Some(&bias);
+    let err = backend.ffn(call).unwrap_err().to_string();
+    assert!(
+        err.contains("FFN projection biases are not lowered"),
+        "{err}"
+    );
+}

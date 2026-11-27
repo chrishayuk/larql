@@ -188,6 +188,8 @@ pub trait PlanBackend: Sync {
                     down: call.down,
                     activation: call.activation,
                     gate_policy: call.gate_policy,
+                    up_bias: call.up_bias,
+                    down_bias: call.down_bias,
                 })
             })
             .collect()

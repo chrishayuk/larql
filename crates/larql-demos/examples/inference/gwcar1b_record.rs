@@ -360,7 +360,8 @@ fn capture(
         }
         let mut pooled = vec![0_f64; HIDDEN];
         for &token in &subject_tokens {
-            let embedding = ops.embed_token(plan, backend, token as u32)?;
+            // A bag of subject embeddings: no sequence position applies.
+            let embedding = ops.embed_token(plan, backend, token as u32, 0)?;
             for (value, sum) in embedding.iter().zip(&mut pooled) {
                 *sum += f64::from(*value);
             }

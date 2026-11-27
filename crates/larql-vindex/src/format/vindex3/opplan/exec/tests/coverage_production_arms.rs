@@ -37,6 +37,8 @@ fn ffn(gate: bool, activation: Activation, policy: ExpertGatePolicy) -> FfnCall<
         down: WeightSlice::F32(&IDENTITY),
         activation,
         gate_policy: policy,
+        up_bias: None,
+        down_bias: None,
     }
 }
 

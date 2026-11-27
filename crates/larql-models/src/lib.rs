@@ -43,6 +43,7 @@ pub use architectures::gemma3::Gemma3Arch;
 pub use architectures::gemma4::Gemma4Arch;
 pub use architectures::generic::GenericArch;
 pub use architectures::gpt2::Gpt2Arch;
+pub use architectures::gpt_neo::GptNeoArch;
 pub use architectures::gpt_oss::GptOssArch;
 pub use architectures::granite::GraniteArch;
 pub use architectures::llama::LlamaArch;

@@ -92,6 +92,7 @@ pub(super) fn exit_latent<B: super::backend::PlanBackend + ?Sized>(
             kind: LATENT_NORM_KIND,
             x: &aggregate,
             weight,
+            bias: &[],
             weight_offset: NO_WEIGHT_OFFSET,
             eps,
         }),
@@ -136,6 +137,9 @@ pub(super) struct DenseOperands {
     gate: Option<LoadedWeight>,
     up: LoadedWeight,
     down: LoadedWeight,
+    /// The declared up/down biases, f32 (elementwise glue, not matrices).
+    up_bias: Option<Vec<f32>>,
+    down_bias: Option<Vec<f32>>,
 }
 
 /// A norm's weight, loaded once beside the op that names it.
@@ -157,6 +161,7 @@ impl LoadedNormWeight {
             kind: self.op.kind,
             x,
             weight: &self.weight,
+            bias: &[],
             weight_offset: self.op.weight_offset,
             eps: self.op.eps,
         })

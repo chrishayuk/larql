@@ -637,6 +637,11 @@ pub fn dispatch_full_pipeline(
                     &up_outs[l],
                     &act_bufs_vec[l],
                     &down_outs[l],
+                    ffn::DownQ8Stage {
+                        q8_quant_pipeline,
+                        q8: &lb.ffn_down_q8[l],
+                        q8s: &lb.ffn_down_q8s[l],
+                    },
                     seq_len,
                     inter,
                     hidden,
@@ -671,6 +676,11 @@ pub fn dispatch_full_pipeline(
                     &up_outs[l],
                     &act_bufs_vec[l],
                     &down_outs[l],
+                    ffn::DownQ8Stage {
+                        q8_quant_pipeline,
+                        q8: &lb.ffn_down_q8[l],
+                        q8s: &lb.ffn_down_q8s[l],
+                    },
                     seq_len,
                     inter,
                     hidden,

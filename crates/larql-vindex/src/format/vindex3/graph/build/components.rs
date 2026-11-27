@@ -147,6 +147,9 @@ pub fn build_from_inventories(named: &[(String, ArchitectureInventory)]) -> Buil
                         .map(|c| (c, ObjectKind::PerceptionAdapter))
                 }
                 GroupClass::Embedding => text_component.clone().map(|c| (c, ObjectKind::Embedding)),
+                GroupClass::PositionEmbedding => text_component
+                    .clone()
+                    .map(|c| (c, ObjectKind::PositionEmbedding)),
                 GroupClass::Head => text_component.clone().map(|c| (c, ObjectKind::OutputHead)),
                 GroupClass::Norm => text_component.clone().map(|c| (c, ObjectKind::FinalNorm)),
                 GroupClass::Stack => text_component

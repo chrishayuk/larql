@@ -16,6 +16,8 @@
 use metal::{Buffer, ComputeCommandEncoderRef, ComputePipelineState, MTLSize};
 use std::ffi::c_void;
 
+use super::ffn_down::encode_down;
+pub use super::ffn_down::{takes_q8_operand, DownQ8Stage};
 use super::quant_matvec;
 
 pub use larql_compute::pipeline::Activation;
@@ -113,6 +115,7 @@ pub fn encode_gated(
     up_scratch: &Buffer,
     act_scratch: &Buffer,
     down_out: &Buffer,
+    down_q8: DownQ8Stage<'_>,
     seq_len: usize,
     inter: usize,
     hidden: usize,
@@ -249,28 +252,20 @@ pub fn encode_gated(
         enc.dispatch_threads(MTLSize::new(total_inter, 1, 1), MTLSize::new(256, 1, 1));
     }
 
-    for pos in 0..seq_len {
-        let h_off = pos as u64 * h_stride_bytes;
-        let inter_off = pos as u64 * inter_stride_bytes;
-        let q8_off = pos as u64 * q8_stride_bytes;
-        let q8s_off = pos as u64 * q8s_stride_bytes;
-        quant_matvec::encode(
-            enc,
-            down_format,
-            down_buf,
-            act_scratch,
-            inter_off,
-            ffn_q8_in,
-            q8_off,
-            ffn_q8s_in,
-            q8s_off,
-            down_out,
-            h_off,
-            pipes,
-            hidden,
-            inter,
-        );
-    }
+    encode_down(
+        enc,
+        pipes,
+        down_q8,
+        down_format,
+        down_buf,
+        act_scratch,
+        down_out,
+        seq_len,
+        inter,
+        hidden,
+        h_stride_bytes,
+        inter_stride_bytes,
+    );
 }
 
 /// Standard FFN (StarCoder2): `down(act(up))`. No gate.
@@ -291,6 +286,7 @@ pub fn encode_standard(
     up_scratch: &Buffer,
     act_scratch: &Buffer,
     down_out: &Buffer,
+    down_q8: DownQ8Stage<'_>,
     seq_len: usize,
     inter: usize,
     hidden: usize,
@@ -333,28 +329,20 @@ pub fn encode_standard(
         enc.dispatch_threads(MTLSize::new(total_inter, 1, 1), MTLSize::new(256, 1, 1));
     }
 
-    for pos in 0..seq_len {
-        let h_off = pos as u64 * h_stride_bytes;
-        let inter_off = pos as u64 * inter_stride_bytes;
-        let q8_off = pos as u64 * q8_stride_bytes;
-        let q8s_off = pos as u64 * q8s_stride_bytes;
-        quant_matvec::encode(
-            enc,
-            down_format,
-            down_buf,
-            act_scratch,
-            inter_off,
-            ffn_q8_in,
-            q8_off,
-            ffn_q8s_in,
-            q8s_off,
-            down_out,
-            h_off,
-            pipes,
-            hidden,
-            inter,
-        );
-    }
+    encode_down(
+        enc,
+        pipes,
+        down_q8,
+        down_format,
+        down_buf,
+        act_scratch,
+        down_out,
+        seq_len,
+        inter,
+        hidden,
+        h_stride_bytes,
+        inter_stride_bytes,
+    );
 }
 
 #[cfg(test)]
@@ -454,6 +442,15 @@ mod dispatch_tests {
         }
     }
 
+    /// Q4_K down takes f32 input, so the Q8 staging is never bound.
+    fn unused_down_q8<'a>(m: &'a MetalBackend, stub: &'a Buffer) -> DownQ8Stage<'a> {
+        DownQ8Stage {
+            q8_quant_pipeline: &m.quant.q8_quant_pipeline,
+            q8: stub,
+            q8s: stub,
+        }
+    }
+
     fn empty_fused<'a>() -> FusedGegluDown<'a> {
         FusedGegluDown {
             q4k_silu: None,
@@ -500,6 +497,7 @@ mod dispatch_tests {
             &up_s,
             &act_s,
             &down_out,
+            unused_down_q8(&m, &q8_in),
             seq_len,
             inter,
             hidden,
@@ -549,6 +547,7 @@ mod dispatch_tests {
             &up_s,
             &act_s,
             &down_out,
+            unused_down_q8(&m, &q8_in),
             seq_len,
             inter,
             hidden,
@@ -608,6 +607,7 @@ mod dispatch_tests {
             &up_s,
             &act_s,
             &down_out,
+            unused_down_q8(&m, &q8_in),
             seq_len,
             inter,
             hidden,
@@ -655,6 +655,7 @@ mod dispatch_tests {
             &up_s,
             &act_s,
             &down_out,
+            unused_down_q8(&m, &q8_in),
             seq_len,
             inter,
             hidden,
@@ -699,6 +700,7 @@ mod dispatch_tests {
             &up_s,
             &act_s,
             &down_out,
+            unused_down_q8(&m, &q8_in),
             seq_len,
             inter,
             hidden,

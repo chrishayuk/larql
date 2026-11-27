@@ -105,6 +105,10 @@ pub(super) fn expected_shape(
         | OperandRole::PostAttentionNorm
         | OperandRole::PreFfnNorm
         | OperandRole::PostFfnNorm
+        | OperandRole::PreAttentionNormBias
+        | OperandRole::PostAttentionNormBias
+        | OperandRole::PreFfnNormBias
+        | OperandRole::PostFfnNormBias
         | OperandRole::PreExpertsNorm
         | OperandRole::PostDenseFfnNorm
         | OperandRole::PostExpertsNorm
@@ -222,6 +226,8 @@ pub(super) fn expected_shape(
         OperandRole::MlaOutputGate => Some(vec![mla?.num_heads * mla?.v_head_dim, hidden]),
         OperandRole::FfnGate | OperandRole::FfnUp => Some(vec![intermediate, hidden]),
         OperandRole::FfnDown => Some(vec![hidden, intermediate]),
+        OperandRole::FfnUpBias => Some(vec![intermediate]),
+        OperandRole::FfnDownBias => Some(vec![hidden]),
         // Linear(hidden -> q_heads*head_dim), per the judged spec.
         OperandRole::AttnOutputGate => Some(vec![q_rows, hidden]),
         // A bias is one value per output row of its projection.

@@ -246,7 +246,11 @@ impl PlanBackend for ReferenceBackend {
     }
 
     fn norm(&self, call: NormCall<'_>) -> Vec<f32> {
-        norm(call.kind, call.x, call.weight, call.weight_offset, call.eps)
+        let mut out = norm(call.kind, call.x, call.weight, call.weight_offset, call.eps);
+        if !call.bias.is_empty() {
+            add_in_place(&mut out, call.bias);
+        }
+        out
     }
 
     fn project(&self, call: ProjectCall<'_>) -> Result<Vec<f32>, VindexError> {
@@ -305,7 +309,17 @@ impl PlanBackend for ReferenceBackend {
         tap: &mut dyn FnMut(&[f32]),
     ) -> Result<Vec<f32>, VindexError> {
         super::super::production::require_executable_gate("reference", call.gate_policy)?;
-        let up = matvec(call.up.as_f32()?, call.intermediate, call.hidden, call.x);
+        let mut up = matvec(call.up.as_f32()?, call.intermediate, call.hidden, call.x);
+        if let Some(bias) = call.up_bias {
+            if call.gate.is_some() {
+                return Err(VindexError::Parse(
+                    "reference: an up-projection bias on a GATED FFN has no judged form \
+                     (which branch it biases is the gate bias's question too)"
+                        .to_string(),
+                ));
+            }
+            add_in_place(&mut up, bias);
+        }
         let inner: Vec<f32> = match call.gate {
             Some(gate_weight) => {
                 let gate = matvec(
@@ -327,12 +341,11 @@ impl PlanBackend for ReferenceBackend {
             None => up.iter().map(|u| activate(call.activation, *u)).collect(),
         };
         tap(&inner);
-        Ok(matvec(
-            call.down.as_f32()?,
-            call.hidden,
-            call.intermediate,
-            &inner,
-        ))
+        let mut out = matvec(call.down.as_f32()?, call.hidden, call.intermediate, &inner);
+        if let Some(bias) = call.down_bias {
+            add_in_place(&mut out, bias);
+        }
+        Ok(out)
     }
 
     /// The routed FFN, stated literally: router logits, the judged

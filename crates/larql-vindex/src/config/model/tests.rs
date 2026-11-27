@@ -118,6 +118,18 @@ fn model_config_persists_every_forward_affecting_field() {
         // 4.1 3B/8B/30B included) declares `false`, so no vindex-served
         // model needs this today.
         "mlp_bias",
+        // GPT-2's lineage. `declares_rotary` is a parse-time fact whose
+        // only consumer is the position policy of a family with a learned
+        // table, which a reload without it answers as GPT-2's truth (no
+        // rotation). The four attention switches were ignored by this
+        // path before they were read at all; VINDEX3 carries
+        // `scale_attn_weights` through the score scale and refuses the
+        // other three unless they are `false`.
+        "declares_rotary",
+        "scale_attn_weights",
+        "scale_attn_by_inverse_layer_idx",
+        "reorder_and_upcast_attn",
+        "add_cross_attention",
         // Hybrid linear-attention + multi-token-prediction geometry
         // (Qwen3.5/Kimi-Linear-style — R2/Kimi-Linear rung,
         // docs/k3-funnel.md). No forward pass anywhere in this crate,

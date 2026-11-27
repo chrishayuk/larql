@@ -122,9 +122,20 @@ pub(super) fn require_config_fields(
             if skip_intermediate && aliases == &CONFIG_KEY_INTERMEDIATE_SIZE_ALIASES {
                 return None;
             }
-            let present = aliases.iter().any(|alias| {
-                text_config.get(*alias).and_then(|v| v.as_u64()).is_some()
-                    || config.get(*alias).and_then(|v| v.as_u64()).is_some()
+            // A family's own spelling of the same field (GPT-Neo's
+            // `num_layers` / `num_heads`) counts for it.
+            let family_key = super::registry::find_architecture(model_type).and_then(|e| {
+                if aliases == &CONFIG_KEY_NUM_HIDDEN_LAYERS_ALIASES {
+                    e.config_defaults.layer_count_key
+                } else if aliases == &CONFIG_KEY_NUM_ATTENTION_HEADS_ALIASES {
+                    e.config_defaults.head_count_key
+                } else {
+                    None
+                }
+            });
+            let present = aliases.iter().copied().chain(family_key).any(|alias| {
+                text_config.get(alias).and_then(|v| v.as_u64()).is_some()
+                    || config.get(alias).and_then(|v| v.as_u64()).is_some()
             });
             if present {
                 None

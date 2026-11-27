@@ -37,12 +37,14 @@ use larql_models::config::MoeRouterKind;
 
 mod closures;
 mod construct;
+mod head_objects;
 mod layer_closure;
 mod roles;
 mod shapes;
 pub(super) use absent::*;
 use closures::*;
 use construct::*;
+use head_objects::*;
 use layer_closure::*;
 use roles::*;
 use shapes::*;
@@ -174,34 +176,6 @@ const ATTN_RES_EXIT_WITHOUT_DECLARATION: &str =
 /// Build the operation plan for `component_id` from a container's
 /// inspection plus its segment tables. I/O failures are hard errors;
 /// every semantic shortfall is a [`ClosureDefect`].
-/// Whether the surface declares `layer` routed: `None` when the surface
-/// carries no MoE judgment at all, `Some(false)` inside the dense prefix
-/// the surface names (`dense_prefix_layers`), `Some(true)` otherwise.
-/// The one derivation both the closure pass and the plan construction
-/// read, so they cannot disagree about which layers are routed.
-fn declared_routed(moe: Option<&MoeSurface>, layer: usize) -> Option<bool> {
-    moe.map(|m| m.dense_prefix_layers.is_none_or(|prefix| layer >= prefix))
-}
-
-/// The tensor `name` is a stream of, when it is one: a name that extends
-/// another tensor's whole name by one dot-separated segment.
-///
-/// This is the only thing the closure pass says about streams stored
-/// apart. It does not name the stream, does not resolve a codec and does
-/// not decide what the suffix means — it decides that the tensor is
-/// ACCOUNTED FOR by its base rather than left without a fate, which is the
-/// closure question and the whole of it. What the suffix must be is the
-/// codec's declaration, checked where the registry lives (the operand
-/// store's stream binding), so a name that looks like a stream and is not
-/// one fails there by name rather than being classified here by guess.
-fn auxiliary_stream_of<'a>(name: &str, names: &BTreeSet<&'a str>) -> Option<&'a str> {
-    let (base, suffix) = name.rsplit_once('.')?;
-    if suffix.is_empty() {
-        return None;
-    }
-    names.get(base).copied()
-}
-
 pub fn plan_component_ops(
     inspection: &SystemInspection,
     root: &Path,
@@ -343,6 +317,7 @@ pub fn plan_component_ops(
             ObjectKind::DecoderStack
                 | ObjectKind::ExpertBank
                 | ObjectKind::Embedding
+                | ObjectKind::PositionEmbedding
                 | ObjectKind::FinalNorm
                 | ObjectKind::OutputHead
                 | ObjectKind::HyperConnectionHead
@@ -386,14 +361,7 @@ pub fn plan_component_ops(
             f.moe
                 .is_none_or(|m| m.hybrid || m.dense_prefix_layers.unwrap_or(0) > 0)
         });
-    if attn.is_some_and(|a| a.attention_bias == Some(true) && a.qkv_bias == Some(true)) {
-        defects.push(ClosureDefect::ContradictoryDeclaration {
-            component: component.id.clone(),
-            detail: "`attention_bias` (Q/K/V and output biased) and `qkv_bias` (Q/K/V only, \
-                     output unbiased) are both declared true"
-                .to_string(),
-        });
-    }
+    bias_contradictions(attn, &component.id, &mut defects);
     for (runs, present, fact) in [
         (attends, attn.is_some(), "attention surface"),
         (has_ffn_layer, ffn_surface.is_some(), "ffn surface"),
@@ -685,7 +653,18 @@ pub fn plan_component_ops(
         vocab.map(|v| vec![v, hidden]),
         &mut defects,
     );
-    let final_norm_tensor = single(ObjectKind::FinalNorm, Some(vec![hidden]), &mut defects);
+    // The final norm: one weight, plus its bias when the surface declares
+    // norm biases — told apart by leaf name, since the object binds both.
+    let final_norm_tensor = match surface.norm.bias {
+        Some(true) => final_norm_with_bias(&tables, hidden, &mut defects),
+        _ => single(ObjectKind::FinalNorm, Some(vec![hidden]), &mut defects)
+            .map(|(object, weight)| (object, weight, None)),
+    };
+    // The learned input position table: present iff the head surface
+    // declares one, with exactly the declared row count.
+    let input_position = surface.head.as_ref().and_then(|h| h.input_position);
+    let position_tensor =
+        position_table(input_position, &tables, &component.id, hidden, &mut defects);
     // No standalone `OutputHead` object is placed for a checkpoint that
     // ships no separate `lm_head`-named tensor group at all — the near-
     // universal tied-embeddings convention, not a missing object. Reusing
@@ -782,6 +761,7 @@ pub fn plan_component_ops(
         vocab,
         embedding_tensor,
         final_norm_tensor,
+        position_tensor,
         head_tensor,
         hc_head_tensors,
         attn_res_exit_tensors,

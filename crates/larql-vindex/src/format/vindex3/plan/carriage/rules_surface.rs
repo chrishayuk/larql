@@ -154,6 +154,13 @@ pub(super) const SURFACE_RULES: &[CarriageRule] = &[
         probe: Some(probe_activation),
     },
     CarriageRule {
+        leaf: "activation_function",
+        reaches: Carriage::Lowered,
+        // GPT-2's spelling of `hidden_act`, read into the same field.
+        site: "ExecutionSurface.ffn.activation → FfnOp.activation",
+        probe: Some(probe_activation),
+    },
+    CarriageRule {
         leaf: "hidden_activation",
         reaches: Carriage::Lowered,
         site: "ExecutionSurface.ffn.activation → FfnOp.activation",
@@ -419,13 +426,85 @@ pub(super) const SURFACE_RULES: &[CarriageRule] = &[
         probe: None,
     },
     CarriageRule {
+        leaf: "n_positions",
+        reaches: Carriage::Lowered,
+        // GPT-2's serving bound, and on this lineage the learned position
+        // table's row count: the input position encoding carries it, and
+        // closure holds the stored table to it.
+        site: "ExecutionSurface.head.input_position.max_positions → EmbeddingOp.position.max_positions",
+        probe: Some(probe_input_position_rows),
+    },
+    CarriageRule {
+        leaf: "scale_attn_weights",
+        reaches: Carriage::Lowered,
+        // `false` makes the score multiplier exactly one; `true` (and
+        // silence) is the canonical 1/sqrt(head_dim).
+        site: "ExecutionSurface.attention.score_scale → AttentionOp.score_scale",
+        probe: Some(probe_scales_scores),
+    },
+    CarriageRule {
+        leaf: "scale_attn_by_inverse_layer_idx",
+        reaches: Carriage::Represented,
+        // A per-layer `1/(layer+1)` score multiplier. The score scale is a
+        // component fact here, so only `false` is representable.
+        site: "no schema field — the score scale is uniform across layers; only `false` is representable",
+        probe: Some(probe_false),
+    },
+    CarriageRule {
+        leaf: "reorder_and_upcast_attn",
+        reaches: Carriage::Represented,
+        // GPT-2's mixed-precision score path (scale before the matmul,
+        // upcast to f32). No op carries a reordered score path, so only
+        // `false` is representable.
+        site: "no schema field — only `false` is representable",
+        probe: Some(probe_false),
+    },
+    CarriageRule {
+        leaf: "add_cross_attention",
+        reaches: Carriage::Represented,
+        // A cross-attention block over encoder states. A decoder-only
+        // component has none, so only `false` is representable.
+        site: "no schema field — no cross-attention op exists; only `false` is representable",
+        probe: Some(probe_false),
+    },
+    CarriageRule {
+        leaf: "attention_types",
+        reaches: Carriage::Lowered,
+        // GPT-Neo's run-length interleave, expanded exactly as the config
+        // class expands it and held to the built per-layer spans.
+        site: "Component.attention[].span → AttentionOp.span (global = full, local = sliding)",
+        probe: Some(probe_gpt_neo_attention_types),
+    },
+    CarriageRule {
+        leaf: "attention_layers",
+        reaches: Carriage::Lowered,
+        // The expansion `GPTNeoConfig` serialises beside the run-length
+        // form; it must agree with the spans `attention_types` built.
+        site: "Component.attention[].span → AttentionOp.span (global = full, local = sliding)",
+        probe: Some(probe_gpt_neo_attention_layers),
+    },
+    CarriageRule {
+        leaf: "window_size",
+        reaches: Carriage::Lowered,
+        // GPT-Neo's spelling of `sliding_window`, read into the same field.
+        site: "Component.attention[].window → AttentionOp.window",
+        probe: Some(probe_sliding_window),
+    },
+    CarriageRule {
         leaf: "max_position_embeddings",
         reaches: Carriage::Parsed,
         // A serving/KV-allocation bound, not a forward-pass semantic: no
         // op reads it, and two checkpoints differing only here compute
         // identical logits for any prompt both can hold. Recorded so the
         // absence is a judgement on the report rather than a silence.
-        site: "no schema field — a KV-allocation bound, read by no generic op",
+        //
+        // One exception, carried through a different fact rather than
+        // this rule: a family with a learned absolute position table
+        // (GPT-Neo) sizes `head.input_position` from it, and closure holds
+        // the stored table to that row count — so the bound is checked
+        // where it changes the forward, and a position past it refuses.
+        site: "no schema field — a KV-allocation bound, read by no generic op (a learned position \
+               table's rows are held to it by closure via head.input_position)",
         probe: None,
     },
 ];
