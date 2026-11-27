@@ -77,6 +77,9 @@ pub struct Gpt2Form {
     pub corrupt_mask: bool,
     /// The stored `masked_bias` fill.
     pub mask_fill: f32,
+    /// Ship the final norm's `ln_f.bias` (`false` leaves a declared norm
+    /// bias without its operand).
+    pub final_norm_bias: bool,
     /// Declare a `rope_theta` the family never reads — a checkpoint that
     /// then claims rotation.
     pub declares_rope: bool,
@@ -91,6 +94,7 @@ impl Default for Gpt2Form {
             buffers: true,
             corrupt_mask: false,
             mask_fill: GPT2_MASK_FILL,
+            final_norm_bias: true,
             declares_rope: false,
         }
     }
@@ -179,7 +183,9 @@ pub fn miniature_gpt2_with(dir: &Path, form: Gpt2Form) -> Gpt2Miniature {
     shard.push(&format!("{p}wte.weight"), &[GPT2_VOCAB, h], &model.wte);
     shard.push(&format!("{p}wpe.weight"), &[GPT2_POSITIONS, h], &model.wpe);
     shard.push(&format!("{p}ln_f.weight"), &[h], &model.ln_f_w);
-    shard.push(&format!("{p}ln_f.bias"), &[h], &model.ln_f_b);
+    if form.final_norm_bias {
+        shard.push(&format!("{p}ln_f.bias"), &[h], &model.ln_f_b);
+    }
     for (i, l) in model.layers.iter().enumerate() {
         let b = format!("{p}h.{i}");
         shard.push(&format!("{b}.ln_1.weight"), &[h], &l.ln_1_w);

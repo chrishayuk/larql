@@ -471,3 +471,80 @@ fn a_stored_mask_the_declared_span_does_not_reproduce_refuses_the_encode() {
         .expect("the buffer check runs at G4");
     assert!(check.pass, "{}", check.detail);
 }
+
+/// Edit the encoded graph's `target` component and re-plan it.
+fn replanned(
+    container: &std::path::Path,
+    edit: impl FnOnce(&mut serde_json::Value),
+) -> crate::format::vindex3::opplan::OpPlanOutcome {
+    let graph_path = container.join(crate::format::vindex3::encode::SYSTEM_GRAPH_JSON);
+    let mut graph: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&graph_path).unwrap()).unwrap();
+    edit(&mut graph);
+    std::fs::write(&graph_path, graph.to_string()).unwrap();
+    let inspection = inspect_container(container, false).unwrap();
+    plan_component_ops(&inspection, container, COMPONENT).unwrap()
+}
+
+fn defects_of(outcome: &crate::format::vindex3::opplan::OpPlanOutcome) -> String {
+    assert!(outcome.plan.is_none());
+    format!("{:?}", outcome.defects)
+}
+
+/// The position table and its declaration close both ways, at the
+/// declared row count; the final norm's bias is held to the declaration.
+#[test]
+fn the_position_table_and_the_final_norm_bias_close_against_their_declarations() {
+    let (_m, _c, container) = encoded(Gpt2Form::default());
+    let undeclared = replanned(container.path(), |g| {
+        g["components"][0]["execution"]["head"]
+            .as_object_mut()
+            .unwrap()
+            .remove("input_position");
+    });
+    assert!(defects_of(&undeclared).contains("declares no input position encoding"));
+
+    let (_m, _c, container) = encoded(Gpt2Form::default());
+    let wrong_rows = replanned(container.path(), |g| {
+        g["components"][0]["execution"]["head"]["input_position"]["max_positions"] =
+            serde_json::json!(GPT2_POSITIONS * 2);
+    });
+    assert!(defects_of(&wrong_rows).contains("GeometryMismatch"));
+
+    let (_m, _c, container) = encoded(Gpt2Form::default());
+    let objectless = replanned(container.path(), |g| {
+        g["objects"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|o| o["id"] != "target.position_embedding");
+    });
+    assert!(defects_of(&objectless).contains("owns no position-embedding object"));
+
+    // A declared norm bias with no final-norm bias tensor never encodes.
+    let checkpoint = tempfile::tempdir().unwrap();
+    miniature_gpt2_with(
+        checkpoint.path(),
+        Gpt2Form {
+            final_norm_bias: false,
+            ..Default::default()
+        },
+    );
+    let out = tempfile::tempdir().unwrap();
+    let err = encode_system(
+        &[(COMPONENT.to_string(), inventory(checkpoint.path()))],
+        out.path(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("expected one `weight` and one `bias`"),
+        "{err}"
+    );
+
+    // And a final-norm bias of the wrong width is a geometry defect.
+    let (_m, _c, container) = encoded(Gpt2Form::default());
+    let narrow = replanned(container.path(), |g| {
+        g["components"][0]["hidden_size"] = serde_json::json!(GPT2_HIDDEN / 2);
+    });
+    assert!(defects_of(&narrow).contains("GeometryMismatch"));
+}

@@ -273,3 +273,31 @@ pub(super) struct LayerOps {
     /// another in the first place.
     pub(super) operator: LayerOperator,
 }
+
+/// Whether the surface declares `layer` routed: `None` when the surface
+/// carries no MoE judgment at all, `Some(false)` inside the dense prefix
+/// the surface names (`dense_prefix_layers`), `Some(true)` otherwise.
+/// The one derivation both the closure pass and the plan construction
+/// read, so they cannot disagree about which layers are routed.
+pub(super) fn declared_routed(moe: Option<&MoeSurface>, layer: usize) -> Option<bool> {
+    moe.map(|m| m.dense_prefix_layers.is_none_or(|prefix| layer >= prefix))
+}
+
+/// The tensor `name` is a stream of, when it is one: a name that extends
+/// another tensor's whole name by one dot-separated segment.
+///
+/// This is the only thing the closure pass says about streams stored
+/// apart. It does not name the stream, does not resolve a codec and does
+/// not decide what the suffix means — it decides that the tensor is
+/// ACCOUNTED FOR by its base rather than left without a fate, which is the
+/// closure question and the whole of it. What the suffix must be is the
+/// codec's declaration, checked where the registry lives (the operand
+/// store's stream binding), so a name that looks like a stream and is not
+/// one fails there by name rather than being classified here by guess.
+pub(super) fn auxiliary_stream_of<'a>(name: &str, names: &BTreeSet<&'a str>) -> Option<&'a str> {
+    let (base, suffix) = name.rsplit_once('.')?;
+    if suffix.is_empty() {
+        return None;
+    }
+    names.get(base).copied()
+}

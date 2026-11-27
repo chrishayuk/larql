@@ -93,3 +93,24 @@ fn gpt_neo_shares_the_gpt2_primitives() {
     assert_eq!(arch.norm_bias(), Some(true));
     assert_eq!(arch.ffn_bias(), Some(true));
 }
+
+#[test]
+fn gpt_neo_reads_its_declared_activation_and_names_its_norm_ffn_and_buffers() {
+    use crate::config::{BufferKind, FfnType, NormType};
+    let arch = neo(serde_json::json!({ "activation_function": "relu" }));
+    assert_eq!(arch.activation(), Activation::Relu);
+    assert_eq!(arch.norm_type(), NormType::LayerNorm);
+    assert_eq!(arch.ffn_type(), FfnType::Standard);
+    assert_eq!(arch.position_embed_key(), Some("wpe.weight"));
+    let layout = arch.source_layout();
+    assert!(layout.fused.is_empty());
+    let kinds: Vec<_> = layout.buffers.iter().map(|b| (b.suffix, b.kind)).collect();
+    assert_eq!(
+        kinds,
+        [
+            ("attn.attention.bias", BufferKind::CausalMask),
+            ("attn.attention.masked_bias", BufferKind::MaskFill),
+        ]
+    );
+    assert!(layout.buffers.iter().all(|b| b.reason.contains("mask")));
+}

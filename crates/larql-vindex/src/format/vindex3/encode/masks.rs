@@ -12,8 +12,8 @@
 //! causal mask   [1, 1, n, n], nonzero exactly where key j is visible to
 //!               query i under the layer's declared span: j <= i on a full
 //!               layer, i - window < j <= i on a sliding one
-//! mask fill     a scalar at or below MASK_FILL_CEILING, whose softmax
-//!               weight underflows to exactly zero in f32
+//! mask fill     a scalar at or below MASK_FILL_CEILING (-1e3), whose
+//!               softmax weight underflows to exactly zero in f32
 //! ```
 //!
 //! A buffer that disagrees refuses the encode by name. Nothing is ever
@@ -32,9 +32,10 @@ use crate::format::vindex3::graph::policy::{AttentionLayerPolicy, AttentionSpan}
 use crate::format::vindex3::graph::{ComponentRole, SystemGraph};
 
 /// A fill at or below this makes a masked score's weight exactly zero:
-/// `exp(-1e4)` underflows f32 whatever the visible scores are, and every
-/// GPT-2-lineage checkpoint stores `-1e4` or `finfo.min`.
-pub const MASK_FILL_CEILING: f32 = -1e4;
+/// `exp(-1e3)` underflows f32 (and f64) whatever the visible scores are.
+/// Every GPT-2-lineage checkpoint stores `-1e4` or `finfo.min`; a BF16 copy
+/// of `-1e4` rounds to `-9984`, which is why the ceiling is not `-1e4`.
+pub const MASK_FILL_CEILING: f32 = -1e3;
 
 /// Check every excluded buffer of every artifact. `Ok(n)` is the number
 /// checked; the first disagreement is an error naming the tensor.
@@ -152,3 +153,6 @@ fn decode(dtype: &str, bytes: &[u8]) -> Result<Vec<f32>, String> {
         }
     })
 }
+
+#[cfg(test)]
+mod tests;

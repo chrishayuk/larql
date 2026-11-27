@@ -225,6 +225,170 @@ mod tests {
         assert_eq!(stored_index(&part, &[2, 2], 2), Some(3));
     }
 
+    fn fact(shape: &[usize], dtype: &str) -> TensorFact {
+        TensorFact {
+            name: "p".into(),
+            dtype: dtype.into(),
+            shape: shape.to_vec(),
+            bytes: 0,
+            file: String::new(),
+            derivation: None,
+        }
+    }
+
+    #[test]
+    fn element_checks_compare_the_container_to_the_mapped_stored_element() {
+        // A vector part: stored [6], part = 4..6.
+        let part = d(
+            Some(AxisSlice {
+                axis: 0,
+                start: 4,
+                len: 2,
+            }),
+            false,
+            &[6],
+        );
+        assert_eq!(stored_index(&part, &[2], 1), Some(5));
+        let stored: Vec<u8> = (0u8..6).collect();
+        assert!(check_elements(&fact(&[2], "U8"), &part, &stored, &[4, 5]).is_ok());
+        let err = check_elements(&fact(&[2], "U8"), &part, &stored, &[5, 4]).unwrap_err();
+        assert!(err.contains("container element 0"), "{err}");
+        let err = check_elements(&fact(&[2], "U8"), &part, &stored, &[4]).unwrap_err();
+        assert!(err.contains("container holds 1 bytes"), "{err}");
+        // A dtype with no width, and a rank the map does not cover.
+        assert!(check_elements(&fact(&[2], "Q4_K"), &part, &stored, &[4, 5]).is_err());
+        let cube = d(None, false, &[1, 1, 2]);
+        assert_eq!(stored_index(&cube, &[1, 1, 2], 0), None);
+        assert!(check_elements(&fact(&[1, 1, 2], "U8"), &cube, &[0, 1], &[0, 1]).is_err());
+        // An untransposed row slice of a matrix.
+        let rows = d(
+            Some(AxisSlice {
+                axis: 0,
+                start: 1,
+                len: 1,
+            }),
+            false,
+            &[2, 3],
+        );
+        assert_eq!(stored_index(&rows, &[1, 3], 2), Some(5));
+        let whole = d(None, false, &[2, 3]);
+        assert_eq!(stored_index(&whole, &[2, 3], 4), Some(4));
+        // A map that points past the stored tensor.
+        let short = d(
+            Some(AxisSlice {
+                axis: 0,
+                start: 4,
+                len: 2,
+            }),
+            false,
+            &[6],
+        );
+        assert!(check_elements(&fact(&[2], "U8"), &short, &[0; 4], &[0, 0]).is_err());
+    }
+
+    #[test]
+    fn tiling_refuses_parts_on_two_axes_and_unsliced_siblings() {
+        let mixed = [
+            d(
+                Some(AxisSlice {
+                    axis: 0,
+                    start: 0,
+                    len: 1,
+                }),
+                false,
+                &[2, 2],
+            ),
+            d(
+                Some(AxisSlice {
+                    axis: 1,
+                    start: 1,
+                    len: 1,
+                }),
+                false,
+                &[2, 2],
+            ),
+        ];
+        assert!(check_tiling("w", &mixed.iter().collect::<Vec<_>>()).is_err());
+        let half = [
+            d(
+                Some(AxisSlice {
+                    axis: 0,
+                    start: 0,
+                    len: 1,
+                }),
+                false,
+                &[2, 2],
+            ),
+            d(None, false, &[2, 2]),
+        ];
+        assert!(check_tiling("w", &half.iter().collect::<Vec<_>>()).is_err());
+    }
+
+    /// The audit over a real derived object refuses a segment table that
+    /// lost a derived tensor and a tensor no binding owns, by name.
+    #[test]
+    fn the_audit_names_a_missing_table_entry_and_an_unowned_tensor() {
+        use crate::format::vindex3::encode::segment::read_segment_header;
+        use crate::format::vindex3::encode::{encode_system, plan_object_tensors};
+        use crate::format::vindex3::fixtures_gpt2::miniature_gpt2;
+        let checkpoint = tempfile::tempdir().unwrap();
+        miniature_gpt2(checkpoint.path());
+        let inventory = larql_models::inventory::build_inventory(checkpoint.path()).unwrap();
+        let named = [("target".to_string(), inventory)];
+        let container = tempfile::tempdir().unwrap();
+        encode_system(&named, container.path()).unwrap();
+        let plan = crate::format::vindex3::plan::plan_system(&named);
+        let object = plan
+            .graph
+            .objects
+            .iter()
+            .find(|o| o.id == "target.decoder_stack")
+            .unwrap();
+        let inventories: BTreeMap<&str, &ArchitectureInventory> =
+            BTreeMap::from([("target", &named[0].1)]);
+        let sources: BTreeMap<&str, ArtifactSource> =
+            BTreeMap::from([("target", ArtifactSource::open(checkpoint.path()).unwrap())]);
+        let planned = plan_object_tensors(object, &inventories, &plan.graph.objects).unwrap();
+        let segment = container.path().join("segments/target.decoder_stack.bin");
+        let (header, start) = read_segment_header(&segment).unwrap();
+        let audit = |planned: &[PlannedTensor], header: &[SegmentTensor]| {
+            audit_derived_tensors(
+                object,
+                planned,
+                header,
+                &segment,
+                start,
+                &sources,
+                &inventories,
+            )
+        };
+        assert!(audit(&planned, &header.tensors).unwrap() > 0);
+        let missing: Vec<SegmentTensor> = header
+            .tensors
+            .iter()
+            .filter(|t| !t.name.ends_with("q_proj.weight"))
+            .cloned()
+            .collect();
+        assert!(audit(&planned, &missing)
+            .unwrap_err()
+            .contains("not in the segment table"));
+        let mut stray = plan_object_tensors(object, &inventories, &plan.graph.objects).unwrap();
+        stray[0].source_name = "elsewhere.weight".into();
+        assert!(audit(&stray, &header.tensors)
+            .unwrap_err()
+            .contains("no owning artifact"));
+    }
+
+    #[test]
+    fn a_range_past_the_segment_is_an_error_not_a_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("seg");
+        std::fs::write(&path, [1u8, 2, 3]).unwrap();
+        assert_eq!(read_range(&path, 1, 2).unwrap(), vec![2, 3]);
+        assert!(read_range(&path, 2, 4).is_err());
+        assert!(read_range(&dir.path().join("missing"), 0, 1).is_err());
+    }
+
     #[test]
     fn tiling_refuses_a_gap_an_overlap_and_a_short_cover() {
         let s = |start, len| {

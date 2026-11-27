@@ -643,4 +643,5 @@ fn the_exit_pair_on_an_undeclared_component_names_what_it_requires() {
     );
 }
 
+mod biases;
 mod object_closures;

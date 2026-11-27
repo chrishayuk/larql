@@ -337,3 +337,26 @@ fn a_local_layers_stored_mask_is_checked_against_its_window() {
         "{err}"
     );
 }
+
+/// `output_bias` beside either Q/K/V form is a contradiction, refused
+/// rather than resolved.
+#[test]
+fn an_output_only_bias_beside_a_q_k_v_form_is_a_contradiction() {
+    for other in ["attention_bias", "qkv_bias"] {
+        let (_m, _c, container) = encoded(GptNeoForm::default());
+        let graph_path = container
+            .path()
+            .join(crate::format::vindex3::encode::SYSTEM_GRAPH_JSON);
+        let mut graph: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&graph_path).unwrap()).unwrap();
+        graph["components"][0]["execution"]["attention"][other] = serde_json::json!(true);
+        std::fs::write(&graph_path, graph.to_string()).unwrap();
+        let inspection = inspect_container(container.path(), false).unwrap();
+        let outcome = plan_component_ops(&inspection, container.path(), COMPONENT).unwrap();
+        let defects = format!("{:?}", outcome.defects);
+        assert!(
+            defects.contains("ContradictoryDeclaration") && defects.contains("`output_bias`"),
+            "{other}: {defects}"
+        );
+    }
+}

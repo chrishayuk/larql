@@ -192,12 +192,13 @@ fn source_hash(
                 tensor.source_name, object.id
             ))
         })?;
-        let source = sources.get(owner).ok_or_else(|| {
-            VindexError::Parse(format!("binding owner `{owner}` is not in the verify set"))
-        })?;
-        let inventory = inventories.get(owner).ok_or_else(|| {
-            VindexError::Parse(format!("binding owner `{owner}` has no inventory"))
-        })?;
+        // Both maps are built from the same `named` set, so an owner is in
+        // both or neither.
+        let (Some(source), Some(inventory)) = (sources.get(owner), inventories.get(owner)) else {
+            return Err(VindexError::Parse(format!(
+                "binding owner `{owner}` is not in the verify set"
+            )));
+        };
         crate::format::vindex3::encode::source::stream_inventory_tensor(
             source,
             inventory,

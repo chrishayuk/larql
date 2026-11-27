@@ -177,7 +177,7 @@ optional transpose). Registered buffers the family names (GPT-2's
 never dropped silently, and never unchecked: each declares what it holds
 (`BufferKind::CausalMask` / `MaskFill`), and its stored contents are held
 to the layer's declared span (`j <= i` full, `i - window < j <= i`
-sliding; a fill at or below `-1e4`) before any container is written and
+sliding; a fill at or below `-1e3`) before any container is written and
 again at G4 (`encode::masks`). A mask the declaration does not reproduce
 refuses the encode. Everything downstream — roles, closure, encode,
 every backend — sees canonical operands; no executor carries a
